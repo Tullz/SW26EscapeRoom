@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Investigate a supply chain breach at Nexus Corp. Trace how the attack happened, study real-world cases, and choose the right defenses." />
+  <link rel="icon" href="assets/favicon.png" type="image/png" />
+
+  <!-- Tight CSP (local assets only) -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 img-src 'self' data:;
+                 style-src 'self' 'unsafe-inline';
+                 script-src 'self';
+                 connect-src 'self';
+                 object-src 'none';
+                 base-uri 'self'">
+
+  <title>Cyber Escape Rooms — Supply Chain Attack</title>
+
+  <!-- External files only -->
+  <link rel="stylesheet" href="css/styles.css" />
+
+  <style>
+    /* ============================================================
+       Supply Chain Room: Nexus Corp Breach Investigation
+       ============================================================ */
+
+    /* ---- Story Prompt ---- */
+    .story-prompt {
+      background: rgba(88,166,255,.06);
+      border: 1px solid rgba(88,166,255,.2);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+    }
+
+    .story-prompt__text {
+      font-size: .95rem;
+      line-height: 1.6;
+      color: var(--ink);
+      margin: 0;
+    }
+
+    /* ---- Network Diagram ---- */
+    .supply-diagram {
+      position: relative;
+      background: #0a0e14;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.5rem 1rem 1rem;
+      display: grid;
+      gap: 1.25rem;
+    }
+
+    .supply-diagram__lines {
+      position: absolute;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Level rows */
+    .supply-level {
+      position: relative;
+      z-index: 1;
+    }
+
+    .supply-level__label {
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: .65rem;
+      padding-bottom: .35rem;
+      border-bottom: 1px solid rgba(42,47,54,.4);
+    }
+
+    .supply-level__nodes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .75rem;
+      justify-content: center;
+    }
+
+    /* Individual nodes */
+    .supply-node {
+      appearance: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .35rem;
+      padding: .85rem 1rem;
+      min-width: 130px;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      background: rgba(17,22,29,.85);
+      color: var(--ink);
+      cursor: pointer;
+      transition: border-color .2s, transform .2s, box-shadow .2s, background .2s;
+      font: inherit;
+      text-align: center;
+    }
+
+    .supply-node:hover:not(:disabled) {
+      border-color: var(--brand);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(88,166,255,.15);
+    }
+
+    .supply-node:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .supply-node:disabled {
+      cursor: default;
+      opacity: .8;
+    }
+
+    .supply-node__icon {
+      font-size: 1.5rem;
+      display: block;
+      line-height: 1;
+    }
+
+    .supply-node__name {
+      font-weight: 600;
+      font-size: .88rem;
+      color: #fff;
+    }
+
+    .supply-node__role {
+      font-size: .75rem;
+      color: var(--muted);
+    }
+
+    .supply-node--internal {
+      border-color: rgba(88,166,255,.35);
+      background: rgba(88,166,255,.08);
+    }
+
+    .supply-node--target {
+      border-color: rgba(255,166,87,.35);
+      background: rgba(255,166,87,.08);
+    }
+
+    .supply-node--correct {
+      border-color: var(--accent) !important;
+      background: rgba(9,255,136,.12) !important;
+      box-shadow: 0 0 12px rgba(9,255,136,.25);
+    }
+
+    .supply-node--wrong {
+      border-color: var(--danger) !important;
+      background: rgba(255,85,85,.12) !important;
+      animation: flashWrong .6s ease;
+    }
+
+    @keyframes flashWrong {
+      0%,100% { background: rgba(255,85,85,.12); }
+      50% { background: rgba(255,85,85,.25); }
+    }
+
+    /* SVG connection lines */
+    .supply-line {
+      stroke: rgba(88,166,255,.2);
+      stroke-width: 2;
+      stroke-dasharray: 6,4;
+    }
+
+    .supply-line--active {
+      stroke: var(--accent);
+      stroke-width: 3;
+      stroke-dasharray: none;
+      filter: drop-shadow(0 0 4px rgba(9,255,136,.4));
+    }
+
+    /* ---- Step Tracker ---- */
+    .step-tracker {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.15rem;
+    }
+
+    .step-tracker h3 {
+      font-size: .85rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--brand);
+      margin: 0 0 .75rem;
+    }
+
+    .step-tracker__list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: .5rem;
+    }
+
+    .step-tracker__item {
+      display: flex;
+      gap: .65rem;
+      align-items: baseline;
+      padding: .5rem .65rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: rgba(9,15,25,.5);
+      transition: border-color .3s, background .3s;
+    }
+
+    .step-tracker__num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: rgba(88,166,255,.15);
+      color: var(--brand);
+      font-weight: 700;
+      font-size: .8rem;
+      flex-shrink: 0;
+    }
+
+    .step-tracker__text {
+      font-size: .9rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .step-tracker__item--revealed {
+      border-color: rgba(9,255,136,.3);
+      background: rgba(9,255,136,.06);
+    }
+
+    .step-tracker__item--revealed .step-tracker__num {
+      background: rgba(9,255,136,.2);
+      color: var(--accent);
+    }
+
+    .step-tracker__item--revealed .step-tracker__text {
+      color: var(--ink);
+    }
+
+    .step-tracker__item--current {
+      border-color: rgba(88,166,255,.35);
+      background: rgba(88,166,255,.06);
+    }
+
+    .step-tracker__item--current .step-tracker__text {
+      color: var(--brand);
+      font-style: italic;
+    }
+
+    /* ---- Case Files ---- */
+    .case-files {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .case-card {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(9,15,25,.6);
+      overflow: hidden;
+      transition: border-color .3s;
+    }
+
+    .case-card--solved {
+      border-color: rgba(9,255,136,.3);
+    }
+
+    .case-card__header {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      padding: .85rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(88,166,255,.04);
+    }
+
+    .case-card__year {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: .2rem .6rem;
+      border-radius: 6px;
+      background: rgba(88,166,255,.15);
+      color: var(--brand);
+      font-weight: 700;
+      font-size: .78rem;
+      letter-spacing: .05em;
+      flex-shrink: 0;
+    }
+
+    .case-card__title {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      margin: 0;
+    }
+
+    .case-card__desc {
+      padding: 1rem 1.25rem .5rem;
+      color: var(--ink);
+      font-size: .9rem;
+      line-height: 1.55;
+      margin: 0;
+    }
+
+    .case-card__question {
+      padding: .5rem 1.25rem 1rem;
+    }
+
+    .case-card__q {
+      color: var(--ink);
+      font-size: .9rem;
+      margin: 0 0 .75rem;
+    }
+
+    .case-card__options {
+      display: grid;
+      gap: .5rem;
+    }
+
+    .case-option {
+      appearance: none;
+      display: block;
+      width: 100%;
+      padding: .65rem 1rem;
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      background: rgba(17,22,29,.7);
+      color: var(--ink);
+      font: inherit;
+      font-size: .88rem;
+      line-height: 1.45;
+      cursor: pointer;
+      text-align: left;
+      transition: border-color .2s, background .2s, transform .15s;
+    }
+
+    .case-option:hover:not(:disabled) {
+      border-color: var(--brand);
+      transform: translateY(-1px);
+    }
+
+    .case-option:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .case-option:disabled {
+      cursor: default;
+      opacity: .85;
+    }
+
+    .case-option--correct {
+      border-color: var(--accent) !important;
+      background: rgba(9,255,136,.1) !important;
+    }
+
+    .case-option--wrong {
+      border-color: var(--danger) !important;
+      background: rgba(255,85,85,.1) !important;
+      animation: flashWrong .6s ease;
+    }
+
+    .case-card__lesson {
+      padding: .85rem 1.25rem 1rem;
+      border-top: 1px solid rgba(9,255,136,.2);
+      background: rgba(9,255,136,.04);
+    }
+
+    .case-card__lesson p {
+      color: var(--ink);
+      font-size: .88rem;
+      line-height: 1.55;
+      margin: 0;
+    }
+
+    /* ---- Budget Slots ---- */
+    .budget-slots {
+      display: flex;
+      gap: .75rem;
+      flex-wrap: wrap;
+    }
+
+    .budget-slot {
+      flex: 1;
+      min-width: 140px;
+      padding: .75rem 1rem;
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      background: rgba(9,15,25,.4);
+      text-align: center;
+      transition: border-color .3s, background .3s, border-style .3s;
+    }
+
+    .budget-slot--filled {
+      border-style: solid;
+      border-color: var(--brand);
+      background: rgba(88,166,255,.08);
+    }
+
+    .budget-slot__label {
+      display: block;
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: .25rem;
+    }
+
+    .budget-slot__value {
+      display: block;
+      font-weight: 600;
+      font-size: .85rem;
+      color: var(--ink);
+    }
+
+    /* ---- Defense Grid ---- */
+    .defense-grid {
+      display: grid;
+      gap: .65rem;
+    }
+
+    @media (min-width: 700px) {
+      .defense-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .defense-card {
+      appearance: none;
+      display: flex;
+      flex-direction: column;
+      gap: .35rem;
+      width: 100%;
+      padding: 1rem 1.15rem;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      background: rgba(9,15,25,.65);
+      cursor: pointer;
+      text-align: left;
+      font: inherit;
+      color: var(--ink);
+      transition: border-color .2s, background .2s, transform .15s, box-shadow .15s;
+    }
+
+    .defense-card:hover:not(:disabled) {
+      border-color: var(--brand);
+      transform: translateY(-1px);
+    }
+
+    .defense-card:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .defense-card:disabled {
+      cursor: default;
+      opacity: .85;
+    }
+
+    .defense-card--selected {
+      border-color: var(--brand);
+      background: rgba(88,166,255,.1);
+      box-shadow: 0 0 0 2px rgba(88,166,255,.2);
+    }
+
+    .defense-card--correct {
+      border-color: var(--accent) !important;
+      background: rgba(9,255,136,.1) !important;
+    }
+
+    .defense-card--incorrect {
+      border-color: var(--border) !important;
+      background: rgba(9,15,25,.4) !important;
+      opacity: .6;
+    }
+
+    .defense-card--wrong {
+      border-color: var(--danger) !important;
+      background: rgba(255,85,85,.12) !important;
+      animation: flashWrong .6s ease;
+    }
+
+    .defense-card__icon {
+      font-size: 1.5rem;
+      line-height: 1;
+    }
+
+    .defense-card__label {
+      font-weight: 600;
+      font-size: .95rem;
+      color: #fff;
+    }
+
+    .defense-card__desc {
+      font-size: .85rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .defense-card__protects {
+      font-size: .78rem;
+      color: var(--brand);
+      font-weight: 600;
+      padding-top: .25rem;
+      border-top: 1px solid rgba(88,166,255,.15);
+      margin-top: .25rem;
+    }
+
+    /* ---- Result / Feedback ---- */
+    .supply-result {
+      padding: 1rem 1.15rem;
+      border-radius: 12px;
+      border: 1px solid rgba(9,255,136,.35);
+      background: rgba(9,255,136,.06);
+    }
+
+    .supply-result .ok {
+      color: var(--ink);
+      font-size: .95rem;
+      line-height: 1.55;
+    }
+
+    .feedback {
+      font-size: .9rem;
+      min-height: 1.4em;
+    }
+
+    .feedback.ok { color: var(--accent); }
+    .feedback.warn { color: var(--warn); }
+
+    /* ---- Responsive ---- */
+    @media (max-width: 600px) {
+      .supply-level__nodes {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .supply-node {
+        min-width: 0;
+      }
+      .budget-slots {
+        flex-direction: column;
+      }
+      .budget-slot {
+        min-width: 0;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .case-card__header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: .4rem;
+      }
+      .defense-card {
+        padding: .85rem 1rem;
+      }
+    }
+  </style>
+
+  <script src="js/accessibility.js" defer></script>
+  <script src="js/utils.js" defer></script>
+  <script src="js/state-sync.js" defer></script>
+  <script src="js/session.js" defer></script>
+  <script src="js/vault.js" defer></script>
+  <script src="js/supply-chain.js" defer></script>
+</head>
+
+<body data-session="team">
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <!-- Global Header -->
+  <header class="site-header site-header--bar" aria-label="Global">
+    <div class="site-header__inner">
+      <div class="header-left">
+        <button class="nav-btn ghost nav-btn--back" type="button" data-back="game.html" data-tooltip="Back to previous page">
+          <span aria-hidden="true">&larr;</span>
+          <span>Back</span>
+        </button>
+        <a class="brand" href="game.html">
+          <img src="assets/logo.png" alt="" class="logo" />
+          <span class="brand-copy">
+            <span class="brand-name">Cyber Escape Rooms</span>
+            <span class="brand-tagline">Team-based security missions</span>
+          </span>
+        </a>
+      </div>
+
+      <div class="header-actions">
+        <nav class="main-nav" aria-label="Primary">
+          <a class="nav-link" href="game.html">Mission Hub</a>
+        </nav>
+        <a class="nav-btn nav-btn--next" href="forensics.html" aria-label="Next challenge: Network Forensics">
+          Next<span aria-hidden="true">&rarr;</span>
+        </a>
+        <div class="vault-status" id="vaultStatus" role="status" aria-live="polite" data-visible="team">
+          <span class="vault-status__label">Vault</span>
+          <ol class="vault-status__digits">
+            <li data-vault-key="phishing">&bull;</li>
+            <li data-vault-key="osint">&bull;</li>
+            <li data-vault-key="incident">&bull;</li>
+            <li data-vault-key="mfa">&bull;</li>
+            <li data-vault-key="supply">&bull;</li>
+            <li data-vault-key="forensics">&bull;</li>
+          </ol>
+          <span class="vault-status__count">0/6</span>
+        </div>
+        <button class="nav-btn alert nav-btn--logout" type="button" data-action="logout">Logout</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container" id="main" role="main" tabindex="-1">
+    <header class="game-header">
+      <h1 class="glow">Supply Chain Attack</h1>
+      <p class="mt-1" style="color:var(--muted)">Nexus Corp has been breached through a trusted software update. Trace how the attackers got in, study real-world cases, and figure out how to stop it from happening again.</p>
+    </header>
+
+    <!-- Points Intel -->
+    <section class="intro-banner points-card mt-2" aria-labelledby="supplyPointsHeading">
+      <details class="points-panel" open>
+        <summary id="supplyPointsHeading">Points intel</summary>
+        <p>Work carefully through each challenge. Wrong answers and hints cost points, but every wrong answer teaches you something useful.</p>
+        <ul>
+          <li>Wrong click or answer: -3 points</li>
+          <li>Basic hint: -5 points</li>
+          <li>Detailed hint: -10 points</li>
+        </ul>
+      </details>
+      <div class="vault-callout" role="status">
+        <span class="tag">Code Word</span>
+        <p>Complete all three challenges to unlock your code word: <strong id="supplyVaultDigit">&mdash;</strong></p>
+      </div>
+    </section>
+
+    <!-- Status HUD -->
+    <section class="status-hud" aria-label="Team status">
+      <div class="points-box">
+        <p class="points-box__label">Team points</p>
+        <p class="points-box__value" id="supplyPointsTotal">000</p>
+        <p class="points-box__delta" id="supplyPointsDelta" aria-live="polite"></p>
+      </div>
+      <div class="progress-mini">
+        <p class="progress-mini__label">Puzzle progress</p>
+        <div class="progress-mini__track">
+          <div class="progress-mini__fill" id="supplyProgressFill"></div>
+        </div>
+        <p class="progress-mini__text" id="supplyProgressText">0% complete</p>
+      </div>
+    </section>
+
+    <!-- Story Briefing -->
+    <section class="card mt-2" aria-labelledby="supplyBriefHeading">
+      <h2 id="supplyBriefHeading">Monday Morning at Nexus Corp</h2>
+      <p class="mt-1">It's early Monday morning and the security team's phones are all ringing at once. Over the weekend, someone discovered that customer data has been quietly leaking for weeks.</p>
+      <p class="mt-1">The source? A routine software update from one of Nexus Corp's trusted vendors &mdash; but someone had hidden malicious code inside it. It's like a delivery driver with a trusted uniform sneaking something dangerous into your building.</p>
+      <p class="mt-1">Your team has been called in to investigate. Trace how the attackers got in, learn from real-world cases, and choose the right defenses to prevent it from happening again.</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- CHALLENGE 1: Trace the Attack Path                            -->
+    <!-- ============================================================ -->
+    <section class="card mt-2" id="traceSection" aria-labelledby="traceHeading">
+      <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+        <h2 id="traceHeading" style="margin:0">Trace the Attack</h2>
+        <span class="status-pill" id="traceStatus">In progress</span>
+      </div>
+      <p class="mt-1">The diagram below shows Nexus Corp's network &mdash; sub-contractors at the bottom, vendors in the middle, and Nexus Corp's own systems at the top. Click on the nodes to trace the attack path step by step.</p>
+
+      <!-- Narrative prompt -->
+      <div class="story-prompt mt-1" id="storyPrompt">
+        <p class="story-prompt__text" id="promptText"></p>
+      </div>
+
+      <div class="mt-1" style="display:flex;gap:.75rem;flex-wrap:wrap">
+        <button class="btn ghost" type="button" id="traceHintBtn">Hint (-5 pts)</button>
+        <button class="btn ghost" type="button" id="traceResetBtn">Reset path</button>
+      </div>
+      <p id="traceHintText" class="hint-callout mt-1" hidden></p>
+
+      <!-- Network diagram -->
+      <div class="supply-diagram mt-2" id="networkDiagram" role="group" aria-label="Vendor network diagram">
+        <svg class="supply-diagram__lines" id="diagramLines" aria-hidden="true"></svg>
+
+        <!-- Level 0: Sub-contractors -->
+        <div class="supply-level" data-level="0">
+          <p class="supply-level__label">Sub-contractors</p>
+          <div class="supply-level__nodes">
+            <button class="supply-node" type="button" data-node="codeforge" aria-label="CodeForge Dev Tools, makes tools for developers">
+              <span class="supply-node__icon" aria-hidden="true">&#x2699;</span>
+              <span class="supply-node__name">CodeForge Dev Tools</span>
+              <span class="supply-node__role">Makes tools for developers</span>
+            </button>
+            <button class="supply-node" type="button" data-node="datapure" aria-label="DataPure Analytics, processes business data">
+              <span class="supply-node__icon" aria-hidden="true">&#x2637;</span>
+              <span class="supply-node__name">DataPure Analytics</span>
+              <span class="supply-node__role">Processes business data</span>
+            </button>
+            <button class="supply-node" type="button" data-node="cloudsync" aria-label="CloudSync Backup, cloud backup service">
+              <span class="supply-node__icon" aria-hidden="true">&#x2601;</span>
+              <span class="supply-node__name">CloudSync Backup</span>
+              <span class="supply-node__role">Cloud backup service</span>
+            </button>
+            <button class="supply-node" type="button" data-node="netshield" aria-label="NetShield Security, security monitoring">
+              <span class="supply-node__icon" aria-hidden="true">&#x26E8;</span>
+              <span class="supply-node__name">NetShield Security</span>
+              <span class="supply-node__role">Security monitoring</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Level 1: Vendors -->
+        <div class="supply-level" data-level="1">
+          <p class="supply-level__label">Vendors</p>
+          <div class="supply-level__nodes">
+            <button class="supply-node" type="button" data-node="pinnacle" aria-label="Pinnacle Software, sells software to businesses">
+              <span class="supply-node__icon" aria-hidden="true">&#x25B2;</span>
+              <span class="supply-node__name">Pinnacle Software</span>
+              <span class="supply-node__role">Sells software to businesses</span>
+            </button>
+            <button class="supply-node" type="button" data-node="orion" aria-label="Orion Data Services, data management vendor">
+              <span class="supply-node__icon" aria-hidden="true">&#x2738;</span>
+              <span class="supply-node__name">Orion Data Services</span>
+              <span class="supply-node__role">Data management vendor</span>
+            </button>
+            <button class="supply-node" type="button" data-node="trustguard" aria-label="TrustGuard Compliance, checks security rules">
+              <span class="supply-node__icon" aria-hidden="true">&#x2611;</span>
+              <span class="supply-node__name">TrustGuard Compliance</span>
+              <span class="supply-node__role">Checks security rules</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Level 2: Nexus Corp -->
+        <div class="supply-level" data-level="2">
+          <p class="supply-level__label">Nexus Corp</p>
+          <div class="supply-level__nodes">
+            <button class="supply-node supply-node--internal" type="button" data-node="cicd" aria-label="CI/CD Pipeline, auto-builds and deploys software">
+              <span class="supply-node__icon" aria-hidden="true">&#x2692;</span>
+              <span class="supply-node__name">CI/CD Pipeline</span>
+              <span class="supply-node__role">Auto-builds &amp; deploys software</span>
+            </button>
+            <button class="supply-node supply-node--target" type="button" data-node="production" aria-label="Nexus Corp Production, where everything runs live">
+              <span class="supply-node__icon" aria-hidden="true">&#x1F3E2;</span>
+              <span class="supply-node__name">Nexus Corp Production</span>
+              <span class="supply-node__role">Where everything runs live</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step tracker -->
+      <div class="step-tracker mt-2" id="stepTracker" aria-live="polite">
+        <h3>Investigation progress</h3>
+        <ol class="step-tracker__list" id="stepList">
+          <li class="step-tracker__item" data-step="0"><span class="step-tracker__num">1</span> <span class="step-tracker__text">?</span></li>
+          <li class="step-tracker__item" data-step="1"><span class="step-tracker__num">2</span> <span class="step-tracker__text">?</span></li>
+          <li class="step-tracker__item" data-step="2"><span class="step-tracker__num">3</span> <span class="step-tracker__text">?</span></li>
+          <li class="step-tracker__item" data-step="3"><span class="step-tracker__num">4</span> <span class="step-tracker__text">?</span></li>
+        </ol>
+      </div>
+
+      <!-- Part 1 result -->
+      <div class="supply-result mt-2" id="traceResult" hidden>
+        <p class="ok"><strong>Attack path traced!</strong> The breach traveled through 4 steps: from a sub-contractor's compromised tools, through a vendor's software update, into Nexus Corp's build system, and finally to production. Each link in the chain trusted the one before it.</p>
+      </div>
+
+      <p class="feedback mt-1" id="traceFeedback" aria-live="polite"></p>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- CHALLENGE 2: Real-World Case Files                            -->
+    <!-- ============================================================ -->
+    <section class="card mt-2" id="casesSection" aria-labelledby="casesHeading" hidden>
+      <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+        <h2 id="casesHeading" style="margin:0">Real-World Case Files</h2>
+        <span class="status-pill" id="casesStatus">Locked</span>
+      </div>
+      <p class="mt-1">Now that you know how the Nexus Corp attack worked, let's see how common this type of attack really is. These cases all happened in the real world. Read each one and answer the question to show you understand how it worked.</p>
+
+      <div class="mt-1" style="display:flex;gap:.75rem;flex-wrap:wrap">
+        <button class="btn ghost" type="button" id="casesHintBtn">Hint (-5 pts)</button>
+      </div>
+      <p id="casesHintText" class="hint-callout mt-1" hidden></p>
+
+      <div class="case-files mt-2" id="caseFilesGrid" role="group" aria-label="Case files">
+        <!-- Populated by JS -->
+      </div>
+
+      <p class="feedback mt-1" id="casesFeedback" aria-live="polite"></p>
+
+      <div class="supply-result mt-2" id="casesResult" hidden>
+        <p class="ok"><strong>All cases investigated.</strong> You can see the pattern: attackers target the software and tools that companies trust, turning routine updates and common tools into weapons.</p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- CHALLENGE 3: Defend Nexus Corp                                -->
+    <!-- ============================================================ -->
+    <section class="card mt-2" id="defendSection" aria-labelledby="defendHeading" hidden>
+      <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+        <h2 id="defendHeading" style="margin:0">Defend Nexus Corp</h2>
+        <span class="status-pill" id="defendStatus">Locked</span>
+      </div>
+      <p class="mt-1">You've seen the pattern: attackers hide inside software that everyone trusts. Now it's time to protect Nexus Corp. The board has approved budget for exactly <strong>3 security improvements</strong>. Pick the 3 that would have actually prevented or limited this specific attack. Not every option would have helped here.</p>
+
+      <div class="mt-1" style="display:flex;gap:.75rem;flex-wrap:wrap">
+        <button class="btn ghost" type="button" id="defendHintBtn">Hint (-5 pts)</button>
+      </div>
+      <p id="defendHintText" class="hint-callout mt-1" hidden></p>
+
+      <!-- Budget slots -->
+      <div class="budget-slots mt-2" id="budgetSlots" aria-label="Your 3 security budget slots">
+        <div class="budget-slot" data-slot="0"><span class="budget-slot__label">Slot 1</span><span class="budget-slot__value">Empty</span></div>
+        <div class="budget-slot" data-slot="1"><span class="budget-slot__label">Slot 2</span><span class="budget-slot__value">Empty</span></div>
+        <div class="budget-slot" data-slot="2"><span class="budget-slot__label">Slot 3</span><span class="budget-slot__value">Empty</span></div>
+      </div>
+
+      <div class="defense-grid mt-2" id="defenseGrid" role="group" aria-label="Defense options">
+        <!-- Populated by JS -->
+      </div>
+
+      <div class="mt-2" style="display:flex;gap:.75rem;flex-wrap:wrap">
+        <button class="btn" type="button" id="defendSubmitBtn" disabled>Lock in your choices (0/3)</button>
+      </div>
+
+      <p class="feedback mt-1" id="defendFeedback" aria-live="polite"></p>
+
+      <div class="supply-result mt-2" id="defendResult" hidden>
+        <!-- Populated by JS with explanations -->
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- VAULT REVEAL                                                  -->
+    <!-- ============================================================ -->
+    <section class="card mt-2" id="vaultReveal" aria-labelledby="vaultRevealHeading" hidden>
+      <h2 id="vaultRevealHeading" class="glow">Vault Digit Unlocked</h2>
+      <p class="mt-1">The attack passed through <strong>4 steps</strong> from sub-contractor to production. Your vault digit is <strong>4</strong>.</p>
+      <p class="mt-1">You've learned how attacks through trusted software work, studied real cases, and chosen the right defenses. Record this digit and return to the Mission Hub.</p>
+      <div class="mt-2">
+        <a href="game.html" class="btn">Return to Mission Hub</a>
+      </div>
+    </section>
+
+    <!-- Resources -->
+    <section class="card resources-card mt-2" aria-labelledby="supplyResourcesHeading">
+      <h2 id="supplyResourcesHeading">Further learning</h2>
+      <ul>
+        <li><a href="https://www.cisa.gov/supply-chain-compromise" target="_blank" rel="noopener">CISA - Supply chain compromise guidance</a></li>
+        <li><a href="https://www.ncsc.gov.uk/collection/supply-chain-security" target="_blank" rel="noopener">NCSC UK - Supply chain security</a></li>
+        <li><a href="https://www.cyber.gov.au/resources-business-and-government/maintaining-devices-and-systems/outsourcing-and-procurement/cyber-supply-chain-risk-management" target="_blank" rel="noopener">ACSC - Cyber supply chain risk management</a></li>
+      </ul>
+    </section>
+
+    <nav class="challenge-nav" aria-label="Puzzle navigation">
+      <a class="btn ghost" href="mfa.html">&larr; Previous: MFA Challenge</a>
+      <a class="btn" href="forensics.html">Next: Network Forensics &rarr;</a>
+    </nav>
+  </main>
+
+  <!-- Global Footer -->
+  <footer class="site-footer header-bleed">
+    <div class="footer-inner">
+      <nav class="footer-nav" aria-label="Footer">
+        <a href="index.html">Home</a>
+        <span aria-hidden="true">&bull;</span>
+        <a href="game.html">Mission Hub</a>
+      </nav>
+      <p class="footer-note">Investigate the breach to earn vault digit four.</p>
+      <p class="footer-copy"><small>&copy; 2026 Cyber Escape Rooms</small></p>
+    </div>
+  </footer>
+</body>
+</html>

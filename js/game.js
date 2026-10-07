@@ -1,6 +1,6 @@
-/* game.js — Cyber Escape Rooms (Game Hub + Vault Lock)
-   - Renders overall progress and journey
-   - Handles the 5-digit vault lock with SHA-256 hash compare
+/* game.js — Cyber Escape Rooms (Mission Hub + Vault Lock)
+   - Renders the room route and the next-step call to action from ROOMS
+   - Handles the 6-word vault lock with SHA-256 hash compare
    - Requires all puzzles complete before unlocking
 */
 
@@ -12,10 +12,9 @@
   // Option A: set a cleartext code (for local testing only). If present, we'll hash it at runtime.
   // window.VAULT_CODE = "1234";
 
-  // Option B (preferred): keep only the SHA-256 hash of the 4-digit code here.
-  // Replace this string with the hash of your real code:
-  // echo -n 1234 | shasum -a 256
-  const DEFAULT_VAULT_HASH = '64864c595119d6e2fd8ea57ce6231f5a7fb00310f969d02b309c76208d3ec283';
+  // SHA-256 hash of the 6-word vault passphrase (concatenated, uppercase)
+  // echo -n MERCURYSHADOWBREACHKEYSTONEVIPERCIPHER | shasum -a 256
+  const DEFAULT_VAULT_HASH = '8c46d80748b5ec2fffa3c5b9b8e0053da7963c4af11260c63a4d5c2ad299d312';
   const CORRECT_CODE_HASH = window.VAULT_CODE_HASH || DEFAULT_VAULT_HASH;
   if (!window.VAULT_CODE_HASH) {
     window.VAULT_CODE_HASH = DEFAULT_VAULT_HASH;
@@ -25,20 +24,6 @@
 
   const $  = (s, r=document) => r.querySelector(s);
   const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
-  function readDigit(key) {
-    const raw = localStorage.getItem(key);
-    if (raw == null || raw === '') return '';
-    return raw;
-  }
-
-  function computeLockDigits(){
-    const d1 = readDigit('lock_digit_phishing_total');
-    const d2 = readDigit('lock_digit_caesar_shift');
-    const d3 = readDigit('lock_digit_pw_minutes') || readDigit('lock_digit_pw_clues');
-    const d4 = readDigit('lock_digit_essential');
-    const d5 = readDigit('lock_digit_binary');
-    return [d1, d2, d3, d4, d5];
-  }
 
 
   function announce(msg){ try{ window.a11y?.announce?.(msg); }catch(_){} }
@@ -85,33 +70,94 @@
     el.textContent = name.toUpperCase();
   }
 
-  // -------------------- Progress rendering --------------------------------
+  // -------------------- Rooms (single source of truth) --------------------
+  // Order matters: it is the route order on the hub AND the vault word order.
+  // To rename/replace a room, change it here only.
+  const ROOMS = [
+    { key: 'phishing',  label: 'Phishing Spotter',     vaultLabel: 'Phishing',     path: 'phishing.html',
+      blurb: 'Inspect suspicious emails and spot the tell-tale signs of phishing.' },
+    { key: 'osint',     label: 'OSINT Investigation',  vaultLabel: 'OSINT',        path: 'osint.html',
+      blurb: 'Dig through a public social profile to recover a locked account.' },
+    { key: 'incident',  label: 'Incident Management',  vaultLabel: 'Incident',     path: 'incident.html',
+      blurb: 'A breach is underway. Examine the evidence and lead the response.' },
+    { key: 'mfa',       label: 'MFA / Authentication', vaultLabel: 'MFA',          path: 'mfa.html',
+      blurb: 'Help a colleague take back her phished account and fend off the attacker.' },
+    { key: 'supply',    label: 'Supply Chain Attack',  vaultLabel: 'Supply Chain', path: 'supply-chain.html',
+      blurb: 'Trace how a trusted supplier became the way in.' },
+    { key: 'forensics', label: 'Network Forensics',    vaultLabel: 'Forensics',    path: 'forensics.html',
+      blurb: 'Piece together the attack timeline from the evidence left behind.' }
+  ];
+  const PUZZLES = ROOMS.map(r => r.key);
+  const VAULT_WORDS = PUZZLES;
+  const ROOM_BY_KEY = Object.fromEntries(ROOMS.map((r, i) => [r.key, { ...r, index: i }]));
 
-  const PUZZLES = ['phishing','password','encryption','essential','binary'];
-  const PUZZLE_LABELS = {
-    phishing: 'Phishing Spotter',
-    password: 'Password Puzzle',
-    encryption: 'Encryption',
-    essential: 'ASD Essentials',
-    binary: 'Binary Lab'
-  };
-  const PUZZLE_HINTS = {
-    phishing: 'Spot phishing clues and earn the first digit.',
-    password: 'Crack the weak password to reveal digit two.',
-    encryption: 'Dial in the Caesar shift to learn digit three.',
-    essential: 'Match the ASD Essential Eight controls for digit four.',
-    binary: 'Finish the binary math to capture the final digit.'
-  };
-  const PUZZLE_PATHS = {
-    phishing: 'phishing.html',
-    password: 'password.html',
-    encryption: 'encryption.html',
-    essential: 'essential.html',
-    binary: 'binary.html'
-  };
+  function el(tag, cls, text){
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  // Build the route list and the vault slots from ROOMS (runs before inputs are queried).
+  function renderShell(){
+    const list = $('#missionTrackerList');
+    if (list && !list.children.length) {
+      ROOMS.forEach((room, i) => {
+        const li = el('li');
+        const a = el('a', 'mission-tracker__item is-later');
+        a.href = room.path;
+        a.dataset.puzzle = room.key;
+        const step = el('span', 'hub-step', String(i + 1));
+        step.setAttribute('aria-hidden', 'true');
+        const text = el('span', 'hub-room');
+        text.append(el('span', 'hub-room__name', `Room ${i + 1}: ${room.label}`), el('span', 'hub-room__blurb', room.blurb));
+        const status = el('span', 'mission-tracker__progress', 'Not started');
+        const bar = el('span', 'mission-tracker__bar');
+        bar.setAttribute('aria-hidden', 'true');
+        bar.appendChild(el('span', 'mission-tracker__fill'));
+        a.append(step, text, status, bar);
+        li.appendChild(a);
+        list.appendChild(li);
+      });
+    }
+    const slots = $('#vaultSlots');
+    if (slots && !slots.children.length) {
+      ROOMS.forEach((room, i) => {
+        const wrap = el('div', 'vault-slot lock-word-group');
+        wrap.dataset.slot = room.key;
+        const id = `vaultWord-${room.key}`;
+        const label = el('label', 'vault-slot__label lock-word-label');
+        label.htmlFor = id;
+        label.append(el('span', 'vault-slot__num', String(i + 1)), document.createTextNode(room.vaultLabel));
+        const tag = el('span', 'vault-slot__tag', '');
+        tag.hidden = true;
+        label.appendChild(tag);
+        const input = el('input', 'lock-word');
+        input.id = id;
+        input.type = 'text';
+        input.maxLength = 12;
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+        input.setAttribute('autocapitalize', 'characters');
+        input.placeholder = 'Code word';
+        input.setAttribute('aria-label', `Code word ${i + 1} (${room.vaultLabel})`);
+        wrap.append(label, input);
+        slots.appendChild(wrap);
+      });
+    }
+  }
+  renderShell();
+
+  // -------------------- Progress rendering --------------------------------
 
   function computeCompleted(p){
     return PUZZLES.reduce((n, key) => n + (p[key] ? 1 : 0), 0);
+  }
+
+  function isVaultOpened(){
+    let local = false;
+    try { local = localStorage.getItem('vault_opened') === '1'; } catch (_) {}
+    return local || window.stateSync?.lastRemote?.vault?.opened === true;
   }
 
   function renderProgress(){
@@ -122,15 +168,11 @@
     const remoteState = window.stateSync?.lastRemote;
     const remoteMeta = remoteState?.progressMeta || {};
     const remoteProgress = remoteState?.progress || {};
-    const remoteVault = remoteState?.vault || {};
-    const vaultOpenedLocal = (() => {
-      try { return localStorage.getItem('vault_opened') === '1'; } catch { return false; }
-    })();
-    const vaultOpened = vaultOpenedLocal || remoteVault?.opened === true;
+    const vaultOpened = isVaultOpened();
     const done = computeCompleted(p);
 
     const status = $('#progressStatus');
-    if (status) status.textContent = `${done}/${PUZZLES.length} puzzles completed`;
+    if (status) status.textContent = `${done} of ${PUZZLES.length} rooms complete`;
 
     const overallPercent = Math.round((done / PUZZLES.length) * 100);
     const globalFill = $('#missionProgressFill');
@@ -149,12 +191,11 @@
       }
     }
 
-    document.querySelectorAll('.mission-tracker__item').forEach(item => {
-      item.classList.remove('is-next');
-    });
+    const nextPuzzle = PUZZLES.find(k => !p[k]);
 
-    PUZZLES.forEach(k => {
-      const btn = document.querySelector(`[data-puzzle="${k}"]`);
+    PUZZLES.forEach((k, i) => {
+      // Scope to the route list: vault.js also puts data-puzzle on header buttons.
+      const btn = document.querySelector(`#missionTrackerList .mission-tracker__item[data-puzzle="${k}"]`);
       const entry = meta?.[k];
       const remoteEntry = remoteMeta?.[k];
 
@@ -172,58 +213,73 @@
       }
       if (percent == null) percent = 0;
 
+      const complete = percent >= 100 && isComplete;
+      const isNext = !complete && k === nextPuzzle;
+      const started = !complete && percent > 0;
+
       if (btn) {
         const fillEl = btn.querySelector('.mission-tracker__fill');
         const progressLabel = btn.querySelector('.mission-tracker__progress');
+        const stepEl = btn.querySelector('.hub-step');
         if (fillEl) {
-          fillEl.style.width = `${percent}%`;
+          fillEl.style.width = `${complete ? 100 : percent}%`;
           fillEl.dataset.percent = String(percent);
         }
-        const complete = percent >= 100 && isComplete;
-        if (progressLabel) {
-          progressLabel.textContent = complete ? 'Complete' : `${percent}%`;
-        }
+        let label;
+        if (complete) label = 'Complete';
+        else if (started) label = `In progress · ${percent}%`;
+        else if (isNext) label = 'Up next';
+        else label = 'Not started';
+        if (progressLabel) progressLabel.textContent = label;
+        if (stepEl) stepEl.textContent = complete ? '✓' : String(i + 1);
         btn.classList.toggle('is-complete', complete);
+        btn.classList.toggle('is-next', isNext);
+        btn.classList.toggle('is-started', started && !isNext);
+        btn.classList.toggle('is-later', !complete && !isNext && !started);
+        btn.parentElement?.classList.toggle('is-done', complete);
         btn.dataset.progressPercent = String(percent);
         btn.dataset.progressComplete = complete ? 'true' : 'false';
-        const ariaPercent = complete ? 'complete' : `${percent}% complete`;
-        btn.setAttribute('aria-label', `${PUZZLE_LABELS[k]} — ${ariaPercent}`);
+        if (isNext) btn.setAttribute('aria-current', 'step'); else btn.removeAttribute('aria-current');
+        btn.setAttribute('aria-label', `Room ${i + 1}: ${ROOMS[i].label} — ${label}`);
       }
     });
 
-    const nextPuzzle = PUZZLES.find(k => !p[k]);
+    // One obvious next action.
     const nextTag = $('#nextPuzzleTag');
     const nextHint = $('#nextPuzzleHint');
+    const startBtn = $('#startChallengesBtn');
+    const setBtn = (text, href) => {
+      if (!startBtn) return;
+      startBtn.href = href;
+      startBtn.textContent = '';
+      startBtn.append(document.createTextNode(text + ' '));
+      const arrow = el('span', null, '→');
+      arrow.setAttribute('aria-hidden', 'true');
+      startBtn.appendChild(arrow);
+    };
     if (nextPuzzle) {
-      document.querySelector(`[data-puzzle="${nextPuzzle}"]`)?.classList.add('is-next');
-      if (nextTag) {
-        nextTag.textContent = PUZZLE_LABELS[nextPuzzle] || nextPuzzle;
-        nextTag.classList.remove('is-complete');
-      }
+      const room = ROOM_BY_KEY[nextPuzzle];
+      const n = room.index + 1;
+      const pct = Number(document.querySelector(`#missionTrackerList [data-puzzle="${nextPuzzle}"]`)?.dataset.progressPercent || 0);
+      const verb = pct > 0 ? 'Continue' : 'Start';
+      if (nextTag) nextTag.textContent = done === 0 ? 'Start here' : 'Your next step';
+      setBtn(`${verb} Room ${n}: ${room.label}`, room.path);
       if (nextHint) {
-        nextHint.textContent = PUZZLE_HINTS[nextPuzzle] || 'Tackle the next puzzle to keep momentum.';
+        nextHint.textContent = done === 0
+          ? room.blurb
+          : `Nice work — ${done} down, ${PUZZLES.length - done} to go. Got a code word? Type it into the vault first.`;
       }
+    } else if (vaultOpened) {
+      if (nextTag) nextTag.textContent = 'Mission complete';
+      setBtn('Vault cracked! See your results', 'celebration.html');
+      if (nextHint) nextHint.textContent = 'All six rooms solved and the vault is open. Bonus missions are below.';
     } else {
-      if (nextTag) {
-        nextTag.textContent = 'Vault ready';
-        nextTag.classList.add('is-complete');
-      }
-      if (nextHint) {
-        nextHint.textContent = 'All digits secured! Enter the code and open the chest.';
-      }
+      if (nextTag) nextTag.textContent = 'Final step';
+      setBtn('Open the vault', '#vaultHeading');
+      if (nextHint) nextHint.textContent = 'All six rooms solved! Type all six code words into the vault and crack it.';
     }
 
-    const startBtn = $('#startChallengesBtn');
-    if (startBtn) {
-      if (nextPuzzle) {
-        const path = PUZZLE_PATHS[nextPuzzle] || 'phishing.html';
-        startBtn.href = path;
-        startBtn.textContent = `Go to ${PUZZLE_LABELS[nextPuzzle] || nextPuzzle}`;
-      } else {
-        startBtn.href = '#lockOpenBtn';
-        startBtn.textContent = 'Open the vault';
-      }
-    }
+    renderSlots(p, remoteProgress);
 
     const bonusEl = $('#bonusCallout');
     if (bonusEl) {
@@ -240,9 +296,31 @@
     }
   }
 
+  // Visual state of each vault slot: earned (room solved) / filled (word typed).
+  function renderSlots(p, remoteProgress){
+    const progress = p || readProgress();
+    const remote = remoteProgress || window.stateSync?.lastRemote?.progress || {};
+    const allFilled = wordInputs.length > 0 && wordInputs.every(i => (i.value || '').trim());
+    unlockBtn?.classList.toggle('is-ready', allFilled);
+    $$('#vaultSlots .vault-slot').forEach(slot => {
+      const key = slot.dataset.slot;
+      const earned = Boolean(progress[key]) || Boolean(remote[key]);
+      const input = slot.querySelector('.lock-word');
+      const filled = Boolean((input?.value || '').trim());
+      slot.classList.toggle('is-earned', earned);
+      slot.classList.toggle('is-filled', filled);
+      const tag = slot.querySelector('.vault-slot__tag');
+      if (tag) {
+        tag.hidden = !earned;
+        tag.textContent = earned ? (filled ? '✓' : 'Earned') : '';
+      }
+      if (input) input.placeholder = earned && !filled ? 'Type it here' : 'Code word';
+    });
+  }
+
   // -------------------- Lock helpers --------------------------------------
 
-  const digits = $$('.lock-digit');
+  const wordInputs = $$('.lock-word');
   const unlockBtn = $('#unlockBtn');
   const clearBtn  = $('#clearCodeBtn');
   const chest     = $('#vaultChest');
@@ -257,48 +335,57 @@
     if (msg) announce(msg);
   }
 
-  function getCode(){
-    return digits.map(i => (i.value || '').trim()).join('');
+  function getPassphrase(){
+    return wordInputs.map(i => (i.value || '').trim().toUpperCase()).join('');
   }
 
   function clearCode(){
-    digits.forEach(d => d.value = '');
-    digits[0]?.focus();
+    wordInputs.forEach(d => d.value = '');
+    wordInputs[0]?.focus();
     setFeedback('');
   }
 
-  function autoAdvanceWire(){
-    digits.forEach((input, idx) => {
-      input.setAttribute('maxlength','1');
+  // Words the team has typed into the vault, saved per team and synced via state-sync.
+  function entriesKey(){ return `${readUser()?.username || 'team'}_vault_entries`; }
 
-      input.addEventListener('input', (e) => {
-        const v = input.value.replace(/\D/g, '');
-        input.value = v.slice(-1); // keep last digit only
-        if (v && idx < digits.length - 1) digits[idx+1].focus();
-      });
+  function readEntries(){
+    try { return JSON.parse(localStorage.getItem(entriesKey()) || '{}') || {}; } catch { return {}; }
+  }
 
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Backspace' && !input.value && idx > 0) {
-          digits[idx-1].focus();
-          digits[idx-1].value = '';
-          e.preventDefault();
-        }
-        if (e.key === 'ArrowLeft' && idx > 0) { digits[idx-1].focus(); e.preventDefault(); }
-        if (e.key === 'ArrowRight' && idx < digits.length-1) { digits[idx+1].focus(); e.preventDefault(); }
-      });
+  function saveEntries(){
+    const entries = {};
+    wordInputs.forEach((input, idx) => {
+      const word = (input.value || '').trim().toUpperCase();
+      if (word) entries[VAULT_WORDS[idx]] = word;
+    });
+    try { localStorage.setItem(entriesKey(), JSON.stringify(entries)); } catch (_) {}
+    window.stateSync?.queueSave?.('vault-entry');
+  }
 
-      // Allow pasting all 4 digits at once
-      input.addEventListener('paste', (e) => {
-        const text = (e.clipboardData || window.clipboardData).getData('text');
-        if (!text) return;
-        e.preventDefault();
-        const numbers = (text.match(/\d/g) || []).slice(0, 4);
-        numbers.forEach((n, j) => { if (digits[j]) digits[j].value = n; });
-        digits[Math.min(numbers.length, 3)]?.focus();
+  function restoreEntries(){
+    const entries = readEntries();
+    wordInputs.forEach((input, idx) => {
+      const saved = entries[VAULT_WORDS[idx]];
+      if (saved && !input.value && document.activeElement !== input) input.value = saved;
+    });
+    renderSlots();
+  }
+
+  function initVaultInputs(){
+    restoreEntries();
+    wordInputs.forEach(input => {
+      input.addEventListener('input', () => {
+        input.value = input.value.toUpperCase();
+        saveEntries();
+        renderSlots();
+        if (feedback?.classList.contains('warn')) setFeedback('');
       });
     });
-
-    clearBtn?.addEventListener('click', clearCode);
+    clearBtn?.addEventListener('click', () => {
+      clearCode();
+      saveEntries();
+      renderSlots();
+    });
   }
 
   // SHA-256 hex
@@ -308,59 +395,41 @@
     return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join('');
   }
 
-  // If developer provided cleartext via window.VAULT_CODE, derive hash at runtime
-  let derivedHashPromise = null;
-  if (typeof window.VAULT_CODE === 'string' && window.VAULT_CODE.length === 4) {
-    derivedHashPromise = sha256Hex(window.VAULT_CODE);
-  }
-
-  async function correctHash(){
-    if (derivedHashPromise) return derivedHashPromise;
-    return CORRECT_CODE_HASH;
-  }
-
   function allPuzzlesComplete(){
     const p = readProgress();
     return PUZZLES.every(k => !!p[k]);
   }
 
   async function tryUnlock(){
-    const code = getCode();
-    if (code.length !== digits.length) {
-      setFeedback(`Enter all ${digits.length} digits.`);
+    const passphrase = getPassphrase();
+    const filledCount = wordInputs.filter(i => (i.value || '').trim().length > 0).length;
+    if (filledCount < wordInputs.length) {
+      setFeedback(`The vault needs all ${wordInputs.length} code words. You have ${filledCount} of ${wordInputs.length} so far.`);
       return;
     }
 
     if (!allPuzzlesComplete()) {
-      setFeedback(`Finish all ${PUZZLES.length} puzzles before unlocking the vault.`);
+      setFeedback(`Solve all ${PUZZLES.length} rooms before cracking the vault.`);
       return;
     }
 
-    const expect = await correctHash();
-    if (!expect || expect === 'REPLACE_WITH_SHA256_OF_CODE') {
-      setFeedback('Vault not configured yet. Ask your facilitator to set the code.', false);
-      return;
-    }
-
-    const h = await sha256Hex(code);
-    if (h === expect) {
-      setFeedback('Vault unlocked!', true);
-      chest?.classList.add('open'); // your CSS animates this
+    const h = await sha256Hex(passphrase);
+    if (h === CORRECT_CODE_HASH) {
+      setFeedback('Vault cracked! Operation complete.', true);
+      chest?.classList.add('open');
       openBtn?.setAttribute('aria-label', 'Vault open');
-      announce('Vault unlocked');
+      announce('Vault cracked');
       unlockBtn?.setAttribute('disabled', 'true');
       try {
         localStorage.setItem('vault_opened', '1');
-      } catch (_) {
-        /* ignore storage issues */
-      }
+      } catch (_) {}
       window.stateSync?.queueSave?.('vault-opened');
       renderProgress();
       setTimeout(() => {
         window.location.href = 'celebration.html';
       }, 1200);
     } else {
-      setFeedback('Incorrect code. Keep playing to confirm your digits.');
+      setFeedback('The vault stays locked. Check that each word is in the right slot and spelled exactly as the room showed it.');
     }
   }
 
@@ -493,13 +562,8 @@
         renderTeamName();
       }
     });
-    const how = document.getElementById('lockHow');
-    if (how){
-      const [a,b,c,d,e] = computeLockDigits().map(v => v || '?');
-      how.textContent = `Hint: digits → (1) phishing count = ${a} • (2) shift = ${b} • (3) minutes to crack ≈ ${c} • (4) ASD Essential Eight controls = ${d} • (5) binary product ones digit = ${e}`;
-    }
-
-    autoAdvanceWire();
+    initVaultInputs();
+    window.addEventListener('state-sync:applied', restoreEntries);
     initScoreboard();
 
     if (aliasInput) {
@@ -518,9 +582,26 @@
 
     unlockBtn?.addEventListener('click', tryUnlock);
 
-    // Optional: allow pressing Enter in last digit to attempt unlock
-    const lastDigit = digits[digits.length - 1];
-    lastDigit?.addEventListener('keydown', (e) => {
+    // "Open the vault" call-to-action: jump to the first empty slot.
+    $('#startChallengesBtn')?.addEventListener('click', (e) => {
+      const href = e.currentTarget.getAttribute('href') || '';
+      if (!href.startsWith('#')) return;
+      e.preventDefault();
+      $('#vaultChest')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const target = wordInputs.find(i => !(i.value || '').trim()) || unlockBtn;
+      setTimeout(() => target?.focus({ preventScroll: true }), 350);
+    });
+
+    // Enter in any slot moves to the next one; Enter in the last slot tries the vault.
+    wordInputs.forEach((input, idx) => {
+      if (idx === wordInputs.length - 1) return;
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); wordInputs[idx + 1]?.focus(); }
+      });
+    });
+
+    const lastWord = wordInputs[wordInputs.length - 1];
+    lastWord?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); tryUnlock(); }
     });
   });

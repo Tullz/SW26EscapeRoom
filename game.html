@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Choose puzzles, track progress, and unlock the vault in Cyber Escape Rooms." />
+  <meta name="description" content="Mission Hub: work through six security rooms, collect a code word from each and crack the vault." />
   <link rel="icon" href="assets/favicon.png" type="image/png" />
 
   <!-- Tight CSP (local assets only) -->
@@ -16,9 +16,8 @@
                  object-src 'none';
                  base-uri 'self'">
 
-  <title>Cyber Escape Rooms — Game</title>
+  <title>Cyber Escape Rooms — Mission Hub</title>
 
-  <!-- External files only -->
   <link rel="stylesheet" href="css/styles.css" />
   <script src="js/accessibility.js" defer></script>
   <script src="js/utils.js" defer></script>
@@ -26,261 +25,543 @@
   <script src="js/session.js" defer></script>
   <script src="js/vault.js" defer></script>
   <script src="js/game.js" defer></script>
+
+  <style>
+    /* ===== Mission Hub (game.html only) ================================== */
+    .hub-page [hidden] { display: none !important; }
+
+    .hub {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding-block: clamp(1rem, 3vw, 2rem) 0;
+      display: grid;
+      gap: 1.25rem;
+    }
+
+    /* ---- Hero: mission + next step ---- */
+    .hub-hero {
+      padding: clamp(1.25rem, 3vw, 2rem);
+      background:
+        radial-gradient(120% 140% at 100% 0%, rgba(9, 255, 136, .08), transparent 55%),
+        linear-gradient(160deg, rgba(88, 166, 255, .10), rgba(17, 22, 29, .95) 60%);
+      border-color: rgba(88, 166, 255, .28);
+      display: grid;
+      gap: 1.25rem;
+      grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+      align-items: center;
+    }
+    .hub-eyebrow {
+      font-size: .78rem;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0 0 .35rem;
+    }
+    .hub-eyebrow strong { color: var(--accent); letter-spacing: .12em; }
+    .hub-hero h1.glow {
+      font-size: clamp(1.9rem, 4vw, 2.7rem);
+      margin: 0 0 .6rem;
+    }
+    .hub-lead {
+      margin: 0;
+      font-size: 1.05rem;
+      color: var(--ink);
+      max-width: 38rem;
+    }
+    .hub-lead strong { color: #fff; }
+
+    .hub-next {
+      background: rgba(10, 14, 20, .65);
+      border: 1px solid rgba(9, 255, 136, .35);
+      border-radius: 14px;
+      padding: 1.1rem 1.2rem;
+      display: grid;
+      gap: .6rem;
+    }
+    .hub-next__label {
+      margin: 0;
+      font-size: .75rem;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .hub-next__btn.btn {
+      font-size: 1.08rem;
+      padding: .95rem 1.1rem;
+      justify-content: space-between;
+      gap: .75rem;
+      text-align: left;
+      white-space: normal;
+      background: var(--accent);
+      color: #06140d;
+      border-color: transparent;
+      font-weight: 700;
+    }
+    .hub-next__btn.btn:hover { box-shadow: 0 10px 24px rgba(9, 255, 136, .25); }
+    .hub-next__hint { margin: 0; color: var(--muted); font-size: .92rem; }
+
+    .hub-stats {
+      display: flex;
+      align-items: center;
+      gap: .5rem 1.25rem;
+      flex-wrap: wrap;
+      font-size: .9rem;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      padding-top: .7rem;
+      margin-top: .1rem;
+    }
+    .hub-progress { flex: 1 1 10rem; display: grid; gap: .35rem; }
+    .hub-progress__track {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(88, 166, 255, .14);
+      overflow: hidden;
+    }
+    .hub-progress__fill {
+      height: 100%;
+      width: 0;
+      background: linear-gradient(90deg, var(--brand), var(--accent));
+      transition: width .4s ease;
+    }
+    .hub-score strong {
+      color: #fff;
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 1.05rem;
+    }
+    .hub-score .points-box__delta { display: inline; margin: 0 0 0 .35rem; font-size: .82rem; }
+
+    /* ---- Body: path + vault ---- */
+    .hub-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+      gap: 1.25rem;
+      align-items: start;
+    }
+    .hub-section-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: .75rem;
+      margin-bottom: .9rem;
+    }
+    .hub-section-title h2 { margin: 0; font-size: 1.2rem; }
+    .hub-section-title p { margin: 0; color: var(--muted); font-size: .88rem; }
+
+    /* Room path (timeline) */
+    .hub-path { padding: clamp(1rem, 2.5vw, 1.4rem); }
+    .hub-path .mission-tracker__list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: .55rem;
+      position: relative;
+    }
+    .hub-path .mission-tracker__list li { position: relative; }
+    .hub-path .mission-tracker__list li:not(:last-child)::after {
+      content: "";
+      position: absolute;
+      left: calc(1rem + 17px);
+      top: calc(50% + 18px);
+      height: calc(100% - 36px + .55rem);
+      width: 2px;
+      background: var(--border);
+      z-index: 0;
+    }
+    .hub-path .mission-tracker__list li.is-done:not(:last-child)::after { background: rgba(9, 255, 136, .45); }
+
+    .hub-path .mission-tracker__item {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: .9rem;
+      padding: .75rem 1rem;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      background: transparent;
+      box-shadow: none;
+      position: relative;
+      z-index: 1;
+      overflow: hidden;
+    }
+    .hub-path .mission-tracker__item:hover,
+    .hub-path .mission-tracker__item:focus-visible {
+      transform: none;
+      background: rgba(88, 166, 255, .07);
+      border-color: rgba(88, 166, 255, .35);
+      box-shadow: none;
+    }
+    .hub-path .mission-tracker__item:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+    .hub-step {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-weight: 700;
+      font-family: "JetBrains Mono", Consolas, monospace;
+      background: var(--panel);
+      border: 2px solid var(--border);
+      color: var(--muted);
+    }
+    .hub-room__name {
+      display: block;
+      font-weight: 600;
+      color: var(--ink);
+      font-size: 1rem;
+    }
+    .hub-room__blurb {
+      display: block;
+      color: var(--muted);
+      font-size: .86rem;
+      line-height: 1.4;
+      margin-top: .1rem;
+    }
+    .hub-path .mission-tracker__progress {
+      font-family: inherit;
+      font-size: .74rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      color: var(--muted);
+      padding: .28rem .6rem;
+      border-radius: 999px;
+      border: 1px solid transparent;
+    }
+    .hub-path .mission-tracker__bar {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 3px;
+      margin: 0;
+      border-radius: 0;
+      background: transparent;
+    }
+    .hub-path .mission-tracker__fill { background: linear-gradient(90deg, var(--brand), var(--accent)); }
+
+    /* next */
+    .hub-path .mission-tracker__item.is-next {
+      background: rgba(9, 255, 136, .07);
+      border-color: rgba(9, 255, 136, .5);
+      box-shadow: 0 0 0 1px rgba(9, 255, 136, .12), 0 10px 24px rgba(9, 255, 136, .08);
+    }
+    .hub-path .mission-tracker__item.is-next .hub-step {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(9, 255, 136, .1);
+    }
+    .hub-path .mission-tracker__item.is-next .hub-room__name { color: #fff; }
+    .hub-path .mission-tracker__item.is-next .mission-tracker__progress {
+      color: #06140d;
+      background: var(--accent);
+    }
+    /* complete */
+    .hub-path .mission-tracker__item.is-complete .hub-step {
+      background: rgba(9, 255, 136, .9);
+      border-color: transparent;
+      color: #06140d;
+    }
+    .hub-path .mission-tracker__item.is-complete .hub-room__name { color: var(--ink); }
+    .hub-path .mission-tracker__item.is-complete .mission-tracker__progress {
+      color: var(--accent);
+      border-color: rgba(9, 255, 136, .35);
+    }
+    .hub-path .mission-tracker__item.is-complete .mission-tracker__bar { display: none; }
+    /* later */
+    .hub-path .mission-tracker__item.is-later { opacity: .72; }
+    .hub-path .mission-tracker__item.is-later:hover,
+    .hub-path .mission-tracker__item.is-later:focus-visible { opacity: 1; }
+    .hub-path .mission-tracker__item.is-started .mission-tracker__progress { color: var(--brand); border-color: rgba(88, 166, 255, .35); }
+
+    /* Vault */
+    .hub-vault {
+      padding: clamp(1rem, 2.5vw, 1.4rem);
+      border-color: rgba(255, 196, 87, .3);
+      background: linear-gradient(180deg, rgba(255, 196, 87, .06), var(--panel) 40%);
+      position: sticky;
+      top: 6.5rem;
+    }
+    .hub-vault__head { display: flex; gap: .8rem; align-items: flex-start; margin-bottom: 1rem; }
+    .hub-vault__icon {
+      flex: 0 0 auto;
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      display: grid; place-items: center;
+      background: rgba(255, 196, 87, .12);
+      border: 1px solid rgba(255, 196, 87, .4);
+      color: #ffc457;
+    }
+    .hub-vault__icon svg { width: 24px; height: 24px; }
+    .hub-vault__icon .shackle-open { display: none; }
+    .hub-vault.open .hub-vault__icon .shackle-open { display: inline; }
+    .hub-vault.open .hub-vault__icon .shackle-closed { display: none; }
+    .hub-vault__head h2 { margin: 0 0 .2rem; font-size: 1.2rem; color: #ffc457; }
+    .hub-vault__head p { margin: 0; color: var(--muted); font-size: .9rem; line-height: 1.45; }
+
+    .vault-slots {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: .65rem;
+    }
+    .vault-slot { display: grid; gap: .3rem; }
+    .vault-slot__label {
+      width: auto;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      font-size: .78rem;
+      font-weight: 600;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .vault-slot__num {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      color: var(--muted);
+      opacity: .8;
+    }
+    .vault-slot__tag {
+      margin-left: auto;
+      font-size: .68rem;
+      letter-spacing: .06em;
+      color: var(--accent);
+      text-transform: none;
+      font-weight: 600;
+    }
+    .hub-vault .lock-word {
+      width: 100%;
+      max-width: none;
+      height: 2.6rem;
+      font-size: 1rem;
+      letter-spacing: .14em;
+      border: 2px dashed rgba(139, 148, 158, .45);
+      background: rgba(10, 14, 20, .8);
+    }
+    .hub-vault .lock-word::placeholder { color: rgba(139, 148, 158, .5); letter-spacing: .04em; font-weight: 400; text-transform: none; }
+    .hub-vault .lock-word:focus { transform: none; border-color: var(--brand); border-style: solid; }
+    .vault-slot.is-earned .lock-word { border-color: rgba(9, 255, 136, .55); border-style: solid; }
+    .vault-slot.is-earned .lock-word::placeholder { color: rgba(9, 255, 136, .6); }
+    .vault-slot.is-filled .lock-word { border-style: solid; border-color: var(--brand); color: #fff; }
+    .vault-slot.is-earned.is-filled .lock-word { border-color: var(--accent); }
+
+    .hub-vault .lock-actions { justify-content: stretch; margin-top: 1rem; gap: .6rem; }
+    .hub-vault #unlockBtn { flex: 1 1 auto; font-weight: 700; }
+    .hub-vault #unlockBtn:not(.is-ready) { background: transparent; color: #ffc457; border: 2px solid rgba(255, 196, 87, .55); }
+    .hub-vault #unlockBtn.is-ready { background: #ffc457; color: #1a1204; border-color: transparent; }
+    .hub-vault #unlockBtn[disabled] { opacity: .6; cursor: default; }
+    #lockFeedback { margin: .75rem 0 0; min-height: 1.4em; font-size: .92rem; }
+    #lockFeedback.ok { color: var(--accent); }
+    #lockFeedback.warn { color: var(--warn); }
+    .hub-vault.open { border-color: rgba(9, 255, 136, .6); }
+
+    /* Secondary: scoring & help */
+    .hub-more { padding: 0; }
+    .hub-more > summary {
+      cursor: pointer;
+      padding: .9rem 1.2rem;
+      color: var(--muted);
+      font-size: .92rem;
+      list-style-position: inside;
+    }
+    .hub-more > summary:hover { color: var(--ink); }
+    .hub-more__body { padding: 0 1.2rem 1.1rem; display: grid; gap: .6rem; color: var(--muted); font-size: .92rem; }
+    .hub-more__body p { margin: 0; }
+    .hub-more .score-log { margin: 0; }
+
+    .hub-footer { text-align: center; color: var(--muted); font-size: .8rem; margin: 1.5rem 0 .5rem; }
+
+    /* Header on the hub: brand, vault tracker, logout only */
+    .hub-page .site-header .header-actions { flex-wrap: nowrap; }
+
+    @media (max-width: 900px) {
+      .hub-hero { grid-template-columns: 1fr; }
+      .hub-body { grid-template-columns: 1fr; }
+      .hub-vault { position: static; }
+    }
+    @media (max-width: 720px) {
+      .hub-page .site-header__inner {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: .6rem;
+        padding: .6rem .75rem;
+      }
+      .hub-page .site-header .header-left { flex: 1 1 0; min-width: 0; width: auto; }
+      .hub-page .site-header .brand-tagline { display: none; }
+      .hub-page .site-header .header-actions { display: contents; }
+      .hub-page .header-actions .nav-btn--logout { order: 1; flex: 0 0 auto; }
+      .hub-page .header-actions .vault-status { order: 2; width: 100%; justify-content: center; }
+    }
+    @media (max-width: 520px) {
+      .hub { gap: 1rem; }
+      .hub-path .mission-tracker__item {
+        grid-template-columns: 32px minmax(0, 1fr);
+        gap: .75rem;
+        padding: .7rem .75rem;
+      }
+      .hub-step { width: 32px; height: 32px; }
+      .hub-path .mission-tracker__list li:not(:last-child)::after { left: calc(.75rem + 15px); }
+      .hub-path .mission-tracker__progress { grid-column: 2; justify-self: start; margin-top: -.25rem; }
+      .hub-path .mission-tracker__item.is-later .mission-tracker__progress { display: none; }
+      .hub-section-title { flex-direction: column; gap: .2rem; }
+    }
+  </style>
 </head>
 
-<body data-session="team">
+<body data-session="team" class="hub-page">
   <a class="skip-link" href="#main">Skip to content</a>
 
   <!-- Global Header -->
   <header class="site-header site-header--bar" aria-label="Global">
     <div class="site-header__inner">
       <div class="header-left">
-        <button class="nav-btn ghost nav-btn--back" type="button" data-back="index.html" data-tooltip="Back to previous page">
-          <span aria-hidden="true">←</span>
-          <span>Back</span>
-        </button>
         <a class="brand" href="game.html">
           <img src="assets/logo.png" alt="" class="logo" />
           <span class="brand-copy">
             <span class="brand-name">Cyber Escape Rooms</span>
-            <span class="brand-tagline">Team-based security missions</span>
+            <span class="brand-tagline">Mission Hub</span>
           </span>
         </a>
       </div>
 
       <div class="header-actions">
-        <nav class="main-nav" aria-label="Primary">
-          <a class="nav-link" href="game.html">Mission Hub</a>
-        </nav>
         <div class="vault-status" id="vaultStatus" role="status" aria-live="polite" data-visible="team">
           <span class="vault-status__label">Vault</span>
           <ol class="vault-status__digits">
             <li data-vault-key="phishing">•</li>
-            <li data-vault-key="encryption">•</li>
-            <li data-vault-key="password">•</li>
-            <li data-vault-key="essential">•</li>
-            <li data-vault-key="binary">•</li>
+            <li data-vault-key="osint">•</li>
+            <li data-vault-key="incident">•</li>
+            <li data-vault-key="mfa">•</li>
+            <li data-vault-key="supply">•</li>
+            <li data-vault-key="forensics">•</li>
           </ol>
-          <span class="vault-status__count">0/5</span>
+          <span class="vault-status__count">0/6</span>
         </div>
         <button class="nav-btn alert nav-btn--logout" type="button" data-action="logout">Logout</button>
       </div>
     </div>
   </header>
 
-  <main class="game-wrapper container" id="main" role="main" tabindex="-1">
-    <header class="game-header">
-      <h1 class="glow">Cyber Escape Rooms</h1>
-      <p class="game-header__welcome">Welcome, <span id="teamName" data-user-name>TEAM</span>!</p>
-    </header>
+  <main class="hub" id="main" role="main" tabindex="-1">
 
-    <section class="intro-banner mt-2" aria-labelledby="missionBriefingHeading">
-      <h2 id="missionBriefingHeading">Mission Briefing</h2>
-      <p>You are racing rival crews to crack the vault. Solve each puzzle in order, bank the digit it reveals, and keep your score high—every hint or incorrect move costs precious points.</p>
-      <ol>
-        <li><strong>Step 1:</strong> Start with the highlighted puzzle below. It represents your next objective.</li>
-        <li><strong>Step 2:</strong> Note the digit you earn and enter it on the vault lock to the right.</li>
-        <li><strong>Step 3:</strong> Repeat until all five digits are filled, then unlock the chest to win.</li>
-      </ol>
-      <p id="scoreExplainer">Teams begin with a full score. Staying accurate and avoiding unnecessary hints keeps your total at the top of the leaderboard.</p>
+    <!-- 1. Mission + the one thing to do next -->
+    <section class="card hub-hero" aria-labelledby="hubTitle">
+      <div>
+        <p class="hub-eyebrow">Team <strong id="teamName" data-user-name>TEAM</strong></p>
+        <h1 class="glow" id="hubTitle">Crack the vault</h1>
+        <p class="hub-lead">Solve <strong>6 security rooms</strong> (about 15 minutes each). Every room you solve reveals a <strong>code word</strong> — type it into the vault below. All 6 words open the vault.</p>
+      </div>
+
+      <div class="hub-next" aria-live="polite">
+        <p class="hub-next__label" id="nextPuzzleTag">Your next step</p>
+        <a class="btn hub-next__btn" href="phishing.html" id="startChallengesBtn">Start Room 1: Phishing Spotter <span aria-hidden="true">→</span></a>
+        <p class="hub-next__hint" id="nextPuzzleHint">Loading your team's progress…</p>
+        <div class="hub-stats">
+          <div class="hub-progress">
+            <span id="progressStatus">0 of 6 rooms complete</span>
+            <div class="hub-progress__track" aria-hidden="true"><div class="hub-progress__fill" id="missionProgressFill"></div></div>
+          </div>
+          <p class="hub-score" style="margin:0">Score <strong id="scoreTotal">100</strong> pts<span class="points-box__delta" id="missionPointsDelta" aria-live="polite"></span></p>
+        </div>
+      </div>
     </section>
 
-    <!-- Mission layout -->
-    <section class="dashboard-grid mt-2" aria-label="Cyber mission layout">
-      <section class="card mission-card" aria-labelledby="missionHeading">
-        <header class="mission-card__header">
-          <h2 id="missionHeading">Mission Hub</h2>
-          <p class="muted">Launch puzzles, monitor progress, and stay ahead of rival crews.</p>
-        </header>
+    <div class="hub-body">
+      <!-- 2. The rooms, in order -->
+      <section class="card hub-path mission-tracker" aria-labelledby="pathHeading">
+        <div class="hub-section-title">
+          <h2 id="pathHeading">Your route</h2>
+          <p>Go in order, 1 → 6. Tap a room to enter it.</p>
+        </div>
+        <!-- Rendered by js/game.js from its ROOMS list -->
+        <ol class="mission-tracker__list" id="missionTrackerList"></ol>
+      </section>
 
-        <div class="mission-brief" aria-live="polite">
-          <p class="mission-brief__title">Current Objective</p>
-          <p class="mission-brief__next">
-            <span>Next up:</span>
-            <span class="tag" id="nextPuzzleTag">Loading…</span>
-            <span id="nextPuzzleHint">Complete the highlighted puzzle to progress.</span>
-          </p>
-          <a class="btn mt-1" href="phishing.html" id="startChallengesBtn">Start challenges</a>
+      <!-- 3. The goal: the vault -->
+      <section class="card hub-vault" id="vaultChest" aria-labelledby="vaultHeading">
+        <div class="hub-vault__head">
+          <span class="hub-vault__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="11" width="16" height="10" rx="2"/>
+              <path class="shackle-closed" d="M8 11V7a4 4 0 0 1 8 0v4"/>
+              <path class="shackle-open" d="M8 11V7a4 4 0 0 1 7.5-2"/>
+              <circle cx="12" cy="16" r="1.5"/>
+            </svg>
+          </span>
+          <div>
+            <h2 id="vaultHeading">The Vault</h2>
+            <p>When a room gives you its code word, type it into that room's slot. Words save automatically for your whole team.</p>
+          </div>
         </div>
 
-        <section class="status-hud mt-2" aria-label="Team status">
-          <div class="points-box">
-            <p class="points-box__label">Team points</p>
-            <p class="points-box__value" id="scoreTotal">000</p>
-            <button class="btn ghost sm" type="button" id="scoreLogBtn">View log</button>
-            <p class="points-box__delta" id="missionPointsDelta" aria-live="polite"></p>
-          </div>
-          <div class="progress-mini">
-            <p class="progress-mini__label">Overall progress</p>
-            <div class="progress-mini__track">
-              <div class="progress-mini__fill" id="missionProgressFill"></div>
-            </div>
-            <p class="progress-mini__text" id="progressStatus">0/5 puzzles completed</p>
-          </div>
-        </section>
+        <!-- Rendered by js/game.js: one .lock-word input per room, in room order -->
+        <div class="vault-slots" id="vaultSlots"></div>
 
+        <div class="lock-actions">
+          <button class="btn primary" id="unlockBtn" type="button">Crack the vault</button>
+          <button class="btn ghost sm" id="clearCodeBtn" type="button">Clear</button>
+        </div>
+        <p id="lockFeedback" aria-live="polite"></p>
+      </section>
+    </div>
+
+    <!-- Secondary info, tucked away -->
+    <details class="card hub-more">
+      <summary>How scoring works</summary>
+      <div class="hub-more__body">
+        <p>Your team starts with 100 points. Asking for a hint or giving a wrong answer costs a few points, so think before you click. Highest score at the end wins.</p>
+        <p>Stuck on a room? Use its hint button, or ask a facilitator.</p>
+        <p><button class="btn ghost sm" type="button" id="scoreLogBtn">View score log</button></p>
         <div id="scoreLog" class="score-log" hidden></div>
+      </div>
+    </details>
 
-        <div class="mission-tracker mt-2">
-          <ul class="mission-tracker__list" id="missionTrackerList">
-            <li>
-              <a class="mission-tracker__item" href="phishing.html" data-puzzle="phishing">
-                <div class="mission-tracker__header">
-                  <span class="mission-tracker__name">🐟 Phishing Spotter</span>
-                  <span class="mission-tracker__progress">0%</span>
-                </div>
-                <div class="mission-tracker__bar"><span class="mission-tracker__fill"></span></div>
-                <p class="mission-tracker__hint">Spot phishing clues and earn the first digit.</p>
-              </a>
-            </li>
-            <li>
-              <a class="mission-tracker__item" href="password.html" data-puzzle="password">
-                <div class="mission-tracker__header">
-                  <span class="mission-tracker__name">🔐 Password Puzzle</span>
-                  <span class="mission-tracker__progress">0%</span>
-                </div>
-                <div class="mission-tracker__bar"><span class="mission-tracker__fill"></span></div>
-                <p class="mission-tracker__hint">Crack the weak password to reveal digit two.</p>
-              </a>
-            </li>
-            <li>
-              <a class="mission-tracker__item" href="encryption.html" data-puzzle="encryption">
-                <div class="mission-tracker__header">
-                  <span class="mission-tracker__name">🌀 Encryption</span>
-                  <span class="mission-tracker__progress">0%</span>
-                </div>
-                <div class="mission-tracker__bar"><span class="mission-tracker__fill"></span></div>
-                <p class="mission-tracker__hint">Dial in the Caesar shift to learn digit three.</p>
-              </a>
-            </li>
-            <li>
-              <a class="mission-tracker__item" href="essential.html" data-puzzle="essential">
-                <div class="mission-tracker__header">
-                  <span class="mission-tracker__name">🛡 ASD Essentials</span>
-                  <span class="mission-tracker__progress">0%</span>
-                </div>
-                <div class="mission-tracker__bar"><span class="mission-tracker__fill"></span></div>
-                <p class="mission-tracker__hint">Match the ASD Essential Eight controls for digit four.</p>
-              </a>
-            </li>
-            <li>
-              <a class="mission-tracker__item" href="binary.html" data-puzzle="binary">
-                <div class="mission-tracker__header">
-                  <span class="mission-tracker__name">🧮 Binary Lab</span>
-                  <span class="mission-tracker__progress">0%</span>
-                </div>
-                <div class="mission-tracker__bar"><span class="mission-tracker__fill"></span></div>
-                <p class="mission-tracker__hint">Finish the binary math to capture the final digit.</p>
-              </a>
-            </li>
-          </ul>
+    <!-- Only shown after the vault has been cracked -->
+    <section class="card endless-callout" id="bonusCallout" aria-hidden="true" hidden>
+      <h2>Bonus Missions Ready</h2>
+      <p class="muted">Vault cracked! Keep the crew sharp with optional bonus missions. They don't affect the main leaderboard.</p>
+      <div id="playerAliasCard" class="player-alias" hidden aria-hidden="true">
+        <div>
+          <label class="player-alias__label" for="playerAliasInput">Player name (optional)</label>
+          <input id="playerAliasInput" type="text" maxlength="40" placeholder="Enter your name" data-sanitize="text" autocomplete="off" />
         </div>
-
-        <section class="endless-callout" id="bonusCallout" aria-hidden="true" hidden>
-          <h2>Bonus Missions Ready</h2>
-          <p class="muted">Vault cracked? Keep the crew sharp with optional rapid-fire missions. Bonus runs track separately from the main leaderboard, so feel free to experiment.</p>
-          <div id="playerAliasCard" class="player-alias" hidden aria-hidden="true">
-            <div>
-              <label class="player-alias__label" for="playerAliasInput">Player name (optional)</label>
-              <input id="playerAliasInput" type="text" maxlength="40" placeholder="Enter your name" data-sanitize="text" autocomplete="off" />
-            </div>
-            <p class="player-alias__hint muted">Displayed separately from the team login. Leave blank if you prefer to stay anonymous.</p>
-            <p class="player-alias__display">Showing as: <strong id="playerAliasDisplay">—</strong></p>
-          </div>
-          <div class="bonus-actions">
-            <a class="btn ghost" href="endless.html">Launch Endless Challenge</a>
-          </div>
-          <div class="bonus-grid">
-            <article class="bonus-mission">
-              <h3>Firewall Configuration Puzzle</h3>
-              <p class="muted">Arrange firewall rules so trusted services keep flowing while hostile IP ranges stay locked out.</p>
-              <a class="btn ghost" href="firewall.html">Open Firewall Mission</a>
-            </article>
-            <article class="bonus-mission">
-              <h3>Data Breach Investigation</h3>
-              <p class="muted">Inspect access logs, pivot through indicators, and isolate the account that kicked off the breach.</p>
-              <a class="btn ghost" href="breach.html">Open Breach Lab</a>
-            </article>
-            <article class="bonus-mission">
-              <h3>Social Engineering Scenario</h3>
-              <p class="muted">Dissect a conversation to spot persuasion tactics and decide how to respond without leaking intel.</p>
-              <a class="btn ghost" href="social.html">Open Social Engineering Lab</a>
-            </article>
-            <article class="bonus-mission">
-              <h3>Secure Wi-Fi Setup</h3>
-              <p class="muted">Tune wireless controls—WPA3, SSID policies, and device restrictions—to shut out rogue clients.</p>
-              <a class="btn ghost" href="wifi.html">Open Wi‑Fi Lab</a>
-            </article>
-          </div>
-        </section>
-
-        <footer class="mission-card__footer">
-          <button class="btn ghost" type="button" data-back="index.html">Back</button>
-          <button class="btn" type="button" data-action="logout">Logout</button>
-        </footer>
-      </section>
-
-      <section class="card chest-section">
-        <h2>Vault Lock</h2>
-        <p class="mt-1" style="color:var(--muted)">Gather each digit from the puzzles and unlock the vault.</p>
-
-        <div class="vault-box mt-2">
-          <div id="vaultChest" class="chest" aria-live="polite">
-            <div class="chest-lid"></div>
-            <div class="chest-body">
-              <button class="lock-button" type="button" id="lockOpenBtn" title="Open vault (when code is correct)">🔒</button>
-            </div>
-          </div>
-
-          <div class="lock-panel mt-2">
-            <div class="lock-box">
-              <input class="lock-digit" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 1 (Phishing)">
-              <input class="lock-digit" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 2 (Encryption)">
-              <input class="lock-digit" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 3 (Password)">
-              <input class="lock-digit" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 4 (Essential)">
-              <input class="lock-digit" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="1" aria-label="Digit 5 (Binary)">
-            </div>
-
-            <div class="lock-actions mt-2">
-              <button class="btn" id="unlockBtn" type="button" data-tooltip="Check the vault code">Unlock</button>
-              <button class="btn ghost" id="clearCodeBtn" type="button" data-tooltip="Clear entered digits">Clear</button>
-            </div>
-
-            <p id="lockFeedback" class="mt-2" aria-live="polite"></p>
-          </div>
-
-          <details class="mt-2 vault-hint">
-            <summary>How do we get the 5 digits?</summary>
-            <ol>
-              <li><strong>Phishing Spotter</strong> — number of phishing emails in the set.</li>
-              <li><strong>Encryption</strong> — the Caesar wheel shift that reveals the plaintext.</li>
-              <li><strong>Password Puzzle</strong> — the rounded minutes to crack the winning password.</li>
-              <li><strong>ASD Essentials</strong> — there are 8 ASD Essential Eight mitigation strategies.</li>
-              <li><strong>Binary Lab</strong> — the ones digit of your binary multiplication result.</li>
-            </ol>
-          </details>
-        </div>
-      </section>
-
+        <p class="player-alias__hint muted">Displayed separately from the team login. Leave blank to stay anonymous.</p>
+        <p class="player-alias__display">Showing as: <strong id="playerAliasDisplay">—</strong></p>
+      </div>
+      <div class="bonus-actions">
+        <a class="btn ghost" href="endless.html">Launch Endless Challenge</a>
+      </div>
+      <div class="bonus-grid">
+        <article class="bonus-mission">
+          <h3>Firewall Configuration</h3>
+          <p class="muted">Arrange firewall rules so trusted services flow and hostile traffic stays out.</p>
+          <a class="btn ghost" href="firewall.html">Open Firewall Mission</a>
+        </article>
+        <article class="bonus-mission">
+          <h3>Data Breach Investigation</h3>
+          <p class="muted">Inspect access logs and isolate the account that started the breach.</p>
+          <a class="btn ghost" href="breach.html">Open Breach Lab</a>
+        </article>
+        <article class="bonus-mission">
+          <h3>Social Engineering</h3>
+          <p class="muted">Spot persuasion tactics in a conversation and respond without leaking intel.</p>
+          <a class="btn ghost" href="social.html">Open Social Engineering Lab</a>
+        </article>
+        <article class="bonus-mission">
+          <h3>Secure Wi-Fi Setup</h3>
+          <p class="muted">Tune wireless controls to shut out rogue clients.</p>
+          <a class="btn ghost" href="wifi.html">Open Wi‑Fi Lab</a>
+        </article>
+      </div>
     </section>
 
-    <footer class="mt-3">
-      <p style="color:var(--muted)">Tip: finish all five puzzles to learn the full 5-digit code.</p>
+    <footer class="hub-footer">
+      <small>&copy; 2026 Cyber Escape Rooms</small>
     </footer>
   </main>
-
-  <!-- Global Footer -->
-  <footer class="site-footer header-bleed">
-    <div class="footer-inner">
-      <nav class="footer-nav" aria-label="Footer">
-        <a href="index.html">Home</a>
-        <span aria-hidden="true">•</span>
-        <a href="game.html" aria-current="page">Mission Hub</a>
-        <span aria-hidden="true">•</span>
-      </nav>
-      <p class="footer-note">Unlock the vault by cracking five cyber puzzles as a team.</p>
-      <p class="footer-copy"><small>&copy; 2025 Cyber Escape Rooms</small></p>
-    </div>
-  </footer>
 </body>
 </html>

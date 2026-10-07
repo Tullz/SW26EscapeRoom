@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Spot phishing indicators by marking the risky parts of real-looking emails." />
+  <meta name="description" content="Spot phishing indicators by flagging the risky parts of real-looking emails." />
   <link rel="icon" href="assets/favicon.png" type="image/png" />
 
   <!-- Tight CSP (local assets only) -->
@@ -27,6 +27,352 @@
   <script src="js/vault.js" defer></script>
   <script src="js/onboarding.js" defer></script>
   <script src="js/phishing.js" defer></script>
+
+  <style>
+    /* ==== Phishing Spotter (room-scoped) ================================ */
+    .phx-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(270px, 320px);
+      gap: 1.25rem;
+      align-items: start;
+    }
+    @media (max-width: 980px) {
+      .phx-layout { grid-template-columns: 1fr; }
+    }
+
+    /* Shared layout classes set display:flex/grid, which would override [hidden] */
+    #phishWorkspace [hidden], .phx-complete[hidden] { display: none !important; }
+    #phishWorkspace .step-pill { white-space: nowrap; flex: 0 0 auto; }
+
+    /* Verdict buttons: quiet until chosen */
+    #phishWorkPanel .classification-buttons { grid-template-columns: 1fr 1fr; gap: .5rem; }
+    #phishWorkPanel #markPhish,
+    #phishWorkPanel #markLegit {
+      background: rgba(9, 15, 25, .6);
+      color: var(--ink);
+      padding: .7rem .5rem;
+      font-weight: 600;
+      transform: none;
+    }
+    #phishWorkPanel #markPhish { border-color: rgba(255, 140, 170, .55); }
+    #phishWorkPanel #markLegit { border-color: rgba(88, 166, 255, .55); }
+    #phishWorkPanel #markPhish:hover { background: rgba(200, 40, 100, .25); }
+    #phishWorkPanel #markLegit:hover { background: rgba(88, 166, 255, .2); }
+    #phishWorkPanel #markPhish.is-selected {
+      background: linear-gradient(135deg, #c8286a, #78104a);
+      border-color: #ffd6ee;
+      color: #fff;
+      box-shadow: 0 0 0 3px rgba(255, 140, 170, .35);
+    }
+    #phishWorkPanel #markLegit.is-selected {
+      background: linear-gradient(135deg, #78c8ff, #286edc);
+      border-color: #d6ecff;
+      color: #041223;
+      box-shadow: 0 0 0 3px rgba(88, 166, 255, .4);
+    }
+    #phishWorkPanel .classification-buttons .btn.is-selected { padding-right: .5rem; }
+    #phishWorkPanel .classification-buttons .btn.is-selected::after { content: none; }
+    #phishWorkPanel .classification-buttons .btn.is-selected::before { content: "\2713"; margin-right: .4rem; }
+
+    /* Inbox tabs */
+    .phx-inbox {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: .5rem;
+      margin: 0 0 .85rem;
+      padding: 0;
+      list-style: none;
+    }
+    @media (max-width: 720px) {
+      .phx-inbox { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    .phx-mail {
+      width: 100%;
+      text-align: left;
+      display: grid;
+      gap: .15rem;
+      padding: .6rem .75rem;
+      border-radius: 12px;
+      border: 1px solid rgba(88, 166, 255, .2);
+      background: rgba(9, 15, 25, .65);
+      color: var(--ink);
+      cursor: pointer;
+      font: inherit;
+      transition: border-color .18s ease, background .18s ease, transform .18s ease;
+      min-width: 0;
+    }
+    .phx-mail:hover { border-color: rgba(88, 166, 255, .6); transform: translateY(-1px); }
+    .phx-mail:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .phx-mail[aria-current="true"] {
+      border-color: var(--brand);
+      background: rgba(88, 166, 255, .14);
+      box-shadow: 0 0 0 1px var(--brand);
+    }
+    .phx-mail__from { font-weight: 700; font-size: .92rem; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .phx-mail__subject { font-size: .8rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .phx-mail__status {
+      justify-self: start;
+      margin-top: .2rem;
+      font-size: .68rem;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      padding: .12rem .5rem;
+      border-radius: 999px;
+      background: rgba(139, 148, 158, .16);
+      color: var(--muted);
+    }
+    .phx-mail[data-status="progress"] .phx-mail__status { background: rgba(255, 166, 87, .16); color: var(--warn); }
+    .phx-mail[data-status="done"] { border-color: rgba(9, 255, 136, .45); }
+    .phx-mail[data-status="done"] .phx-mail__status { background: rgba(9, 255, 136, .16); color: var(--accent); }
+
+    /* Viewer toolbar */
+    .phx-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .6rem;
+      flex-wrap: wrap;
+      margin-bottom: .6rem;
+    }
+    .phx-toolbar h2 { margin: 0; font-size: 1.1rem; }
+    .phx-toolbar__right { display: inline-flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+    .phx-zoom-label { font-size: .85rem; color: var(--muted); min-width: 3.2rem; text-align: center; }
+    .phx-flagcount {
+      font-size: .85rem;
+      padding: .3rem .7rem;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 85, 85, .45);
+      color: #ffb4b4;
+      background: rgba(255, 85, 85, .1);
+    }
+
+    /* Email stage */
+    .phx-viewport {
+      position: relative;
+      overflow: auto;
+      border-radius: 14px;
+      border: 1px solid rgba(88, 166, 255, .25);
+      background: rgba(6, 11, 18, .95);
+      max-height: 78vh;
+      -webkit-overflow-scrolling: touch;
+    }
+    .phx-stage {
+      position: relative;
+      width: 100%;
+      margin: 0 auto;
+      cursor: crosshair;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+      outline: none;
+    }
+    .phx-stage:focus-visible { box-shadow: inset 0 0 0 3px var(--accent); }
+    .phx-stage.is-locked { cursor: default; }
+    .phx-stage img {
+      display: block;
+      width: 100%;
+      height: auto;
+      pointer-events: none;
+      -webkit-user-drag: none;
+    }
+    .phx-layer { position: absolute; inset: 0; pointer-events: none; }
+
+    /* Flags dropped by the team */
+    .phx-pin {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      margin: -15px 0 0 -15px;
+      border-radius: 50%;
+      border: 3px solid #e11d48;
+      background: rgba(225, 29, 72, .12);
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, .85), 0 3px 8px rgba(0, 0, 0, .35);
+      pointer-events: auto;
+      cursor: pointer;
+      padding: 0;
+      z-index: 3;
+      animation: phxDrop .18s ease-out;
+    }
+    .phx-pin__num {
+      position: absolute;
+      top: -13px;
+      right: -13px;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 4px;
+      border-radius: 999px;
+      background: #e11d48;
+      border: 2px solid #fff;
+      color: #fff;
+      font: 800 .7rem/16px system-ui, sans-serif;
+      text-align: center;
+      pointer-events: none;
+    }
+    .phx-pin:hover { background: rgba(225, 29, 72, .25); }
+    .phx-pin.is-hit { border-color: #059669; background: rgba(9, 255, 136, .12); }
+    .phx-pin.is-hit .phx-pin__num { background: #059669; }
+    .phx-pin.is-miss { border-color: #6b7280; background: rgba(107, 114, 128, .15); }
+    .phx-pin.is-miss .phx-pin__num { background: #6b7280; }
+    .phx-stage.is-locked .phx-pin { cursor: default; }
+    @media (max-width: 600px) {
+      .phx-pin { width: 24px; height: 24px; margin: -12px 0 0 -12px; border-width: 2px; }
+      .phx-pin__num { top: -11px; right: -11px; min-width: 18px; height: 18px; font-size: .65rem; line-height: 14px; }
+    }
+    @media (pointer: coarse) { .phx-kbd-help { display: none; } }
+    @keyframes phxDrop { from { transform: scale(1.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+    /* Keyboard aiming reticle */
+    .phx-reticle {
+      position: absolute;
+      width: 34px;
+      height: 34px;
+      margin: -17px 0 0 -17px;
+      border: 2px dashed var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 0 2px rgba(0, 0, 0, .55);
+      pointer-events: none;
+      display: none;
+      z-index: 4;
+    }
+    .phx-reticle::before, .phx-reticle::after {
+      content: "";
+      position: absolute;
+      background: var(--accent);
+      left: 50%; top: 50%;
+    }
+    .phx-reticle::before { width: 2px; height: 12px; margin: -6px 0 0 -1px; }
+    .phx-reticle::after { width: 12px; height: 2px; margin: -1px 0 0 -6px; }
+    .phx-stage.is-kbd:focus .phx-reticle { display: block; }
+
+    /* Debrief / spotlight boxes */
+    .phx-box {
+      position: absolute;
+      border-radius: 8px;
+      border: 3px solid var(--accent);
+      background: rgba(9, 255, 136, .12);
+      z-index: 2;
+    }
+    .phx-box.is-missed { border-style: dashed; border-color: #f59e0b; background: rgba(245, 158, 11, .14); }
+    .phx-box.is-trust { border-color: #3b82f6; background: rgba(59, 130, 246, .12); }
+    .phx-box.is-spotlight {
+      border: 3px dashed #facc15;
+      background: rgba(250, 204, 21, .12);
+      animation: phxPulse 1.4s ease-in-out infinite;
+    }
+    .phx-box__tag {
+      position: absolute;
+      top: -12px;
+      left: -12px;
+      min-width: 24px;
+      height: 24px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #03170d;
+      font: 800 .8rem/24px system-ui, sans-serif;
+      text-align: center;
+    }
+    .phx-box.is-missed .phx-box__tag { background: #f59e0b; color: #1f1300; }
+    .phx-box.is-trust .phx-box__tag { background: #3b82f6; color: #fff; }
+    @keyframes phxPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, .45); } 50% { box-shadow: 0 0 0 8px rgba(250, 204, 21, 0); } }
+
+    .phx-stage-help { margin-top: .6rem; font-size: .88rem; color: var(--muted); text-align: center; }
+    .phx-stage-help kbd {
+      font: inherit;
+      font-size: .78rem;
+      padding: .05rem .35rem;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, .05);
+      color: var(--ink);
+    }
+
+    /* Side panel */
+    .phx-flaglist { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0; padding: 0; list-style: none; min-height: 1.5rem; }
+    .phx-flagchip {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      padding: .25rem .35rem .25rem .6rem;
+      border-radius: 999px;
+      border: 1px solid rgba(225, 29, 72, .55);
+      background: rgba(225, 29, 72, .14);
+      color: #fff;
+      font: inherit;
+      font-size: .82rem;
+      cursor: pointer;
+    }
+    .phx-flagchip span[aria-hidden] {
+      display: inline-grid;
+      place-items: center;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, .35);
+      font-size: .8rem;
+    }
+    .phx-flagchip.is-hit { border-color: rgba(9, 255, 136, .6); background: rgba(9, 255, 136, .14); }
+    .phx-flagchip.is-miss { border-color: rgba(148, 163, 184, .6); background: rgba(148, 163, 184, .14); }
+    .phx-flagchip:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .phx-row { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .phx-row .btn { flex: 1 1 auto; }
+    .phx-empty { font-size: .85rem; color: var(--muted); }
+    #submitButton { width: 100%; min-width: 0; }
+    .phx-hints { display: grid; gap: .5rem; margin: 0; padding: 0; list-style: none; }
+    .phx-hints li { margin: 0; }
+    .phx-hints .hint-callout { margin-top: 0; font-size: .9rem; }
+    .phx-hints .hint-callout strong { color: #fff; }
+
+    .phx-debrief { display: grid; gap: .6rem; margin: 0; padding: 0; list-style: none; }
+    .phx-debrief li {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: .6rem;
+      align-items: start;
+      padding: .6rem .7rem;
+      border-radius: 10px;
+      border: 1px solid rgba(9, 255, 136, .35);
+      background: rgba(9, 255, 136, .07);
+    }
+    .phx-debrief li.is-missed { border-color: rgba(245, 158, 11, .45); background: rgba(245, 158, 11, .08); }
+    .phx-debrief li.is-trust { border-color: rgba(59, 130, 246, .45); background: rgba(59, 130, 246, .08); }
+    .phx-debrief__num {
+      width: 26px; height: 26px; border-radius: 50%;
+      display: grid; place-items: center;
+      font-weight: 800; font-size: .85rem;
+      background: var(--accent); color: #03170d;
+    }
+    .phx-debrief li.is-missed .phx-debrief__num { background: #f59e0b; color: #1f1300; }
+    .phx-debrief li.is-trust .phx-debrief__num { background: #3b82f6; color: #fff; }
+    .phx-debrief h4 { margin: 0 0 .15rem; font-size: .95rem; color: #fff; }
+    .phx-debrief p { font-size: .87rem; color: var(--ink); }
+    .phx-debrief__state { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); margin-left: .35rem; }
+    .phx-debrief li.is-missed .phx-debrief__state { color: #f59e0b; }
+    .phx-debrief li.is-trust .phx-debrief__state { color: #93c5fd; }
+
+    /* Completion */
+    .phx-complete {
+      border: 1px solid rgba(9, 255, 136, .55);
+      background: radial-gradient(circle at top left, rgba(9, 255, 136, .18), transparent 60%), var(--panel);
+      text-align: center;
+      display: grid;
+      gap: .6rem;
+      justify-items: center;
+    }
+    .phx-complete h2 { color: var(--accent); margin: 0; }
+    .phx-codeword {
+      font: 800 clamp(1.8rem, 6vw, 2.8rem)/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: .25em;
+      color: #fff;
+      padding: .5rem 1.25rem;
+      border-radius: 12px;
+      border: 2px dashed var(--accent);
+      background: rgba(9, 255, 136, .08);
+    }
+    .phx-lock {
+      display: inline-flex; align-items: center; gap: .4rem;
+      font-weight: 700; color: #fff;
+    }
+  </style>
 </head>
 
 <body data-session="team">
@@ -53,19 +399,20 @@
         <nav class="main-nav" aria-label="Primary">
           <a class="nav-link" href="game.html">Mission Hub</a>
         </nav>
-        <a class="nav-btn nav-btn--next" href="password.html" aria-label="Next challenge: Password Puzzle">
+        <a class="nav-btn nav-btn--next" href="osint.html" aria-label="Next challenge: OSINT Investigation">
           Next<span aria-hidden="true">→</span>
         </a>
         <div class="vault-status" id="vaultStatus" role="status" aria-live="polite" data-visible="team">
           <span class="vault-status__label">Vault</span>
           <ol class="vault-status__digits">
             <li data-vault-key="phishing">•</li>
-            <li data-vault-key="encryption">•</li>
-            <li data-vault-key="password">•</li>
-            <li data-vault-key="essential">•</li>
-            <li data-vault-key="binary">•</li>
+            <li data-vault-key="osint">•</li>
+            <li data-vault-key="incident">•</li>
+            <li data-vault-key="mfa">•</li>
+            <li data-vault-key="supply">•</li>
+            <li data-vault-key="forensics">•</li>
           </ol>
-          <span class="vault-status__count">0/5</span>
+          <span class="vault-status__count">0/6</span>
         </div>
         <button class="nav-btn alert nav-btn--logout" type="button" data-action="logout">Logout</button>
       </div>
@@ -76,7 +423,7 @@
     <header class="game-header">
       <h1 class="glow">Phishing Spotter</h1>
       <p class="mt-1" style="color:var(--muted)">
-        Mark the risky parts of the email (domains, grammar, urgency, mismatched branding…). Find enough indicators to earn your digit.
+        Four emails just landed in John Price's inbox. Some are traps. Find out which, and prove it.
       </p>
       <div class="puzzle-actions mt-1">
         <button class="btn ghost sm onboard-trigger" type="button" data-onboard="onboard-phishing">How to play</button>
@@ -84,28 +431,27 @@
     </header>
 
     <section class="intro-banner mt-2" aria-labelledby="phishingBriefHeading">
-      <h2 id="phishingBriefHeading">Points & objectives</h2>
-      <p>Each correct highlight and classification keeps your score intact. Missing obvious clues, clearing highlights without reason, or guessing the verdict too early chips away at your total.</p>
-      <ul>
-        <li>Capture at least three hotspots per message to stay on pace for full credit.</li>
-        <li>Hints cost points—use them only when the trail goes cold.</li>
-        <li>Record the digit once <strong>Submit Highlights</strong> gives you the all-clear.</li>
-        <li>Highlights now autosave after every stroke and reload automatically when you revisit a slide.</li>
-      </ul>
+      <h2 id="phishingBriefHeading">Mission briefing</h2>
+      <p>John from Finance thinks someone is targeting him. Go through his inbox one email at a time, like a security analyst would.</p>
+      <ol>
+        <li><strong>Inspect</strong> the email. Click or tap anything that looks wrong to drop a red flag on it.</li>
+        <li><strong>Decide</strong> whether the email is <strong>phishing</strong> or <strong>legitimate</strong>.</li>
+        <li><strong>Submit</strong>. Only then will you find out whether you were right, and see what you missed.</li>
+      </ol>
       <div class="vault-callout" role="status">
-        <span class="tag">Vault digit</span>
-        <p><strong id="phishVaultValue">—</strong> phishing emails in this gallery. Mark them correctly to unlock digit one.</p>
+        <span class="tag">Code word</span>
+        <p id="phishVaultValue"><span class="phx-lock">Locked.</span> Clear all four emails to reveal this room's code word.</p>
       </div>
     </section>
 
-    <section class="status-hud" aria-label="Team status">
+    <section class="status-hud mt-2" aria-label="Team status">
       <div class="points-box">
         <p class="points-box__label">Team points</p>
         <p class="points-box__value" id="phishPointsTotal">000</p>
         <p class="points-box__delta" id="phishPointsDelta" aria-live="polite"></p>
       </div>
       <div class="progress-mini">
-        <p class="progress-mini__label">Puzzle progress</p>
+        <p class="progress-mini__label">Emails cleared</p>
         <div class="progress-mini__track">
           <div class="progress-mini__fill" id="phishProgressFill"></div>
         </div>
@@ -114,156 +460,113 @@
     </section>
 
     <section class="card points-card mt-2" aria-labelledby="phishPointsHeading">
-      <details class="points-panel" open>
+      <details class="points-panel">
         <summary id="phishPointsHeading">Points intel</summary>
-        <p>Teams begin at 100 points. Precise classifications and highlights keep that total high, while needless hints or incorrect verdicts chip away at it.</p>
+        <p>Teams begin at 100 points. Careful work keeps that total high.</p>
         <ul>
-          <li>Hints deduct 5 points—use them only when the gallery stalls.</li>
-          <li>Selecting “Looks Legit” locks highlighting until you switch back to “This is Phishing”.</li>
-          <li>Each email needs the target number of critical clues before the vault digit is awarded.</li>
+          <li>Wrong submission (wrong verdict, or not enough red flags found): <strong>−3 points</strong>, then try again.</li>
+          <li>Hints get more specific each time: <strong>−5</strong>, <strong>−5</strong>, then a red flag spotlight for <strong>−10</strong>.</li>
+          <li>You can drop up to 6 flags per email. Flags on harmless parts of the email count against you, so don't carpet-bomb it.</li>
         </ul>
       </details>
     </section>
 
-    <section class="card instructions-card mt-2" aria-labelledby="missionHeading">
-      <div class="instructions-grid">
-        <div>
-          <h2 id="missionHeading">Your mission</h2>
-          <ol class="instructions-list">
-            <li>Study each email example. Switch slides with the arrows beside the canvas.</li>
-            <li>Use the brush tool to circle suspicious clues. Aim to highlight at least three hotspots.</li>
-            <li>Submit your highlights, then decide if the email is phishing or legitimate.</li>
-          </ol>
-        </div>
-      </div>
-    </section>
+    <!-- Completion banner (filled by JS once all four emails are cleared) -->
+    <section class="card phx-complete mt-2" id="phishComplete" hidden aria-live="polite"></section>
 
-    <aside class="card tip-card mt-2" aria-labelledby="phishTipHeading">
-      <h2 id="phishTipHeading">Mission tip</h2>
-      <p class="muted">Circle only the precise clue (sender, CTA, wording). Broad scribbles cost points and no longer count as valid highlights.</p>
-    </aside>
+    <section class="phx-layout mt-2" id="phishWorkspace">
+      <!-- LEFT: inbox + email viewer -->
+      <section class="card" aria-labelledby="phishViewerHeading">
+        <h2 class="sr-only" id="phishInboxHeading">Inbox</h2>
+        <ul class="phx-inbox" id="phishInbox" aria-labelledby="phishInboxHeading"></ul>
 
-    <!-- Layout: left tools, right stage -->
-    <section class="main-layout mt-2" id="phishWorkspace">
-      <!-- LEFT: toolbox -->
-      <aside class="card phish-sidebar" aria-label="Mission steps">
-        <section class="phish-step" data-step="1">
-          <div class="phish-step__heading">
-            <span class="step-pill">Step 1</span>
-            <h3>Classify first</h3>
-          </div>
-          <p class="muted">Choose a verdict before highlighting. Only phishing examples accept highlights.</p>
-          <div class="classification-buttons" id="classificationBlock" aria-label="Email classification actions">
-            <button class="btn cta-btn warn" id="markPhish" type="button" aria-pressed="false">This is Phishing</button>
-            <button class="btn cta-btn ghost" id="markLegit" type="button" aria-pressed="false">Looks Legit</button>
-          </div>
-          <p class="muted classification-status" id="classificationStatus" aria-live="polite"></p>
-          <p class="muted classification-tip" id="classificationTip" aria-live="polite" hidden>
-            Select "This is Phishing" to unlock highlighting.
-          </p>
-        </section>
-
-        <section class="phish-step" data-step="2">
-          <div class="phish-step__heading">
-            <span class="step-pill">Step 2</span>
-            <h3>Mark the clues</h3>
-          </div>
-          <p class="muted">Use tight circles over sender details, URLs, grammar errors, or urgency cues.</p>
-          <div class="tool-stack">
-            <div class="tool-row">
-              <button class="btn tool-btn" data-tool="brush" onclick="setTool('brush')" aria-pressed="true">Brush</button>
-              <button class="btn ghost tool-btn" data-tool="eraser" onclick="setTool('eraser')">Eraser</button>
-            </div>
-            <div class="field mt-2">
-              <label for="brushSize">Brush size</label>
-              <input id="brushSize" type="range" min="2" max="24" value="8" />
-            </div>
-            <div class="flex mt-2" style="gap:.5rem; flex-wrap:wrap;">
-              <button class="btn warn" id="clearBtn" type="button" data-tooltip="Clear current highlights">Clear</button>
-              <button class="btn ghost" id="phishHintBtn" type="button">Hint (−5 pts)</button>
-              <button class="btn ghost" id="phishRevealBtn" type="button" hidden>Reveal hotspots (−15 pts)</button>
-            </div>
-            <p id="phishHintText" class="hint-callout" hidden>
-              Scan the sender address, call-to-action URL, and urgency cues first—phishers often betray themselves there.
-            </p>
-            <div class="phish-progress" aria-live="polite">
-              <div class="phish-progress__dots" id="vulnProgressDots" role="group" aria-label="Highlight progress"></div>
-              <p id="vulnerabilityCount" class="muted">Found 0/0. Start highlighting the most suspicious clue you can find.</p>
-              <p id="vulnerabilityReminders" class="muted phish-reminders" hidden></p>
-            </div>
-          </div>
-        </section>
-
-        <section class="phish-step" data-step="3">
-          <div class="phish-step__heading">
-            <span class="step-pill">Step 3</span>
-            <h3>Submit & advance</h3>
-          </div>
-          <p class="muted">Required clues glowing green? Submit to lock this example and keep moving.</p>
-          <div class="phish-submit">
-            <button id="submitButton" class="btn primary" type="button" data-tooltip="Submit highlights for review">Submit Highlights</button>
-            <p class="cta-hint">Steps 1 &amp; 2 must be complete before submitting.</p>
-            <p id="phishingFeedback" class="status-message mt-1" aria-live="polite"></p>
-          </div>
-          <p class="autosave-status" id="autosaveStatus" aria-live="polite">Autosave ready.</p>
-        </section>
-
-        <section class="phish-step phish-step--examples">
-          <div class="phish-step__heading">
-            <span class="step-pill">Gallery</span>
-            <h3>Email examples</h3>
-          </div>
-          <nav class="thumb-nav mt-1" aria-label="Examples">
-            <ul class="link-list">
-              <li><a href="phishing.html?img=Picture1.png">Apple – "sound played"</a></li>
-              <li><a href="phishing.html?img=Picture2.png">iCloud – "storage full"</a></li>
-              <li><a href="phishing.html?img=Picture3.png">Amazon – "order confirmation"</a></li>
-              <li><a href="phishing.html?img=Picture4.png">SharePoint – "file shared"</a></li>
-            </ul>
-          </nav>
-          <div class="mt-2">
-            <a href="game.html" class="btn ghost">Back to Vault</a>
-            <a href="index.html" class="btn">Home</a>
-          </div>
-        </section>
-      </aside>
-
-      <!-- RIGHT: image stage -->
-      <section class="card" aria-label="Email example">
-        <div class="canvas-header">
-          <div>
-            <h2>Canvas</h2>
-            <p class="muted">Review each example and highlight suspicious details before submitting.</p>
-          </div>
-          <div class="canvas-actions">
-            <button class="btn ghost sm" id="phishZoomOutBtn" type="button" data-tooltip="Zoom out">−</button>
-            <button class="btn ghost sm" id="phishZoomInBtn" type="button" data-tooltip="Zoom in">+</button>
-            <button class="btn ghost sm" id="phishFullscreenBtn" type="button" data-tooltip="Toggle fullscreen view">Fullscreen</button>
+        <div class="phx-toolbar">
+          <h2 id="phishViewerHeading">Email 1 of 4</h2>
+          <div class="phx-toolbar__right">
+            <span class="phx-flagcount" id="phishFlagCount" aria-live="polite">0 / 6 flags</span>
+            <button class="btn ghost sm" id="phishZoomOutBtn" type="button" aria-label="Zoom out">−</button>
+            <span class="phx-zoom-label" id="phishZoomLabel" aria-live="polite">100%</span>
+            <button class="btn ghost sm" id="phishZoomInBtn" type="button" aria-label="Zoom in">+</button>
           </div>
         </div>
 
-        <div class="canvas-carousel mt-1">
-          <button class="carousel-arrow" id="prevImg" type="button" aria-label="Previous email example">&#10094;</button>
-
-          <div class="image-container">
-            <div id="imageStage" class="image-stage">
-              <div class="example-banner" id="exampleBanner" aria-live="polite">Example 1 of 4</div>
-              <img id="phishingImage"
-                   src="assets/Picture1.png"
-                   alt="Email screenshot for phishing analysis"
-                   referrerpolicy="no-referrer" />
-
-              <canvas id="drawCanvas" width="800" height="600"></canvas>
-            </div>
+        <div class="phx-viewport" id="phishViewport">
+          <div class="phx-stage" id="phishStage" tabindex="0" role="group"
+               aria-roledescription="email inspector"
+               aria-label="Email screenshot. Click or tap to drop a red flag."
+               aria-describedby="phishStageHelp">
+            <img id="phishingImage" src="assets/Picture1.png" alt="Screenshot of the selected email" draggable="false" />
+            <div class="phx-layer" id="phishBoxes" aria-hidden="true"></div>
+            <div class="phx-layer" id="phishPins"></div>
+            <div class="phx-reticle" id="phishReticle" aria-hidden="true"></div>
           </div>
-
-          <button class="carousel-arrow" id="nextImg" type="button" aria-label="Next email example">&#10095;</button>
         </div>
-
-        <div class="carousel-dots" id="exampleDots" aria-label="Email example navigation" role="tablist"></div>
-        <p id="slideStatus" class="muted text-center" aria-live="polite">Example 1 of 4</p>
-        <p id="vulnerabilityCountStage" class="muted stage-vuln" aria-live="polite"></p>
+        <p class="phx-stage-help" id="phishStageHelp">
+          Click or tap the email to drop a red flag. Click a flag again to remove it.
+          <span class="phx-kbd-help">Keyboard: focus the email, aim with <kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd>, press <kbd>Enter</kbd> to flag, <kbd>Backspace</kbd> to undo.</span>
+          Use <strong>+</strong> to zoom in on small text.
+        </p>
       </section>
+
+      <!-- RIGHT: investigation panel -->
+      <aside class="card phish-sidebar" aria-label="Investigation panel">
+        <div id="phishWorkPanel" class="phish-sidebar">
+          <section class="phish-step" aria-labelledby="phxStep1">
+            <div class="phish-step__heading">
+              <span class="step-pill">Step 1</span>
+              <h3 id="phxStep1">Flag what looks wrong</h3>
+            </div>
+            <p class="muted">Check the sender, the subject, the wording, the links and the logos. Drop a flag on each thing that gives the email away.</p>
+            <ul class="phx-flaglist" id="phishFlagList" aria-label="Your flags"></ul>
+            <div class="phx-row">
+              <button class="btn ghost sm" id="phishUndoBtn" type="button">Undo last flag</button>
+              <button class="btn warn sm" id="phishClearBtn" type="button">Clear all flags</button>
+            </div>
+          </section>
+
+          <section class="phish-step" aria-labelledby="phxStep2">
+            <div class="phish-step__heading">
+              <span class="step-pill">Step 2</span>
+              <h3 id="phxStep2">Your verdict</h3>
+            </div>
+            <div class="classification-buttons" role="group" aria-label="Verdict">
+              <button class="btn cta-btn" id="markPhish" type="button" aria-pressed="false">Phishing</button>
+              <button class="btn cta-btn" id="markLegit" type="button" aria-pressed="false">Legitimate</button>
+            </div>
+            <p class="muted" style="font-size:.82rem">Think it's legitimate? Then it shouldn't have any flags on it.</p>
+          </section>
+
+          <section class="phish-step" aria-labelledby="phxStep3">
+            <div class="phish-step__heading">
+              <span class="step-pill">Step 3</span>
+              <h3 id="phxStep3">Submit</h3>
+            </div>
+            <button id="submitButton" class="btn primary" type="button">Submit highlights</button>
+            <p id="phishingFeedback" class="status-message" aria-live="polite"></p>
+          </section>
+
+          <section class="phish-step" aria-labelledby="phxHintHeading">
+            <div class="phish-step__heading">
+              <span class="step-pill">Stuck?</span>
+              <h3 id="phxHintHeading">Analyst hints</h3>
+            </div>
+            <ul class="phx-hints" id="phishHintList" aria-live="polite"></ul>
+            <button class="btn ghost sm" id="phishHintBtn" type="button">Get a hint (−5 pts)</button>
+          </section>
+        </div>
+
+        <div id="phishDebriefPanel" class="phish-sidebar" hidden>
+          <section class="phish-step" aria-labelledby="phxDebriefHeading">
+            <div class="phish-step__heading">
+              <span class="step-pill">Debrief</span>
+              <h3 id="phxDebriefHeading">What gave it away</h3>
+            </div>
+            <p class="muted" id="phishDebriefSummary"></p>
+            <ol class="phx-debrief" id="phishDebriefList"></ol>
+            <button class="btn primary" id="phishNextBtn" type="button">Next email →</button>
+          </section>
+        </div>
+      </aside>
     </section>
 
     <section class="card resources-card mt-2" aria-labelledby="phishResourcesHeading">
@@ -277,24 +580,22 @@
 
     <nav class="challenge-nav" aria-label="Puzzle navigation">
       <a class="btn ghost" href="game.html">&larr; Mission Hub</a>
-      <a class="btn" href="password.html">Next: Password Puzzle &rarr;</a>
+      <a class="btn" href="osint.html">Next: OSINT Investigation &rarr;</a>
     </nav>
-
-    <footer class="mt-3">
-      <p style="color:var(--muted)">Tip: check sender domain, links, grammar/formatting, urgency, and mismatched branding.</p>
-    </footer>
   </main>
 
   <div class="onboard" id="onboard-phishing" hidden data-onboard-key="phishing" data-onboard-auto="true" aria-labelledby="onboardPhishingTitle">
     <div class="onboard__backdrop" data-onboard-close></div>
     <div class="onboard__dialog">
       <button class="onboard__close" type="button" aria-label="Close tutorial" data-onboard-close>&times;</button>
-      <h2 id="onboardPhishingTitle" data-onboard-focus>Phishing Spotter — Quick Guide</h2>
-      <p>Earn vault digit one by clearing each email example with precise highlights.</p>
+      <h2 id="onboardPhishingTitle" data-onboard-focus>Phishing Spotter — How It Works</h2>
+      <p>Four emails have landed in John's inbox. Some are phishing, some might be genuine. Your job is to find out which, and prove it.</p>
       <ol class="onboard__list">
-        <li>Highlight at least three hotspots on every email before you submit anything.</li>
-        <li>Choose whether the example is phishing or legitimate, then press Submit Highlights to lock that slide.</li>
-        <li>Work through all four examples; the number of true phishing emails becomes your vault digit.</li>
+        <li><strong>Inspect</strong> an email and click or tap each suspicious detail to drop a red flag. Click a flag to remove it.</li>
+        <li>Pick your <strong>verdict</strong>: Phishing or Legitimate.</li>
+        <li>Press <strong>Submit highlights</strong>. You'll only find out if you were right after you submit. Wrong answers cost 3 points.</li>
+        <li>Hints are available but cost points.</li>
+        <li>Clear all four emails to unlock this room's code word.</li>
       </ol>
     </div>
   </div>
@@ -306,39 +607,10 @@
         <a href="index.html">Home</a>
         <span aria-hidden="true">•</span>
         <a href="game.html">Mission Hub</a>
-        <span aria-hidden="true">•</span>
       </nav>
-      <p class="footer-note">Spot every phishing tell to earn the first vault digit.</p>
-      <p class="footer-copy"><small>&copy; 2025 Cyber Escape Rooms</small></p>
+      <p class="footer-note">Spot every phishing tell to earn the first code word.</p>
+      <p class="footer-copy"><small>&copy; 2026 Cyber Escape Rooms</small></p>
     </div>
   </footer>
-
-  <!-- Hotspot map (percentages) for strict marking. Inert JSON. -->
-  <script type="application/json" id="phishingHotspots">
-  {
-    "Picture1.png": [
-      { "xPct": 0.74, "yPct": 0.41, "radius": 0.18, "label": "Suspicious sender domain (.co)" },
-      { "xPct": 0.73, "yPct": 0.42, "radius": 0.18, "label": "Brand typo — “FInd My”" },
-      { "xPct": 0.52, "yPct": 0.44, "radius": 0.23, "label": "Timestamp / callout block" }
-    ],
-    "Picture2.png": [
-      { "xPct": 0.47, "yPct": 0.44, "radius": 0.22, "label": "Urgent subject mark" },
-      { "xPct": 0.76, "yPct": 0.44, "radius": 0.20, "label": "Sender domain mismatch" },
-      { "xPct": 0.88, "yPct": 0.69, "radius": 0.24, "label": "Grammar issues" }
-    ],
-    "Picture3.png": [
-      { "xPct": 0.20, "yPct": 0.22, "radius": 0.15, "label": "Sender card" },
-      { "xPct": 0.45, "yPct": 0.32, "radius": 0.18, "label": "Order details" },
-      { "xPct": 0.45, "yPct": 0.50, "radius": 0.22, "label": "Primary CTA" }
-    ],
-    "Picture4.png": [
-      { "xPct": 0.37, "yPct": 0.74, "radius": 0.20, "label": "sharep0int sender domain" },
-      { "xPct": 0.83, "yPct": 0.72, "radius": 0.22, "label": "Minisoft logo" },
-      { "xPct": 0.50, "yPct": 0.70, "radius": 0.20, "label": "Generic subject" },
-      { "xPct": 0.56, "yPct": 0.62, "radius": 0.22, "label": "Attachment title" }
-    ]
-  }
-  </script>
-
 </body>
 </html>

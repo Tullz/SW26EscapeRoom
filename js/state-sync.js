@@ -14,10 +14,11 @@
   const AUTO_PULL_MS = 10000;
   const DEFAULT_PROGRESS = {
     phishing: false,
-    password: false,
-    encryption: false,
-    essential: false,
-    binary: false
+    osint: false,
+    incident: false,
+    mfa: false,
+    supply: false,
+    forensics: false
   };
   const STORAGE_KEYS = {
     progress: utils.progressKey(user),
@@ -31,15 +32,16 @@
   };
   const TEAM_VAULT_KEY = `${TEAM}_vault`;
   const RESET_VERSION_KEY = `${TEAM}_reset_version`;
+  const VAULT_ENTRIES_KEY = `${TEAM}_vault_entries`;
 
   function clearPuzzleState() {
     const globalKeys = [
-      'lock_digit_phishing_total',
-      'lock_digit_caesar_shift',
-      'lock_digit_pw_minutes',
-      'lock_digit_pw_clues',
-      'lock_digit_essential',
-      'lock_digit_binary',
+      'vault_word_phishing',
+      'vault_word_osint',
+      'vault_word_incident',
+      'vault_word_mfa',
+      'vault_word_supply',
+      'vault_word_forensics',
       'vault_opened'
     ];
     globalKeys.forEach(key => {
@@ -50,6 +52,9 @@
       /^class_/,
       new RegExp(`^${TEAM}_phishing_`),
       new RegExp(`^${TEAM}_vuln_found_`),
+      // Each room's saved in-room progress (e.g. osint_state, mfa_puzzle_state)
+      /^(osint|incident|mfa|supply|forensics)_/,
+      new RegExp(`^${TEAM}_(osint|incident|mfa|supply|forensics)_`),
       new RegExp(`^${TEAM}_progress$`),
       new RegExp(`^${TEAM}_progress_meta$`)
     ];
@@ -59,6 +64,7 @@
       }
     });
     try { localStorage.removeItem(TEAM_VAULT_KEY); } catch (_) {}
+    try { localStorage.removeItem(VAULT_ENTRIES_KEY); } catch (_) {}
     try { localStorage.removeItem(RESET_VERSION_KEY); } catch (_) {}
     try { window.vault?.refresh?.(); } catch (_) {}
   }
@@ -79,11 +85,12 @@
   function collectVault() {
     const existing = readTeamVault();
     const digits = {
-      phishing: localStorage.getItem('lock_digit_phishing_total') || null,
-      encryption: localStorage.getItem('lock_digit_caesar_shift') || null,
-      password: localStorage.getItem('lock_digit_pw_minutes') || localStorage.getItem('lock_digit_pw_clues') || null,
-      essential: localStorage.getItem('lock_digit_essential') || null,
-      binary: localStorage.getItem('lock_digit_binary') || null
+      phishing: localStorage.getItem('vault_word_phishing') || null,
+      osint: localStorage.getItem('vault_word_osint') || null,
+      incident: localStorage.getItem('vault_word_incident') || null,
+      mfa: localStorage.getItem('vault_word_mfa') || null,
+      supply: localStorage.getItem('vault_word_supply') || null,
+      forensics: localStorage.getItem('vault_word_forensics') || null
     };
     const meta = { ...(existing || {}) };
     Object.entries(digits).forEach(([key, value]) => {
@@ -104,18 +111,25 @@
   }
 
   function applyVault(vault = {}) {
-    if (vault.phishing) localStorage.setItem('lock_digit_phishing_total', String(vault.phishing));
-    if (vault.encryption) localStorage.setItem('lock_digit_caesar_shift', String(vault.encryption));
-    if (vault.password) localStorage.setItem('lock_digit_pw_minutes', String(vault.password));
-    if (vault.essential) localStorage.setItem('lock_digit_essential', String(vault.essential));
-    if (vault.binary) localStorage.setItem('lock_digit_binary', String(vault.binary));
+    if (vault.phishing) localStorage.setItem('vault_word_phishing', String(vault.phishing));
+    if (vault.osint) localStorage.setItem('vault_word_osint', String(vault.osint));
+    if (vault.incident) localStorage.setItem('vault_word_incident', String(vault.incident));
+    if (vault.mfa) localStorage.setItem('vault_word_mfa', String(vault.mfa));
+    if (vault.supply) localStorage.setItem('vault_word_supply', String(vault.supply));
+    if (vault.forensics) localStorage.setItem('vault_word_forensics', String(vault.forensics));
     if (vault.opened) {
       try { localStorage.setItem('vault_opened', '1'); } catch (_) { /* ignore */ }
     }
   }
 
   function captureState() {
-    const latestVault = Object.keys(readTeamVault() || {}).length ? readTeamVault() : collectVault();
+    // collectVault merges the synced copy with the words actually held locally.
+    const latestVault = collectVault();
+    const appliedReset = localStorage.getItem(RESET_VERSION_KEY);
+    if (appliedReset) latestVault.resetVersion = Number(appliedReset);
+    const typedEntries = readJSON(VAULT_ENTRIES_KEY, {});
+    if (Object.keys(typedEntries).length) latestVault.entries = typedEntries;
+    else delete latestVault.entries;
     if (Object.keys(latestVault).length) {
       writeJSON(TEAM_VAULT_KEY, latestVault);
     }
@@ -159,6 +173,10 @@
     if (state.vault) {
       writeJSON(TEAM_VAULT_KEY, state.vault);
       applyVault(state.vault);
+      // Typed vault words: local copy wins; adopt the server copy on a fresh device.
+      if (state.vault.entries && localStorage.getItem(VAULT_ENTRIES_KEY) == null) {
+        writeJSON(VAULT_ENTRIES_KEY, state.vault.entries);
+      }
       const remoteReset = state.vault?.resetVersion;
       const localReset = localStorage.getItem(RESET_VERSION_KEY);
       if (remoteReset && String(remoteReset) !== localReset) {
@@ -217,6 +235,11 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...payload, reason })
       });
+      if (res.status === 409) {
+        // Admin reset this team since our last pull; apply it instead of overwriting it.
+        await pull(false);
+        return;
+      }
       if (!res.ok) {
         let detail = '';
         try {

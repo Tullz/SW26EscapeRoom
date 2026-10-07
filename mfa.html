@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Help a colleague whose password was phished: sign in at her desk with her permission, learn the three kinds of sign-in factor, and spot the attacker's tricks on her phone." />
+  <link rel="icon" href="assets/favicon.png" type="image/png" />
+
+  <!-- Tight CSP (local assets only) -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 img-src 'self' data:;
+                 style-src 'self' 'unsafe-inline';
+                 script-src 'self';
+                 connect-src 'self';
+                 object-src 'none';
+                 base-uri 'self'">
+
+  <title>Cyber Escape Rooms — MFA / Authentication</title>
+
+  <!-- External files only -->
+  <link rel="stylesheet" href="css/styles.css" />
+  <script src="js/accessibility.js" defer></script>
+  <script src="js/utils.js" defer></script>
+  <script src="js/state-sync.js" defer></script>
+  <script src="js/session.js" defer></script>
+  <script src="js/vault.js" defer></script>
+  <script src="js/mfa.js" defer></script>
+
+  <style>
+    /* =====================================================================
+       MFA room — "Priya's Account"
+       ===================================================================== */
+    .mfa-room { padding: 1.25rem; }
+    .mfa-topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: .75rem; flex-wrap: wrap; margin-bottom: .9rem;
+    }
+    .mfa-stage-pill {
+      display: inline-flex; align-items: center; gap: .5rem;
+      font-size: .78rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+      color: var(--brand); background: var(--brand-soft); border: 1px solid rgba(88,166,255,.35);
+      padding: .35rem .75rem; border-radius: 999px;
+    }
+    .mfa-stage-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); box-shadow: 0 0 8px var(--brand); }
+    .mfa-stage-pill.is-alert { color: var(--danger); background: rgba(255,85,85,.1); border-color: rgba(255,85,85,.4); }
+    .mfa-stage-pill.is-alert .dot { background: var(--danger); box-shadow: 0 0 8px var(--danger); animation: mfaBlink 1s infinite; }
+    .mfa-stage-pill.is-done { color: var(--accent); background: rgba(9,255,136,.08); border-color: rgba(9,255,136,.35); }
+    .mfa-stage-pill.is-done .dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+    @keyframes mfaBlink { 50% { opacity: .25; } }
+
+    .mfa-hint-wrap { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+    .mfa-hint-text {
+      margin: 0 0 .9rem; padding: .6rem .85rem; border-radius: 8px; font-size: .9rem; line-height: 1.45;
+      background: rgba(255,166,87,.08); border: 1px solid rgba(255,166,87,.3); color: var(--warn);
+    }
+
+    /* ---- Comms feed (Sam from IT) ---- */
+    .comms {
+      background: #0c1219; border: 1px solid var(--border); border-radius: 12px;
+      margin-bottom: 1rem; overflow: hidden;
+    }
+    .comms__head {
+      display: flex; align-items: center; gap: .6rem; padding: .55rem .9rem;
+      border-bottom: 1px solid var(--border); background: rgba(88,166,255,.05);
+      font-size: .78rem; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; font-weight: 700;
+    }
+    .comms__avatar {
+      width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+      background: linear-gradient(135deg, var(--brand), #9b7bff); color: #0b0f14; font-weight: 800; font-size: .72rem;
+      letter-spacing: 0; text-transform: none;
+    }
+    .comms__live { margin-left: auto; color: var(--accent); display: inline-flex; align-items: center; gap: .35rem; }
+    .comms__live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: mfaBlink 1.6s infinite; }
+    .comms__feed { max-height: 190px; overflow-y: auto; padding: .7rem .9rem; display: grid; gap: .5rem; }
+    .comms__msg {
+      background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px 12px 12px 12px;
+      padding: .55rem .8rem; font-size: .92rem; line-height: 1.5; color: var(--ink); max-width: 62rem;
+    }
+    .comms__msg strong { color: #fff; }
+    .comms__msg.is-new { border-color: rgba(88,166,255,.55); box-shadow: 0 0 0 3px rgba(88,166,255,.08); animation: mfaMsgIn .35s ease; }
+    .comms__msg.is-warn { border-color: rgba(255,85,85,.45); }
+    .comms__msg.is-good { border-color: rgba(9,255,136,.4); }
+    .comms__who { display: block; font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; margin-bottom: .15rem; }
+    .comms__who--priya { color: #ff9ecb; }
+    .comms__who--sam { color: #8cc8ff; }
+    .comms__avatar--priya { background: linear-gradient(135deg, #ff7eb6, #ffa657); }
+
+    /* Lesson card shown after each Stage 2 event */
+    .lesson {
+      margin-top: .8rem; padding: .8rem .95rem; border-radius: 12px; background: rgba(9,255,136,.07);
+      border: 1px solid rgba(9,255,136,.4); animation: mfaMsgIn .35s ease;
+    }
+    .lesson__title { font-weight: 800; color: var(--accent); margin: 0 0 .3rem; }
+    .lesson p { margin: 0 0 .6rem; line-height: 1.5; font-size: .93rem; }
+    .lesson--warn { background: rgba(255,166,87,.08); border-color: rgba(255,166,87,.4); }
+    .lesson--warn .lesson__title { color: var(--warn); }
+    @keyframes mfaMsgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+    /* ---- Stage 1: desk layout ---- */
+    .desk-layout { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+    .desk-help { font-size: .88rem; color: var(--muted); margin: 0 0 .5rem; }
+
+    .desk-scene {
+      position: relative; width: 100%; aspect-ratio: 16 / 10.5; border-radius: 14px; overflow: hidden;
+      border: 1px solid var(--border); background: #121a25; user-select: none;
+    }
+    .scene-wall {
+      position: absolute; inset: 0 0 34% 0;
+      background:
+        radial-gradient(ellipse at 55% 10%, rgba(255,214,140,.10), transparent 60%),
+        repeating-linear-gradient(90deg, rgba(255,255,255,.018) 0 2px, transparent 2px 60px),
+        linear-gradient(180deg, #1c2634 0%, #17202c 100%);
+    }
+    .scene-window {
+      position: absolute; left: 24%; top: 7%; width: 13%; height: 30%; border: 5px solid #2a3544; border-radius: 4px;
+      background: linear-gradient(180deg, #2a4466 0%, #3d5f86 55%, #6d8fb2 100%);
+      box-shadow: inset 0 0 0 2px rgba(0,0,0,.25);
+    }
+    .scene-window::before { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; width: 4px; background: #2a3544; transform: translateX(-50%); }
+    .scene-window::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 4px; background: #2a3544; }
+    .scene-poster {
+      position: absolute; left: 79%; top: 6%; width: 15%; height: 30%; border-radius: 4px; padding: 3% 1.2%;
+      background: linear-gradient(160deg, #0f3b2e, #0b241d); border: 2px solid #1e5a47;
+      color: #7af0bf; font-weight: 800; font-size: clamp(6px, 1.05vw, 12px); line-height: 1.15; text-align: center;
+      display: flex; flex-direction: column; justify-content: center; gap: 6%; letter-spacing: .04em;
+    }
+    .scene-poster small { font-weight: 600; color: #b9f5dc; font-size: .8em; letter-spacing: 0; }
+    .scene-desk-top {
+      position: absolute; left: 13%; right: 1.5%; top: 64%; height: 7%;
+      background: linear-gradient(180deg, #6b5440 0%, #54402f 100%); border-radius: 6px 6px 0 0;
+      box-shadow: 0 -2px 0 #7c6450 inset;
+    }
+    .scene-desk-front {
+      position: absolute; left: 15%; right: 3%; top: 71%; bottom: 5%;
+      background: linear-gradient(180deg, #3f2f22, #33261b); border-radius: 0 0 4px 4px;
+    }
+    .scene-floor { position: absolute; left: 0; right: 0; bottom: 0; height: 36%; background: linear-gradient(180deg, #151b24, #0e131a); z-index: -0; }
+    .scene-desk-top, .scene-desk-front { z-index: 1; }
+
+    .hotspot {
+      position: absolute; z-index: 2; padding: 0; margin: 0; border: 0; background: transparent; cursor: pointer;
+      border-radius: 8px; color: inherit; font: inherit; line-height: 0;
+      transition: transform .18s ease, filter .18s ease;
+    }
+    .hotspot svg { width: 100%; height: 100%; display: block; overflow: visible; }
+    .hotspot:hover, .hotspot:focus-visible { transform: translateY(-2px) scale(1.03); filter: drop-shadow(0 0 10px rgba(88,166,255,.55)); }
+    .hotspot:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+    .hotspot.is-active { filter: drop-shadow(0 0 12px rgba(9,255,136,.7)); }
+    .hotspot__label {
+      position: absolute; left: 50%; bottom: -4px; transform: translate(-50%, 100%);
+      white-space: nowrap; line-height: 1.2; font-size: clamp(9px, .9vw, 11.5px); font-weight: 700;
+      color: #dfe7f0; background: rgba(8,12,18,.82); border: 1px solid rgba(255,255,255,.12);
+      padding: 2px 7px; border-radius: 999px; pointer-events: none;
+    }
+    .hotspot.is-seen .hotspot__label { color: var(--accent); border-color: rgba(9,255,136,.35); }
+    .hotspot.is-seen .hotspot__label::before { content: '\2713\00a0'; }
+    .hotspot--top .hotspot__label { bottom: auto; top: -4px; transform: translate(-50%, -100%); }
+
+    .hs-badge    { left: 3.5%; top: 6%;  width: 8%;  height: 36%; }
+    .hs-photo    { left: 15.5%; top: 45%; width: 9%; height: 20%; }
+    .hs-card     { left: 26%; top: 51%; width: 8.5%; height: 14%; }
+    .hs-computer { left: 37%; top: 16%; width: 27%; height: 45%; }
+    .hs-keyboard { left: 38.5%; top: 63.5%; width: 24%; height: 7%; }
+    .hs-plant    { left: 66.5%; top: 29%; width: 10%; height: 37%; }
+    .hs-mug      { left: 80%; top: 50%; width: 7%; height: 15%; }
+    .hs-drawer   { left: 64%; top: 74%; width: 26%; height: 15%; }
+    .hs-drawer.is-open svg path, .hs-drawer.is-open svg rect:nth-of-type(n+3) { display: none; }
+    .hs-bin      { left: 2.5%; top: 70%; width: 9%; height: 26%; }
+    .scene-sticky {
+      position: absolute; z-index: 3; left: 58.5%; top: 66.5%; width: 5%; height: 6.5%;
+      background: #ffe36e; transform: rotate(-9deg); box-shadow: 0 2px 4px rgba(0,0,0,.4); pointer-events: none;
+    }
+    .scene-sticky[hidden] { display: none; }
+
+    /* ---- Side column: close-up + hands ---- */
+    .side-col { display: grid; gap: 1rem; }
+    .closeup {
+      background: var(--panel-2); border: 1px solid var(--border); border-radius: 14px; padding: 1rem 1.1rem; min-height: 220px;
+    }
+    .closeup__eyebrow { font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--brand); margin: 0 0 .25rem; }
+    .closeup h3 { margin: 0 0 .5rem; font-size: 1.1rem; color: #fff; }
+    .closeup p { margin: 0 0 .6rem; line-height: 1.5; font-size: .93rem; }
+    .closeup .btn { margin-top: .25rem; }
+    .closeup-empty { color: var(--muted); font-size: .92rem; line-height: 1.5; }
+
+    .prop-sticky {
+      background: #ffe36e; color: #3a2f00; padding: .9rem 1rem; border-radius: 3px; transform: rotate(-1.5deg);
+      box-shadow: 0 6px 14px rgba(0,0,0,.35); font-family: 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive;
+      font-size: 1.02rem; line-height: 1.45; margin: .4rem .2rem .9rem;
+    }
+    .prop-sticky strong { color: #3a2f00; }
+    .prop-paper {
+      background: #eef0f2; color: #333; padding: .85rem 1rem; border-radius: 4px; margin: .4rem .2rem .9rem;
+      font-family: 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive; line-height: 1.45; transform: rotate(1deg);
+      box-shadow: 0 6px 14px rgba(0,0,0,.35);
+    }
+    .prop-paper s { color: #a33; }
+    .prop-badge {
+      background: linear-gradient(180deg, #f4f6f8, #dde3ea); color: #1b2230; border-radius: 10px; padding: .8rem; margin: .4rem 0 .9rem;
+      display: grid; grid-template-columns: 64px 1fr; gap: .8rem; align-items: center; border-top: 10px solid #2f6fd6;
+      box-shadow: 0 6px 14px rgba(0,0,0,.35);
+    }
+    .prop-badge__photo { width: 64px; height: 76px; border-radius: 6px; background: linear-gradient(180deg, #9fb4cc, #6f88a6); display: grid; place-items: center; font-weight: 800; color: #fff; font-size: 1.3rem; }
+    .prop-badge__name { font-weight: 800; font-size: 1.05rem; color: #0f1720; }
+    .prop-badge__row { font-size: .85rem; color: #394455; }
+    .prop-badge__desk { display: inline-block; margin-top: .3rem; font-weight: 800; background: #1b2230; color: #fff; padding: .15rem .5rem; border-radius: 4px; font-size: .9rem; }
+    .prop-card {
+      background: linear-gradient(135deg, #fff3f8, #fbe8ff); color: #3b1f3f; border-radius: 6px; padding: .9rem 1rem; margin: .4rem 0 .9rem;
+      font-family: 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive; line-height: 1.5; box-shadow: 0 6px 14px rgba(0,0,0,.35);
+    }
+    .prop-card__title { font-family: Georgia, serif; font-weight: 700; font-size: 1.1rem; color: #b0306a; margin-bottom: .3rem; }
+    .prop-label {
+      display: inline-block; background: #c9a36b; color: #2a1c0a; padding: .5rem .8rem; border-radius: 4px; margin: .4rem 0 .9rem;
+      font-family: 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive; box-shadow: 0 4px 10px rgba(0,0,0,.35);
+    }
+
+    /* Combination lock */
+    .combo { display: flex; gap: .5rem; align-items: center; margin: .5rem 0 .75rem; flex-wrap: wrap; }
+    .combo__dial { display: grid; justify-items: center; gap: .2rem; }
+    .combo__btn {
+      width: 44px; height: 30px; border-radius: 6px; border: 1px solid var(--border); background: var(--panel);
+      color: var(--ink); cursor: pointer; font-size: .85rem; line-height: 1;
+    }
+    .combo__btn:hover, .combo__btn:focus-visible { border-color: var(--brand); color: #fff; }
+    .combo__digit {
+      width: 44px; height: 52px; border-radius: 8px; display: grid; place-items: center;
+      background: linear-gradient(180deg, #d9dde2, #9aa3ad); color: #11161d; font-weight: 800; font-size: 1.6rem;
+      font-family: 'Courier New', monospace; box-shadow: inset 0 2px 6px rgba(0,0,0,.35);
+    }
+    .combo--shake { animation: mfaShake .4s; }
+    @keyframes mfaShake { 20%,60% { transform: translateX(-6px); } 40%,80% { transform: translateX(6px); } }
+
+    .mfa-feedback { min-height: 1.4em; font-size: .9rem; margin: .4rem 0 0; }
+    .mfa-feedback.is-bad { color: var(--danger); }
+    .mfa-feedback.is-good { color: var(--accent); }
+    .mfa-feedback.is-info { color: var(--warn); }
+
+    /* Login screen (computer close-up) */
+    .login {
+      background: linear-gradient(160deg, #0f2744, #0b1624); border: 1px solid #23456d; border-radius: 12px; padding: 1rem;
+      margin: .3rem 0 .6rem;
+    }
+    .login__brand { font-weight: 800; color: #fff; display: flex; align-items: center; gap: .5rem; margin-bottom: .6rem; }
+    .login__logo { width: 22px; height: 22px; border-radius: 5px; background: conic-gradient(#58a6ff 0 25%, #09ff88 0 50%, #ffa657 0 75%, #9b7bff 0); }
+    .login__user { font-size: .85rem; color: #9fb8d6; margin-bottom: .7rem; }
+    .login__steps { display: flex; gap: .35rem; margin-bottom: .7rem; flex-wrap: wrap; }
+    .login__step { font-size: .72rem; font-weight: 700; padding: .2rem .5rem; border-radius: 999px; border: 1px solid #2c4d75; color: #9fb8d6; }
+    .login__step.is-now { border-color: var(--brand); color: #fff; background: rgba(88,166,255,.2); }
+    .login__step.is-ok { border-color: rgba(9,255,136,.5); color: var(--accent); }
+    .login label { display: block; font-size: .85rem; color: #cfe0f5; margin-bottom: .3rem; }
+    .login__row { display: flex; gap: .5rem; }
+    .login__row input {
+      flex: 1; min-width: 0; padding: .55rem .7rem; border-radius: 8px; border: 1px solid #2c4d75; background: #07111c; color: #fff; font-size: 1rem;
+    }
+    .login__row input:focus { outline: 2px solid var(--brand); outline-offset: 1px; }
+    .login__code { letter-spacing: .3em; font-family: 'Courier New', monospace; font-weight: 700; }
+    .login__ok { text-align: center; padding: .6rem 0; }
+    .login__ok strong { color: var(--accent); font-size: 1.1rem; display: block; margin-bottom: .3rem; }
+
+    /* ---- The phone ---- */
+    .phone {
+      width: 100%; max-width: 300px; margin: 0 auto; aspect-ratio: 9 / 18.5; border-radius: 34px; padding: 10px;
+      background: linear-gradient(160deg, #2b3340, #0d1117); box-shadow: 0 18px 40px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.08);
+      position: relative;
+    }
+    .phone--small { max-width: 230px; }
+    .phone__screen {
+      position: relative; height: 100%; border-radius: 26px; overflow: hidden; display: flex; flex-direction: column;
+      background: radial-gradient(circle at 30% 0%, #37508a 0%, #1a2440 45%, #0b0f1c 100%); color: #fff;
+    }
+    .phone__notch { position: absolute; top: 7px; left: 50%; transform: translateX(-50%); width: 34%; height: 18px; background: #05070a; border-radius: 0 0 12px 12px; z-index: 3; }
+    .phone__status { display: flex; justify-content: space-between; padding: 8px 18px 0; font-size: .7rem; font-weight: 700; opacity: .9; }
+    .phone__body { flex: 1; display: flex; flex-direction: column; padding: 10px 12px 14px; gap: .6rem; overflow-y: auto; }
+    .phone__clock { text-align: center; font-size: 2.6rem; font-weight: 300; margin-top: .6rem; line-height: 1; }
+    .phone__date { text-align: center; font-size: .78rem; opacity: .8; margin-bottom: .4rem; }
+    .phone__center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .8rem; text-align: center; }
+    .phone__muted { font-size: .78rem; opacity: .75; line-height: 1.4; }
+    .fp-btn {
+      width: 74px; height: 74px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); background: rgba(255,255,255,.06);
+      display: grid; place-items: center; cursor: pointer; color: #fff; transition: all .2s;
+    }
+    .fp-btn:hover, .fp-btn:focus-visible { border-color: var(--brand); background: rgba(88,166,255,.15); }
+    .fp-btn.is-fail { border-color: var(--danger); background: rgba(255,85,85,.18); animation: mfaShake .4s; }
+    .fp-btn svg { width: 40px; height: 40px; }
+
+    .auth-app { background: #0e1726; border-radius: 16px; padding: .8rem; text-align: left; border: 1px solid rgba(255,255,255,.08); }
+    .auth-app__title { font-size: .72rem; opacity: .7; letter-spacing: .08em; text-transform: uppercase; margin-bottom: .45rem; }
+    .auth-app__acct { font-size: .8rem; opacity: .85; }
+    .auth-app__code { font-family: 'Courier New', monospace; font-size: 1.9rem; font-weight: 800; letter-spacing: .12em; color: #7cc4ff; margin: .2rem 0 .35rem; }
+    .auth-app__bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
+    .auth-app__bar span { display: block; height: 100%; background: #7cc4ff; transition: width 1s linear; }
+    .auth-app__bar.is-low span { background: var(--warn); }
+    .auth-app__secs { font-size: .72rem; opacity: .7; margin-top: .3rem; }
+
+    .notif { background: rgba(245,248,252,.96); color: #111827; border-radius: 16px; padding: .75rem .8rem; box-shadow: 0 6px 18px rgba(0,0,0,.35); animation: mfaMsgIn .3s ease; }
+    .notif__app { display: flex; align-items: center; gap: .4rem; font-size: .7rem; color: #4b5563; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: .3rem; }
+    .notif__icon { width: 18px; height: 18px; border-radius: 5px; background: #1f6feb; display: grid; place-items: center; color: #fff; font-size: .62rem; font-weight: 800; }
+    .notif__icon--sms { background: #22a355; }
+    .notif__title { font-weight: 800; font-size: .95rem; margin-bottom: .25rem; }
+    .notif__text { font-size: .83rem; line-height: 1.4; color: #1f2937; }
+    .notif__rows { margin: .45rem 0 .2rem; display: grid; gap: .15rem; font-size: .78rem; color: #374151; }
+    .notif__rows b { color: #111827; }
+    .notif__count { display: inline-block; background: var(--danger); color: #fff; border-radius: 999px; font-size: .7rem; padding: 0 .45rem; margin-left: .3rem; }
+    .phone-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem; margin-top: .6rem; }
+    .phone-actions--stack { grid-template-columns: 1fr; }
+    .pbtn {
+      border: 0; border-radius: 10px; padding: .6rem .5rem; font-weight: 800; font-size: .88rem; cursor: pointer;
+      background: #e5e7eb; color: #111827; transition: filter .15s, transform .15s;
+    }
+    .pbtn:hover, .pbtn:focus-visible { filter: brightness(1.08); transform: translateY(-1px); outline: 2px solid #58a6ff; outline-offset: 1px; }
+    .pbtn--approve { background: #16a34a; color: #fff; }
+    .pbtn--deny { background: #dc2626; color: #fff; }
+    .pbtn--ghost { background: transparent; color: #1f6feb; text-decoration: underline; font-weight: 700; padding: .35rem; }
+    .pbtn--dark { background: rgba(255,255,255,.12); color: #fff; }
+    .pbtn--num { background: #1f2937; color: #fff; font-size: 1.15rem; font-family: 'Courier New', monospace; }
+    .num-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: .45rem; margin-top: .45rem; }
+
+    .sms-thread { display: grid; gap: .5rem; }
+    .sms-from { text-align: center; font-size: .8rem; opacity: .85; padding-bottom: .4rem; border-bottom: 1px solid rgba(255,255,255,.1); }
+    .sms-from b { display: block; font-size: .95rem; opacity: 1; }
+    .sms-bubble { background: #2b3445; border-radius: 14px 14px 14px 4px; padding: .6rem .75rem; font-size: .84rem; line-height: 1.45; max-width: 92%; animation: mfaMsgIn .3s ease; }
+    .sms-bubble--me { background: #1f6feb; border-radius: 14px 14px 4px 14px; justify-self: end; }
+    .breach {
+      background: rgba(127,17,17,.95); border: 2px solid #ff6b6b; border-radius: 14px; padding: .8rem; text-align: left; animation: mfaShake .45s;
+    }
+    .breach__title { font-weight: 900; letter-spacing: .06em; color: #fff; margin-bottom: .3rem; }
+    .breach p { font-size: .82rem; line-height: 1.45; margin: 0 0 .5rem; }
+    .phone-toast { background: rgba(9,255,136,.15); border: 1px solid rgba(9,255,136,.5); color: #b7ffd9; border-radius: 12px; padding: .6rem .7rem; font-size: .82rem; line-height: 1.4; }
+
+    /* ---- Stage 2 layout ---- */
+    .attack-layout { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
+    .attack-side { display: grid; gap: 1rem; }
+    .monitor {
+      background: #0a0f16; border: 8px solid #222a35; border-bottom-width: 14px; border-radius: 12px; padding: .9rem; min-height: 150px;
+    }
+    .monitor__bar { display: flex; align-items: center; gap: .45rem; font-size: .75rem; color: var(--muted); margin-bottom: .6rem; }
+    .monitor__bar i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: #3a4452; }
+    .monitor__big { font-size: 2.6rem; font-weight: 800; color: #fff; font-family: 'Courier New', monospace; letter-spacing: .1em; text-align: center; margin: .3rem 0; }
+    .attack-log { background: var(--panel-2); border: 1px solid var(--border); border-radius: 14px; padding: 1rem; }
+    .attack-log h3 { margin: 0 0 .6rem; font-size: 1rem; }
+    .attack-log ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
+    .attack-log li {
+      display: flex; gap: .6rem; align-items: flex-start; padding: .5rem .65rem; border-radius: 8px; border: 1px dashed var(--border); font-size: .88rem; color: var(--muted);
+    }
+    .attack-log li .n { font-weight: 800; color: var(--muted); min-width: 1.2rem; }
+    .attack-log li.is-now { border-style: solid; border-color: rgba(255,85,85,.5); color: var(--ink); }
+    .attack-log li.is-done { border-style: solid; border-color: rgba(9,255,136,.35); color: var(--ink); }
+    .attack-log li.is-done .n { color: var(--accent); }
+    .attack-log li b { color: #fff; display: block; }
+
+    /* ---- Toolkit: factors + clues ---- */
+    .kit { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 1rem; margin-top: 1rem; }
+    .kit__panel { background: var(--panel-2); border: 1px solid var(--border); border-radius: 14px; padding: 1rem; }
+    .kit__panel h3 { margin: 0 0 .6rem; font-size: 1rem; display: flex; align-items: baseline; gap: .5rem; justify-content: space-between; }
+    .kit__panel h3 small { color: var(--muted); font-weight: 600; font-size: .78rem; }
+    .factors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; }
+    .factor {
+      border: 2px dashed var(--border); border-radius: 12px; padding: .7rem .6rem; text-align: center; min-height: 150px;
+      display: flex; flex-direction: column; align-items: center; gap: .35rem; transition: all .3s;
+    }
+    .factor__icon { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: rgba(139,148,158,.12); color: var(--muted); font-weight: 800; font-size: 1.2rem; }
+    .factor__icon svg { width: 24px; height: 24px; }
+    .factor__name { font-weight: 800; font-size: .85rem; color: var(--muted); letter-spacing: .02em; }
+    .factor__text { font-size: .78rem; line-height: 1.4; color: var(--muted); }
+    .factor.is-found { border-style: solid; border-color: rgba(9,255,136,.45); background: rgba(9,255,136,.05); animation: mfaMsgIn .4s ease; }
+    .factor.is-found .factor__icon { background: rgba(9,255,136,.15); color: var(--accent); }
+    .factor.is-found .factor__name { color: var(--accent); }
+    .factor.is-found .factor__text { color: var(--ink); }
+    .clues { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+    .clues li { font-size: .86rem; line-height: 1.4; padding: .45rem .6rem; border-radius: 8px; background: rgba(255,227,110,.06); border-left: 3px solid #ffe36e; }
+    .clues li b { color: #ffe9a0; }
+    .clues__empty { color: var(--muted); font-size: .86rem; }
+
+    /* ---- Completion ---- */
+    .mfa-complete {
+      background: linear-gradient(145deg, rgba(9,255,136,.12), rgba(88,166,255,.08));
+      border: 2px solid var(--accent); border-radius: 16px; padding: 1.5rem; text-align: center;
+    }
+    .mfa-complete h2 { color: var(--accent); margin: 0 0 .5rem; }
+    .mfa-complete__word { font-size: clamp(2rem, 6vw, 3.2rem); font-weight: 900; letter-spacing: .12em; color: var(--accent); text-shadow: 0 0 22px rgba(9,255,136,.6); margin: .4rem 0; }
+    .mfa-complete__cta { color: #fff; font-weight: 700; margin-bottom: 1rem; }
+    .debrief { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .8rem; text-align: left; margin-top: 1rem; }
+    .debrief__card { background: rgba(0,0,0,.25); border: 1px solid var(--border); border-radius: 12px; padding: .85rem 1rem; }
+    .debrief__card h3 { font-size: .95rem; margin: 0 0 .4rem; color: #fff; }
+    .debrief__card ul { margin: 0; padding-left: 1.1rem; font-size: .88rem; line-height: 1.5; color: var(--ink); }
+
+    [hidden] { display: none !important; }
+
+    @media (max-width: 960px) {
+      .desk-layout, .attack-layout, .kit { grid-template-columns: 1fr; }
+      .phone { max-width: 290px; }
+    }
+    @media (max-width: 560px) {
+      .mfa-room { padding: .9rem; }
+      .hotspot__label { font-size: 8px; padding: 1px 4px; }
+      .desk-scene { aspect-ratio: 4 / 3; }
+      .hs-badge { top: 9%; height: 33%; }
+      .hs-bin { height: 22%; top: 71%; }
+      .hs-photo .hotspot__label { bottom: auto; top: -4px; transform: translate(-50%, -100%); }
+      .factors { grid-template-columns: 1fr; }
+      .factor { min-height: 0; flex-direction: row; text-align: left; }
+      .combo__digit { width: 38px; }
+      .combo__btn { width: 38px; }
+      .phone { aspect-ratio: auto; min-height: 400px; }
+      #handPhone { min-height: 340px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .hotspot, .comms__msg, .notif, .breach, .factor { animation: none !important; transition: none !important; }
+    }
+  </style>
+</head>
+
+<body data-session="team">
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <!-- Global Header -->
+  <header class="site-header site-header--bar" aria-label="Global">
+    <div class="site-header__inner">
+      <div class="header-left">
+        <button class="nav-btn ghost nav-btn--back" type="button" data-back="game.html" data-tooltip="Back to previous page">
+          <span aria-hidden="true">&larr;</span>
+          <span>Back</span>
+        </button>
+        <a class="brand" href="game.html">
+          <img src="assets/logo.png" alt="" class="logo" />
+          <span class="brand-copy">
+            <span class="brand-name">Cyber Escape Rooms</span>
+            <span class="brand-tagline">Team-based security missions</span>
+          </span>
+        </a>
+      </div>
+
+      <div class="header-actions">
+        <nav class="main-nav" aria-label="Primary">
+          <a class="nav-link" href="game.html">Mission Hub</a>
+        </nav>
+        <a class="nav-btn nav-btn--next" href="supply-chain.html" aria-label="Next challenge: Supply Chain Attack">
+          Next<span aria-hidden="true">&rarr;</span>
+        </a>
+        <div class="vault-status" id="vaultStatus" role="status" aria-live="polite" data-visible="team">
+          <span class="vault-status__label">Vault</span>
+          <ol class="vault-status__digits">
+            <li data-vault-key="phishing">&bull;</li>
+            <li data-vault-key="osint">&bull;</li>
+            <li data-vault-key="incident">&bull;</li>
+            <li data-vault-key="mfa">&bull;</li>
+            <li data-vault-key="supply">&bull;</li>
+            <li data-vault-key="forensics">&bull;</li>
+          </ol>
+          <span class="vault-status__count">0/6</span>
+        </div>
+        <button class="nav-btn alert nav-btn--logout" type="button" data-action="logout">Logout</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container" id="main" role="main" tabindex="-1">
+    <header class="game-header">
+      <h1 class="glow">MFA / Authentication</h1>
+      <p class="mt-1" style="color:var(--muted)">
+        A phished password. A colleague who needs your help. One phone standing between an attacker and her account.
+      </p>
+    </header>
+
+    <section class="intro-banner mt-2" aria-labelledby="mfaBriefHeading">
+      <h2 id="mfaBriefHeading">Mission briefing: Priya's account</h2>
+      <p>Priya Shah, a finance manager at Northwind, typed her work password into a fake login page this morning. She's been <strong>phished</strong>, and an attacker now has her password. Priya is stuck on a train across town, and her work phone is locked in her desk drawer.</p>
+      <p>You're Northwind's IT security helpers. Priya has asked you to go to her desk, sign in to her account <strong>with her permission</strong>, and help Sam from IT secure it before the attacker gets in. She's on a call with you and will guide you.</p>
+      <ol>
+        <li><strong>Search Priya's desk.</strong> Click anything that looks interesting. Useful clues are saved in your notebook.</li>
+        <li><strong>Sign in to her account</strong> using the clues she left, so Sam can lock it down.</li>
+        <li><strong>Guard her phone.</strong> The attacker will try to trick whoever is holding it. Spot the tricks and refuse them.</li>
+      </ol>
+      <div class="vault-callout" role="status">
+        <span class="tag">Code word</span>
+        <p>Secure Priya's account to reveal the code word: <strong id="mfaVaultValue">&mdash;</strong></p>
+      </div>
+    </section>
+
+    <section class="status-hud" aria-label="Team status">
+      <div class="points-box">
+        <p class="points-box__label">Team points</p>
+        <p class="points-box__value" id="mfaPointsTotal">000</p>
+        <p class="points-box__delta" id="mfaPointsDelta" aria-live="polite"></p>
+      </div>
+      <div class="progress-mini">
+        <p class="progress-mini__label">Puzzle progress</p>
+        <div class="progress-mini__track">
+          <div class="progress-mini__fill" id="mfaProgressFill"></div>
+        </div>
+        <p class="progress-mini__text" id="mfaProgressText">0% complete</p>
+      </div>
+    </section>
+
+    <section class="card points-card mt-2" aria-labelledby="mfaPointsHeading">
+      <details class="points-panel">
+        <summary id="mfaPointsHeading">Points intel</summary>
+        <ul>
+          <li>Wrong password, drawer code or login code: <strong>-2 points</strong></li>
+          <li>Falling for one of the attacker's tricks on the phone: <strong>-3 points</strong> (Sam will kick them out and you can try again)</li>
+          <li>Each hint: <strong>-5 points</strong> (hints get more detailed each time you ask)</li>
+        </ul>
+      </details>
+    </section>
+
+    <!-- ================= The room ================= -->
+    <section class="card mfa-room mt-2" id="mfaRoom" aria-labelledby="mfaStageTitle">
+      <div class="mfa-topbar">
+        <div>
+          <span class="mfa-stage-pill" id="mfaStagePill"><span class="dot" aria-hidden="true"></span><span id="mfaStageTitle">Stage 1 of 2: Priya's desk</span></span>
+        </div>
+        <div class="mfa-hint-wrap">
+          <button class="btn ghost sm" type="button" id="mfaHintBtn">Hint (-5 pts)</button>
+        </div>
+      </div>
+      <p class="mfa-hint-text" id="mfaHintText" role="status" hidden></p>
+
+      <!-- Live call with Priya and Sam -->
+      <div class="comms" aria-label="Call with Priya Shah and Sam from IT Security">
+        <div class="comms__head">
+          <span class="comms__avatar comms__avatar--priya" aria-hidden="true">PS</span>
+          <span class="comms__avatar" aria-hidden="true">SO</span>
+          <span>Call: Priya Shah &amp; Sam Okafor (IT)</span>
+          <span class="comms__live">Live</span>
+        </div>
+        <div class="comms__feed" id="mfaFeed" aria-live="polite"></div>
+      </div>
+
+      <!-- ---------- Stage 1: the desk ---------- -->
+      <div id="stageDesk">
+        <div class="desk-layout">
+          <div>
+            <p class="desk-help">Click on anything on Priya's desk to take a closer look.</p>
+            <div class="desk-scene" id="deskScene" role="group" aria-label="Priya's desk. Each item is a button you can inspect.">
+              <div class="scene-wall" aria-hidden="true"></div>
+              <div class="scene-floor" aria-hidden="true"></div>
+              <div class="scene-window" aria-hidden="true"></div>
+              <div class="scene-poster" aria-hidden="true">THINK BEFORE YOU TAP<small>Only approve what you started</small></div>
+              <div class="scene-desk-top" aria-hidden="true"></div>
+              <div class="scene-desk-front" aria-hidden="true"></div>
+
+              <button class="hotspot hotspot--top hs-badge" type="button" data-item="badge" aria-label="Staff ID badge on a hook">
+                <svg viewBox="0 0 60 140" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+                  <circle cx="30" cy="8" r="5" fill="#9aa4b2"/>
+                  <path d="M30 10 L14 70 M30 10 L46 70" stroke="#2f6fd6" stroke-width="4" fill="none"/>
+                  <rect x="8" y="66" width="44" height="64" rx="5" fill="#eef1f5"/>
+                  <rect x="8" y="66" width="44" height="10" rx="3" fill="#2f6fd6"/>
+                  <rect x="16" y="82" width="18" height="22" rx="2" fill="#8aa0bb"/>
+                  <rect x="37" y="84" width="10" height="3" fill="#9aa4b2"/>
+                  <rect x="37" y="90" width="8" height="3" fill="#9aa4b2"/>
+                  <rect x="14" y="110" width="32" height="4" fill="#394455"/>
+                  <rect x="14" y="118" width="22" height="4" fill="#9aa4b2"/>
+                </svg>
+                <span class="hotspot__label">ID badge</span>
+              </button>
+
+              <button class="hotspot hs-photo" type="button" data-item="photo" aria-label="Framed photo">
+                <svg viewBox="0 0 60 80" aria-hidden="true" preserveAspectRatio="xMidYMax meet">
+                  <rect x="2" y="2" width="56" height="70" rx="3" fill="#b88a4a"/>
+                  <rect x="8" y="8" width="44" height="58" fill="#7fb6e0"/>
+                  <rect x="8" y="42" width="44" height="24" fill="#e8d39a"/>
+                  <rect x="8" y="36" width="44" height="8" fill="#3d7fb5"/>
+                  <circle cx="22" cy="40" r="5" fill="#5a3b2a"/><rect x="18" y="45" width="8" height="12" rx="3" fill="#d24b5a"/>
+                  <circle cx="36" cy="42" r="4" fill="#3b2a20"/><rect x="33" y="46" width="7" height="10" rx="3" fill="#3f8f5a"/>
+                  <circle cx="44" cy="16" r="5" fill="#ffe36e"/>
+                  <path d="M20 72 L14 79 M40 72 L46 79" stroke="#8a6532" stroke-width="3"/>
+                </svg>
+                <span class="hotspot__label">Photo</span>
+              </button>
+
+              <button class="hotspot hs-card" type="button" data-item="card" aria-label="Greeting card">
+                <svg viewBox="0 0 60 50" aria-hidden="true" preserveAspectRatio="xMidYMax meet">
+                  <path d="M4 48 L16 4 L56 4 L44 48 Z" fill="#f7c6dc"/>
+                  <path d="M4 48 L16 4 L20 4 L8 48 Z" fill="#d98bb0"/>
+                  <text x="33" y="33" font-size="22" font-weight="900" fill="#b0306a" text-anchor="middle" font-family="Georgia, serif">5</text>
+                  <circle cx="22" cy="14" r="2" fill="#58a6ff"/><circle cx="46" cy="12" r="2" fill="#09c26a"/><circle cx="40" cy="40" r="2" fill="#ffa657"/>
+                </svg>
+                <span class="hotspot__label">Card</span>
+              </button>
+
+              <button class="hotspot hotspot--top hs-computer" type="button" data-item="computer" aria-label="Priya's computer, showing a sign-in screen">
+                <svg viewBox="0 0 160 150" aria-hidden="true" preserveAspectRatio="xMidYMax meet">
+                  <defs>
+                    <linearGradient id="mfaScr" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0" stop-color="#16345a"/><stop offset="1" stop-color="#0b1a2d"/>
+                    </linearGradient>
+                  </defs>
+                  <rect x="2" y="2" width="156" height="104" rx="6" fill="#1b2029"/>
+                  <rect x="8" y="8" width="144" height="92" rx="2" fill="url(#mfaScr)"/>
+                  <rect x="52" y="26" width="56" height="58" rx="6" fill="#0e2340" stroke="#2f6fd6" stroke-width="1.5"/>
+                  <rect x="72" y="36" width="16" height="13" rx="2" fill="none" stroke="#9fd1ff" stroke-width="2.5"/>
+                  <rect x="69" y="46" width="22" height="16" rx="3" fill="#9fd1ff"/>
+                  <circle cx="80" cy="53" r="2.5" fill="#0e2340"/>
+                  <rect x="60" y="68" width="40" height="6" rx="3" fill="#1f6feb"/>
+                  <rect x="70" y="106" width="20" height="26" fill="#2a303b"/>
+                  <rect x="46" y="130" width="68" height="10" rx="4" fill="#353c48"/>
+                </svg>
+                <span class="hotspot__label">Computer</span>
+              </button>
+
+              <button class="hotspot hs-keyboard" type="button" data-item="keyboard" aria-label="Keyboard">
+                <svg viewBox="0 0 160 30" aria-hidden="true" preserveAspectRatio="none">
+                  <rect x="1" y="3" width="158" height="25" rx="5" fill="#2c323d"/>
+                  <g fill="#454d5b">
+                    <rect x="8" y="7" width="140" height="4" rx="1"/>
+                    <rect x="8" y="13" width="144" height="4" rx="1"/>
+                    <rect x="8" y="19" width="30" height="4" rx="1"/><rect x="42" y="19" width="70" height="4" rx="1"/><rect x="116" y="19" width="36" height="4" rx="1"/>
+                  </g>
+                </svg>
+                <span class="hotspot__label">Keyboard</span>
+              </button>
+              <div class="scene-sticky" id="sceneSticky" aria-hidden="true" hidden></div>
+
+              <button class="hotspot hotspot--top hs-plant" type="button" data-item="plant" aria-label="Potted flower">
+                <svg viewBox="0 0 60 130" aria-hidden="true" preserveAspectRatio="xMidYMax meet">
+                  <path d="M30 40 C28 60 32 80 30 96" stroke="#3f8f3a" stroke-width="4" fill="none"/>
+                  <path d="M30 70 C18 62 10 66 8 72 C16 76 24 76 30 70 Z" fill="#4caf50"/>
+                  <path d="M31 80 C44 72 52 76 54 82 C46 86 38 86 31 80 Z" fill="#43a047"/>
+                  <g transform="translate(30 30)">
+                    <g fill="#ffcc2e">
+                      <ellipse rx="5" ry="13" transform="rotate(0)"/><ellipse rx="5" ry="13" transform="rotate(30)"/><ellipse rx="5" ry="13" transform="rotate(60)"/>
+                      <ellipse rx="5" ry="13" transform="rotate(90)"/><ellipse rx="5" ry="13" transform="rotate(120)"/><ellipse rx="5" ry="13" transform="rotate(150)"/>
+                    </g>
+                    <circle r="8" fill="#6b3f1d"/>
+                  </g>
+                  <path d="M12 96 L48 96 L44 128 L16 128 Z" fill="#c0643a"/>
+                  <rect x="10" y="94" width="40" height="6" rx="2" fill="#d97a4e"/>
+                  <rect x="21" y="106" width="18" height="10" rx="1" fill="#c9a36b"/>
+                </svg>
+                <span class="hotspot__label">Plant</span>
+              </button>
+
+              <button class="hotspot hs-mug" type="button" data-item="mug" aria-label="Coffee mug">
+                <svg viewBox="0 0 50 64" aria-hidden="true" preserveAspectRatio="xMidYMax meet">
+                  <path d="M16 18 L12 2 M24 18 L26 0 M30 18 L36 4" stroke="#58a6ff" stroke-width="3"/>
+                  <path d="M38 26 C50 26 50 46 38 46" stroke="#e9edf2" stroke-width="5" fill="none"/>
+                  <rect x="6" y="16" width="34" height="46" rx="5" fill="#e9edf2"/>
+                  <rect x="10" y="30" width="26" height="4" fill="#b0306a"/><rect x="12" y="38" width="22" height="3" fill="#8b949e"/>
+                </svg>
+                <span class="hotspot__label">Mug</span>
+              </button>
+
+              <button class="hotspot hs-drawer" type="button" data-item="drawer" aria-label="Locked desk drawer">
+                <svg viewBox="0 0 160 60" aria-hidden="true" preserveAspectRatio="none">
+                  <rect x="2" y="2" width="156" height="56" rx="4" fill="#4a3727" stroke="#2b1f15" stroke-width="2"/>
+                  <rect x="58" y="14" width="44" height="7" rx="3" fill="#b9c0c9"/>
+                  <rect x="112" y="28" width="30" height="24" rx="3" fill="#ffe36e"/>
+                  <path d="M72 30 C72 22 88 22 88 30" stroke="#c9ced6" stroke-width="3.5" fill="none"/>
+                  <rect x="68" y="30" width="24" height="20" rx="3" fill="#8b949e"/>
+                  <rect x="72" y="36" width="16" height="7" rx="1" fill="#2c323d"/>
+                </svg>
+                <span class="hotspot__label">Drawer</span>
+              </button>
+
+              <button class="hotspot hs-bin" type="button" data-item="bin" aria-label="Rubbish bin">
+                <svg viewBox="0 0 60 90" aria-hidden="true" preserveAspectRatio="xMidYMax meet">
+                  <circle cx="24" cy="14" r="9" fill="#e7e9ec"/><circle cx="36" cy="12" r="7" fill="#d6d9de"/>
+                  <path d="M6 18 L54 18 L48 88 L12 88 Z" fill="#39424f"/>
+                  <path d="M16 24 L18 82 M26 24 L27 82 M34 24 L33 82 M44 24 L42 82" stroke="#2a313b" stroke-width="2.5"/>
+                  <rect x="4" y="16" width="52" height="5" rx="2" fill="#4a5462"/>
+                </svg>
+                <span class="hotspot__label">Bin</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="side-col">
+            <div class="closeup" id="closeup" aria-live="polite" tabindex="-1">
+              <p class="closeup-empty">Nothing picked up yet. Click something on the desk to look at it up close.</p>
+            </div>
+            <div id="handsWrap" hidden>
+              <p class="closeup__eyebrow" style="margin-bottom:.5rem">In your hands: Priya's work phone</p>
+              <div class="phone phone--small" id="handPhone"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---------- Stage 2: under attack ---------- -->
+      <div id="stageAttack" hidden>
+        <div class="attack-layout">
+          <div>
+            <div class="phone" id="attackPhone" aria-live="polite"></div>
+          </div>
+          <div class="attack-side">
+            <div class="monitor" id="attackMonitor" aria-live="polite"></div>
+            <div class="attack-log">
+              <h3>What's hitting Priya's phone</h3>
+              <ol id="attackLog"></ol>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---------- Toolkit (both stages) ---------- -->
+      <div class="kit" id="mfaKit">
+        <div class="kit__panel">
+          <h3>The three kinds of key <small id="factorCount">0 / 3 discovered</small></h3>
+          <div class="factors" id="factorSlots">
+            <div class="factor" data-factor="know">
+              <div class="factor__icon" aria-hidden="true">?</div>
+              <div class="factor__name">??? </div>
+              <div class="factor__text">Not discovered yet.</div>
+            </div>
+            <div class="factor" data-factor="have">
+              <div class="factor__icon" aria-hidden="true">?</div>
+              <div class="factor__name">???</div>
+              <div class="factor__text">Not discovered yet.</div>
+            </div>
+            <div class="factor" data-factor="are">
+              <div class="factor__icon" aria-hidden="true">?</div>
+              <div class="factor__name">???</div>
+              <div class="factor__text">Not discovered yet.</div>
+            </div>
+          </div>
+        </div>
+        <div class="kit__panel">
+          <h3>Notebook <small>clues you've found</small></h3>
+          <ul class="clues" id="clueList"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ Completion ============ -->
+    <section id="mfaFinalBanner" class="mt-2" hidden>
+      <div class="mfa-complete" id="completionContent" aria-live="polite"></div>
+    </section>
+
+    <nav class="challenge-nav mt-2" aria-label="Puzzle navigation">
+      <a class="btn ghost" href="incident.html">&larr; Incident Response</a>
+      <a class="btn ghost" href="game.html">Mission Hub</a>
+      <a class="btn" href="supply-chain.html">Next: Supply Chain &rarr;</a>
+    </nav>
+  </main>
+
+  <!-- Global Footer -->
+  <footer class="site-footer header-bleed">
+    <div class="footer-inner">
+      <nav class="footer-nav" aria-label="Footer">
+        <a href="index.html">Home</a>
+        <span aria-hidden="true">&bull;</span>
+        <a href="game.html">Mission Hub</a>
+      </nav>
+      <p class="footer-note">Secure Priya's account to earn your code word.</p>
+      <p class="footer-copy"><small>&copy; 2026 Cyber Escape Rooms</small></p>
+    </div>
+  </footer>
+</body>
+</html>

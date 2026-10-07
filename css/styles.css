@@ -2023,6 +2023,58 @@ body.phish-overlay-open {
     margin: 0;
 }
 
+.lock-box--words {
+    flex-direction: column;
+    gap: .75rem;
+    align-items: stretch;
+}
+
+.lock-word-group {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+}
+
+.lock-word-label {
+    width: 7rem;
+    flex-shrink: 0;
+    font-size: .85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--muted);
+    text-align: right;
+}
+
+.lock-word {
+    flex: 1;
+    max-width: 12rem;
+    height: 2.5rem;
+    padding: 0 .75rem;
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    text-align: center;
+    border: 2px solid var(--brand);
+    background: var(--bg-1);
+    color: #fff;
+    border-radius: 8px;
+    transition: transform .2s, border-color .2s;
+}
+
+.lock-word:focus {
+    transform: scale(1.03);
+    box-shadow: 0 0 0 4px var(--ring);
+    outline: none;
+}
+
+.lock-word.is-filled {
+    border-color: var(--ok, #22c55e);
+    background: rgba(34, 197, 94, .1);
+    color: var(--ok, #22c55e);
+}
+
 /* ==== Phishing Tools & Canvas ============================================ */
 
 .toolbox {
@@ -4492,4 +4544,17 @@ h1.glow { font-size: clamp(1.9rem, 4.5vw, 3.2rem); }
 
 .firewall-actions .btn {
     min-width: 140px;
+}
+
+/* ===== Header on phones: compact and not sticky ========================== */
+/* The stacked header was ~285px tall and stayed pinned over room content. */
+@media (max-width: 720px) {
+  .site-header--bar { position: static; }
+  .site-header .brand-tagline { display: none; }
+  .site-header__inner { gap: .5rem; padding-block: .5rem; }
+  .site-header .header-actions { gap: .4rem; }
+  .site-header .header-actions .main-nav { width: auto; margin-right: 0; }
+  .site-header .header-actions .nav-btn,
+  .site-header .header-actions .nav-btn.alert { flex: 0 1 auto; }
+  .site-header .header-actions .vault-status { order: 3; }
 }

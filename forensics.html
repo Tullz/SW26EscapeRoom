@@ -1,0 +1,1224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Reconstruct an attack timeline from event cards, answer investigation questions, and pick the right mitigations to earn your code word." />
+  <link rel="icon" href="assets/favicon.png" type="image/png" />
+
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 img-src 'self' data:;
+                 style-src 'self' 'unsafe-inline';
+                 script-src 'self';
+                 connect-src 'self';
+                 object-src 'none';
+                 base-uri 'self'">
+
+  <title>Cyber Escape Rooms — Network Forensics</title>
+
+  <link rel="stylesheet" href="css/styles.css" />
+  <script src="js/accessibility.js" defer></script>
+  <script src="js/utils.js" defer></script>
+  <script src="js/state-sync.js" defer></script>
+  <script src="js/session.js" defer></script>
+  <script src="js/vault.js" defer></script>
+  <script src="js/forensics.js" defer></script>
+
+  <style>
+    /* ---- Forensics Room: Investigation Theme ---- */
+    .forensics-dashboard {
+      display: grid;
+      gap: 1.25rem;
+    }
+
+    /* Scenario banner */
+    .scenario-banner {
+      background: linear-gradient(135deg, rgba(88, 166, 255, .12), rgba(255, 166, 87, .08));
+      border: 1px solid rgba(88, 166, 255, .35);
+      border-left: 4px solid var(--brand);
+      border-radius: 14px;
+      padding: 1.25rem;
+      display: grid;
+      gap: .75rem;
+    }
+
+    .scenario-banner h2 {
+      font-size: 1.15rem;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+
+    /* Part sections */
+    .forensics-part {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1.25rem;
+      box-shadow: var(--shadow);
+      display: grid;
+      gap: 1rem;
+    }
+
+    .forensics-part[hidden] {
+      display: none;
+    }
+
+    .forensics-part.is-complete {
+      border-color: rgba(9, 255, 136, .35);
+      box-shadow: 0 0 0 1px rgba(9, 255, 136, .15), var(--shadow);
+    }
+
+    .part-header {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      flex-wrap: wrap;
+    }
+
+    .part-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(88, 166, 255, .18);
+      color: var(--brand);
+      font-weight: 700;
+      font-size: .95rem;
+      flex-shrink: 0;
+    }
+
+    .part-number.done {
+      background: rgba(9, 255, 136, .2);
+      color: var(--accent);
+    }
+
+    .part-title {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    /* ---- Timeline ---- */
+    .timeline-wrapper {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (min-width: 900px) {
+      .timeline-wrapper {
+        grid-template-columns: 1fr 320px;
+      }
+    }
+
+    /* Vertical timeline */
+    .timeline {
+      position: relative;
+      padding-left: 28px;
+      display: grid;
+      gap: 0;
+    }
+
+    .timeline::before {
+      content: '';
+      position: absolute;
+      left: 12px;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: linear-gradient(180deg, var(--brand), var(--warn), var(--danger));
+      border-radius: 2px;
+      opacity: .4;
+    }
+
+    /* Timeline slot */
+    .timeline-slot {
+      position: relative;
+      min-height: 70px;
+    }
+
+    .timeline-slot::before {
+      content: '';
+      position: absolute;
+      left: -20px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--border);
+      border: 2px solid var(--panel);
+      z-index: 1;
+    }
+
+    .timeline-slot.has-card::before {
+      background: var(--brand);
+    }
+
+    .timeline-slot.is-anchor::before {
+      background: var(--muted);
+    }
+
+    /* Event cards (both anchor and draggable) */
+    .event-card {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: .75rem;
+      align-items: start;
+      padding: .85rem 1rem;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      background: rgba(9, 15, 25, .65);
+      transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease, opacity .15s ease;
+    }
+
+    .event-card .event-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+
+    .event-icon.phase-initial { background: rgba(88, 166, 255, .18); }
+    .event-icon.phase-compromise { background: rgba(255, 220, 87, .18); }
+    .event-icon.phase-establish { background: rgba(255, 166, 87, .18); }
+    .event-icon.phase-attack { background: rgba(255, 85, 85, .18); }
+
+    .event-card .event-time {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: .82rem;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .event-card .event-desc {
+      font-size: .95rem;
+      color: #fff;
+      font-weight: 500;
+      line-height: 1.4;
+    }
+
+    .event-card .event-meta {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      flex-wrap: wrap;
+    }
+
+    /* Log excerpt on event cards */
+    .event-card .event-log {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: .72rem;
+      color: var(--muted);
+      line-height: 1.5;
+      background: rgba(0, 0, 0, .35);
+      border-radius: 6px;
+      padding: .35rem .55rem;
+      margin-top: .3rem;
+      border-left: 2px solid rgba(88, 166, 255, .25);
+      overflow-x: auto;
+    }
+
+    /* Anchor (locked) cards */
+    .event-card.is-anchor {
+      border-color: rgba(139, 148, 158, .3);
+      background: rgba(9, 15, 25, .4);
+      cursor: default;
+      opacity: .85;
+    }
+
+    .event-card.is-anchor .lock-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .25rem;
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    /* Draggable cards */
+    .event-card.is-draggable {
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .event-card.is-draggable:active {
+      cursor: grabbing;
+    }
+
+    .event-card.is-dragging {
+      opacity: .45;
+      border-color: var(--brand);
+      box-shadow: 0 8px 24px rgba(88, 166, 255, .2);
+    }
+
+    /* Drop zone (empty slot) */
+    .drop-zone {
+      min-height: 70px;
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      background: rgba(9, 15, 25, .3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: .85rem;
+      transition: border-color .15s ease, background .15s ease;
+      padding: .5rem;
+    }
+
+    .drop-zone.drag-over {
+      border-color: var(--brand);
+      background: rgba(88, 166, 255, .08);
+      color: var(--brand);
+    }
+
+    .drop-zone .drop-label {
+      text-align: center;
+      pointer-events: none;
+    }
+
+    /* Staging area */
+    .staging-area {
+      background: rgba(9, 15, 25, .5);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1rem;
+      display: grid;
+      gap: .65rem;
+      align-content: start;
+    }
+
+    .staging-area h3 {
+      font-size: .85rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .staging-cards {
+      display: grid;
+      gap: .5rem;
+    }
+
+    /* Move buttons (accessibility fallback) */
+    .move-buttons {
+      display: flex;
+      gap: .25rem;
+      margin-top: .35rem;
+    }
+
+    .move-buttons button {
+      appearance: none;
+      background: rgba(88, 166, 255, .12);
+      border: 1px solid rgba(88, 166, 255, .25);
+      color: var(--brand);
+      padding: .3rem .55rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: .75rem;
+      transition: background .15s ease;
+    }
+
+    .move-buttons button:hover {
+      background: rgba(88, 166, 255, .25);
+    }
+
+    .move-buttons button:disabled {
+      opacity: .3;
+      cursor: not-allowed;
+    }
+
+    /* Result states */
+    .event-card.is-correct {
+      border-color: var(--accent);
+      background: rgba(9, 255, 136, .06);
+    }
+
+    .event-card.is-wrong {
+      border-color: var(--danger);
+      background: rgba(255, 85, 85, .06);
+    }
+
+    .event-card .result-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: .25rem;
+      font-size: .8rem;
+      font-weight: 600;
+    }
+
+    .result-badge.correct { color: var(--accent); }
+    .result-badge.wrong { color: var(--danger); }
+
+    /* ---- Evidence Panels ---- */
+    .evidence-container {
+      margin-bottom: .25rem;
+    }
+
+    .evidence-panel {
+      background: rgba(9, 15, 25, .7);
+      border: 1px solid rgba(88, 166, 255, .2);
+      border-left: 3px solid var(--brand);
+      border-radius: 10px;
+      padding: .85rem 1rem;
+      display: grid;
+      gap: .5rem;
+    }
+
+    .evidence-panel-title {
+      font-size: .78rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--brand);
+      font-weight: 600;
+    }
+
+    .evidence-entry {
+      display: grid;
+      gap: .15rem;
+      padding: .4rem .6rem;
+      background: rgba(0, 0, 0, .3);
+      border-radius: 6px;
+    }
+
+    .evidence-source {
+      font-size: .68rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--warn);
+      font-weight: 600;
+    }
+
+    .evidence-content {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: .76rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    /* ---- Investigation Questions ---- */
+    .question-block {
+      display: grid;
+      gap: .75rem;
+    }
+
+    .question-block[hidden] {
+      display: none;
+    }
+
+    .question-text {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #fff;
+      line-height: 1.5;
+    }
+
+    .question-counter {
+      font-size: .78rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .answer-options {
+      display: grid;
+      gap: .5rem;
+    }
+
+    .answer-card {
+      appearance: none;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: .75rem;
+      align-items: center;
+      padding: .85rem 1rem;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      background: rgba(9, 15, 25, .65);
+      cursor: pointer;
+      transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+      text-align: left;
+      color: var(--ink);
+      font: inherit;
+      width: 100%;
+    }
+
+    .answer-card:hover:not(:disabled) {
+      border-color: var(--brand);
+      transform: translateY(-1px);
+    }
+
+    .answer-card:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .answer-card:disabled {
+      cursor: default;
+      opacity: .85;
+    }
+
+    .answer-card.is-selected {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 2px rgba(88, 166, 255, .25);
+    }
+
+    .answer-card.is-correct {
+      border-color: var(--accent);
+      background: rgba(9, 255, 136, .08);
+    }
+
+    .answer-card.is-wrong {
+      border-color: var(--danger);
+      background: rgba(255, 85, 85, .06);
+    }
+
+    .answer-letter {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 8px;
+      background: rgba(88, 166, 255, .12);
+      color: var(--brand);
+      font-weight: 700;
+      font-size: .9rem;
+      flex-shrink: 0;
+    }
+
+    .answer-text {
+      font-size: .95rem;
+      line-height: 1.45;
+    }
+
+    /* Free text input for Q2 */
+    .free-text-row {
+      display: flex;
+      gap: .5rem;
+      align-items: start;
+      flex-wrap: wrap;
+    }
+
+    .free-text-row input {
+      flex: 1;
+      min-width: 180px;
+    }
+
+    /* Explanation box */
+    .explanation-box {
+      background: linear-gradient(145deg, rgba(88, 166, 255, .1), rgba(9, 255, 136, .05));
+      border: 1px solid rgba(88, 166, 255, .3);
+      border-radius: 12px;
+      padding: 1rem 1.15rem;
+    }
+
+    .explanation-box h3 {
+      color: var(--brand);
+      font-size: .95rem;
+      margin-bottom: .5rem;
+    }
+
+    .explanation-box p {
+      color: var(--ink);
+      font-size: .92rem;
+      line-height: 1.55;
+      margin: 0;
+    }
+
+    /* ---- Mitigation Picks ---- */
+    .budget-banner {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      padding: .85rem 1rem;
+      background: rgba(255, 220, 87, .08);
+      border: 1px solid rgba(255, 220, 87, .25);
+      border-radius: 10px;
+      flex-wrap: wrap;
+    }
+
+    .budget-icon {
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+
+    .budget-text {
+      font-size: .92rem;
+      color: var(--ink);
+      line-height: 1.45;
+    }
+
+    .mitigation-options {
+      display: grid;
+      gap: .75rem;
+    }
+
+    @media (min-width: 900px) {
+      .mitigation-options {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .mitigation-card {
+      appearance: none;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: .75rem;
+      align-items: start;
+      padding: 1rem 1.15rem;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      background: rgba(9, 15, 25, .65);
+      cursor: pointer;
+      transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+      text-align: left;
+      color: var(--ink);
+      font: inherit;
+      width: 100%;
+    }
+
+    .mitigation-card:hover:not(:disabled) {
+      border-color: var(--brand);
+      transform: translateY(-1px);
+    }
+
+    .mitigation-card:focus-visible {
+      outline: 3px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .mitigation-card:disabled {
+      cursor: default;
+      opacity: .85;
+    }
+
+    .mitigation-card.is-selected {
+      border-color: var(--brand);
+      box-shadow: 0 0 0 2px rgba(88, 166, 255, .25);
+    }
+
+    .mitigation-card.is-correct {
+      border-color: var(--accent);
+      background: rgba(9, 255, 136, .08);
+    }
+
+    .mitigation-card.is-wrong {
+      border-color: var(--danger);
+      background: rgba(255, 85, 85, .06);
+    }
+
+    .mitigation-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: rgba(88, 166, 255, .12);
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+
+    .mitigation-name {
+      font-weight: 600;
+      font-size: .95rem;
+      color: #fff;
+    }
+
+    .mitigation-cost {
+      font-size: .78rem;
+      color: var(--warn);
+      font-weight: 600;
+      margin-top: .15rem;
+    }
+
+    .mitigation-desc {
+      font-size: .85rem;
+      color: var(--muted);
+      margin-top: .15rem;
+      line-height: 1.45;
+    }
+
+    .mitigation-detail {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: .5rem;
+      margin-top: .5rem;
+      font-size: .8rem;
+    }
+
+    @media (max-width: 640px) {
+      .mitigation-detail {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .detail-col h4 {
+      font-size: .68rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--accent);
+      margin-bottom: .2rem;
+      font-weight: 600;
+    }
+
+    .detail-col.cons h4 {
+      color: var(--danger);
+    }
+
+    .detail-col ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .detail-col li {
+      padding: .12rem 0;
+      line-height: 1.35;
+      color: var(--muted);
+      font-size: .78rem;
+    }
+
+    .detail-col.pros li::before {
+      content: '+ ';
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .detail-col.cons li::before {
+      content: '- ';
+      color: var(--danger);
+      font-weight: 600;
+    }
+
+    /* Consequence cards */
+    .consequence-card {
+      padding: .85rem 1rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: rgba(9, 15, 25, .5);
+    }
+
+    .consequence-card h4 {
+      font-size: .85rem;
+      font-weight: 600;
+      margin-bottom: .3rem;
+    }
+
+    .consequence-card p {
+      font-size: .85rem;
+      color: var(--muted);
+      line-height: 1.45;
+      margin: .15rem 0;
+    }
+
+    /* Part continue / result */
+    .part-continue {
+      display: flex;
+      justify-content: flex-end;
+      gap: .75rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .part-continue .part-result {
+      font-size: .92rem;
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    /* ---- Incident Report ---- */
+    .incident-report {
+      background: linear-gradient(135deg, rgba(88, 166, 255, .06), rgba(9, 255, 136, .04));
+      border: 2px solid rgba(88, 166, 255, .3);
+      border-radius: 16px;
+      padding: 1.5rem;
+      display: grid;
+      gap: 1.25rem;
+    }
+
+    .incident-report[hidden] {
+      display: none;
+    }
+
+    .incident-report > h2 {
+      font-size: 1.2rem;
+      color: var(--brand);
+    }
+
+    .report-classification {
+      font-size: .78rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--warn);
+      font-weight: 600;
+      margin-top: -.75rem;
+    }
+
+    .report-body {
+      display: grid;
+      gap: 1.15rem;
+    }
+
+    .report-section {
+      display: grid;
+      gap: .5rem;
+    }
+
+    .report-section h3 {
+      font-size: .88rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--warn);
+      font-weight: 600;
+    }
+
+    .report-section p,
+    .report-section li {
+      font-size: .9rem;
+      color: var(--ink);
+      line-height: 1.55;
+    }
+
+    .report-section ul {
+      list-style: disc;
+      padding-left: 1.25rem;
+      margin: 0;
+    }
+
+    .report-timeline-summary {
+      display: grid;
+      gap: .2rem;
+    }
+
+    .report-timeline-entry {
+      display: flex;
+      gap: .6rem;
+      font-size: .85rem;
+      color: var(--muted);
+      line-height: 1.5;
+      padding: .2rem 0;
+    }
+
+    .report-timeline-entry .report-time {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-weight: 600;
+      color: var(--brand);
+      flex-shrink: 0;
+      min-width: 48px;
+    }
+
+    /* Vault reveal inside incident report */
+    .vault-reveal {
+      text-align: center;
+      padding-top: 1rem;
+      border-top: 1px solid rgba(9, 255, 136, .25);
+      display: grid;
+      gap: .75rem;
+    }
+
+    .vault-reveal h3 {
+      color: var(--accent);
+      font-size: 1.1rem;
+    }
+
+    .vault-digit-reveal {
+      font-size: 3rem;
+      font-weight: 700;
+      color: #fff;
+      font-family: "JetBrains Mono", Consolas, monospace;
+      text-shadow: 0 0 12px var(--accent), 0 0 24px var(--accent);
+    }
+
+    /* Responsive */
+    @media (max-width: 640px) {
+      .timeline {
+        padding-left: 24px;
+      }
+      .timeline-slot::before {
+        left: -16px;
+      }
+      .event-card {
+        padding: .7rem .85rem;
+      }
+      .move-buttons {
+        flex-direction: row;
+      }
+      .event-card .event-log {
+        font-size: .68rem;
+      }
+    }
+  </style>
+</head>
+
+<body data-session="team">
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <!-- Global Header -->
+  <header class="site-header site-header--bar" aria-label="Global">
+    <div class="site-header__inner">
+      <div class="header-left">
+        <button class="nav-btn ghost nav-btn--back" type="button" data-back="game.html" data-tooltip="Back to previous page">
+          <span aria-hidden="true">&larr;</span>
+          <span>Back</span>
+        </button>
+        <a class="brand" href="game.html">
+          <img src="assets/logo.png" alt="" class="logo" />
+          <span class="brand-copy">
+            <span class="brand-name">Cyber Escape Rooms</span>
+            <span class="brand-tagline">Team-based security missions</span>
+          </span>
+        </a>
+      </div>
+
+      <div class="header-actions">
+        <nav class="main-nav" aria-label="Primary">
+          <a class="nav-link" href="game.html">Mission Hub</a>
+        </nav>
+        <div class="vault-status" id="vaultStatus" role="status" aria-live="polite" data-visible="team">
+          <span class="vault-status__label">Vault</span>
+          <ol class="vault-status__digits">
+            <li data-vault-key="phishing">&bull;</li>
+            <li data-vault-key="osint">&bull;</li>
+            <li data-vault-key="incident">&bull;</li>
+            <li data-vault-key="mfa">&bull;</li>
+            <li data-vault-key="supply">&bull;</li>
+            <li data-vault-key="forensics">&bull;</li>
+          </ol>
+          <span class="vault-status__count">0/6</span>
+        </div>
+        <button class="nav-btn alert nav-btn--logout" type="button" data-action="logout">Logout</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container" id="main" role="main" tabindex="-1">
+    <header class="game-header">
+      <h1 class="glow">Network Forensics</h1>
+      <p class="mt-1" style="color:var(--muted)">
+        Your team has been called in to investigate a data breach at Nexus Corp. Reconstruct the attack timeline, review the evidence, and recommend the right defences.
+      </p>
+    </header>
+
+    <!-- Status HUD -->
+    <section class="status-hud" aria-label="Team status">
+      <div class="points-box">
+        <p class="points-box__label">Team points</p>
+        <p class="points-box__value" id="forensicsPointsTotal">000</p>
+        <p class="points-box__delta" id="forensicsPointsDelta" aria-live="polite"></p>
+      </div>
+      <div class="progress-mini">
+        <p class="progress-mini__label">Investigation progress</p>
+        <div class="progress-mini__track">
+          <div class="progress-mini__fill" id="forensicsProgressFill"></div>
+        </div>
+        <p class="progress-mini__text" id="forensicsProgressText">0% complete</p>
+      </div>
+    </section>
+
+    <!-- Scenario Banner -->
+    <section class="scenario-banner mt-2" aria-labelledby="forensicsScenarioHeading">
+      <h2 id="forensicsScenarioHeading">Incident Report: Nexus Corp Data Breach</h2>
+      <p>An attacker compromised Nexus Corp through a spear-phishing email and moved through the network over approximately 2.5 hours before exfiltrating sensitive data. Your team must reconstruct the attack timeline from system logs, answer key investigation questions using the evidence, and recommend which security controls to implement.</p>
+      <div class="vault-callout" role="status">
+        <span class="tag">Code word</span>
+        <p>Complete all three investigation phases to reveal your code word: <strong id="forensicsVaultValue">&mdash;</strong></p>
+      </div>
+    </section>
+
+    <!-- Points Info -->
+    <section class="card points-card mt-2" aria-labelledby="forensicsPointsHeading">
+      <details class="points-panel">
+        <summary id="forensicsPointsHeading">Points intel</summary>
+        <p>Teams start at 100 points. Mistakes and hints reduce your total.</p>
+        <ul>
+          <li>Timeline: each event in the wrong position costs 3 points</li>
+          <li>Evidence review: each wrong answer costs 3 points</li>
+          <li>Incident response: each wrong control pick costs 3 points</li>
+          <li>Basic hints: 5 points each</li>
+          <li>Detailed hints: 10 points each</li>
+        </ul>
+      </details>
+    </section>
+
+    <!-- Forensics Dashboard -->
+    <div class="forensics-dashboard mt-2" id="forensicsDashboard">
+
+      <!-- ===== Phase 1: Timeline Analysis ===== -->
+      <section class="forensics-part" id="partA" aria-labelledby="partAHeading">
+        <div class="part-header">
+          <span class="part-number" id="partABadge">1</span>
+          <h2 class="part-title" id="partAHeading">Timeline Analysis</h2>
+        </div>
+
+        <p>Your team has collected logs from eight systems involved in the Nexus Corp breach. Three events are confirmed and anchored in the timeline (shown in grey). Drag the remaining <strong>five</strong> event cards into the correct chronological positions. Read the log excerpts on each card for ordering clues. <strong>All 5 must be correct</strong> &mdash; precision matters in forensics.</p>
+
+        <div class="timeline-wrapper">
+          <!-- Timeline column -->
+          <div>
+            <div class="timeline" id="timeline" role="list" aria-label="Attack timeline">
+              <!-- Slots populated by JS -->
+            </div>
+          </div>
+
+          <!-- Staging area -->
+          <div class="staging-area" id="stagingArea">
+            <h3>Event cards</h3>
+            <p style="font-size:.85rem; color:var(--muted);">Drag these into the correct positions on the timeline, or use the slot buttons to place them.</p>
+            <div class="staging-cards" id="stagingCards" role="list" aria-label="Unplaced event cards">
+              <!-- Cards populated by JS -->
+            </div>
+          </div>
+        </div>
+
+        <div class="flex" style="gap:.5rem; flex-wrap:wrap;">
+          <button class="btn primary" id="partASubmit" type="button">Verify Timeline</button>
+          <button class="btn ghost" id="partAHint" type="button">Hint (-5 pts)</button>
+        </div>
+
+        <p id="partAFeedback" class="status-message" aria-live="polite"></p>
+
+        <div class="part-continue" id="partAContinue" hidden>
+          <span class="part-result" id="partAResult"></span>
+          <button class="btn primary" id="partANext" type="button">Proceed to Evidence Review</button>
+        </div>
+      </section>
+
+      <!-- ===== Phase 2: Evidence Review ===== -->
+      <section class="forensics-part" id="partB" hidden aria-labelledby="partBHeading">
+        <div class="part-header">
+          <span class="part-number" id="partBBadge">2</span>
+          <h2 class="part-title" id="partBHeading">Evidence Review</h2>
+        </div>
+
+        <p>Review the evidence collected during the investigation and answer these five questions. Each question includes relevant log excerpts and network data from the breach.</p>
+
+        <!-- Q1 -->
+        <div class="question-block" id="questionBlock1">
+          <span class="question-counter">Question 1 of 5</span>
+          <div class="evidence-container" id="q1Evidence"></div>
+          <p class="question-text">How did the attacker gain initial access to the network?</p>
+          <div class="answer-options" id="q1Options" role="radiogroup" aria-label="Question 1 answers">
+            <button class="answer-card" type="button" data-answer="a" role="radio" aria-checked="false">
+              <span class="answer-letter">A</span>
+              <span class="answer-text">Brute force password attack against the VPN</span>
+            </button>
+            <button class="answer-card" type="button" data-answer="b" role="radio" aria-checked="false">
+              <span class="answer-letter">B</span>
+              <span class="answer-text">Phishing email with malicious link</span>
+            </button>
+            <button class="answer-card" type="button" data-answer="c" role="radio" aria-checked="false">
+              <span class="answer-letter">C</span>
+              <span class="answer-text">Exploited a software vulnerability in the web server</span>
+            </button>
+            <button class="answer-card" type="button" data-answer="d" role="radio" aria-checked="false">
+              <span class="answer-letter">D</span>
+              <span class="answer-text">Physical USB drop in the parking lot</span>
+            </button>
+          </div>
+          <div class="flex" style="gap:.5rem; flex-wrap:wrap;">
+            <button class="btn primary" id="q1Submit" type="button">Submit Answer</button>
+            <button class="btn ghost" id="q1Hint" type="button">Hint (-5 pts)</button>
+          </div>
+          <p id="q1Feedback" class="status-message" aria-live="polite"></p>
+          <div id="q1Explanation" hidden></div>
+        </div>
+
+        <!-- Q2 -->
+        <div class="question-block" id="questionBlock2" hidden>
+          <span class="question-counter">Question 2 of 5</span>
+          <div class="evidence-container" id="q2Evidence"></div>
+          <p class="question-text">How long was the attacker in the network before data was exfiltrated?</p>
+          <div class="free-text-row">
+            <input type="text" id="q2Input" placeholder="e.g. 2 hours" autocomplete="off" data-sanitize="loose" aria-label="Your answer" />
+            <button class="btn primary" id="q2Submit" type="button">Submit</button>
+          </div>
+          <button class="btn ghost" id="q2Hint" type="button" style="margin-top:.5rem;">Hint (-5 pts)</button>
+          <p id="q2Feedback" class="status-message" aria-live="polite"></p>
+          <div id="q2Explanation" hidden></div>
+        </div>
+
+        <!-- Q3 -->
+        <div class="question-block" id="questionBlock3" hidden>
+          <span class="question-counter">Question 3 of 5</span>
+          <div class="evidence-container" id="q3Evidence"></div>
+          <p class="question-text">Which system should have been isolated FIRST to limit damage?</p>
+          <div class="answer-options" id="q3Options" role="radiogroup" aria-label="Question 3 answers">
+            <button class="answer-card" type="button" data-answer="a" role="radio" aria-checked="false">
+              <span class="answer-letter">A</span>
+              <span class="answer-text">The employee's workstation (10.4.12.88)</span>
+            </button>
+            <button class="answer-card" type="button" data-answer="b" role="radio" aria-checked="false">
+              <span class="answer-letter">B</span>
+              <span class="answer-text">The HR file server (FS-HR)</span>
+            </button>
+            <button class="answer-card" type="button" data-answer="c" role="radio" aria-checked="false">
+              <span class="answer-letter">C</span>
+              <span class="answer-text">The domain controller (DC-01)</span>
+            </button>
+            <button class="answer-card" type="button" data-answer="d" role="radio" aria-checked="false">
+              <span class="answer-letter">D</span>
+              <span class="answer-text">The email server</span>
+            </button>
+          </div>
+          <div class="flex" style="gap:.5rem; flex-wrap:wrap;">
+            <button class="btn primary" id="q3Submit" type="button">Submit Answer</button>
+            <button class="btn ghost" id="q3Hint" type="button">Hint (-5 pts)</button>
+          </div>
+          <p id="q3Feedback" class="status-message" aria-live="polite"></p>
+          <div id="q3Explanation" hidden></div>
+        </div>
+
+        <!-- Q4 -->
+        <div class="question-block" id="questionBlock4" hidden>
+          <span class="question-counter">Question 4 of 5</span>
+          <div class="evidence-container" id="q4Evidence"></div>
+          <p class="question-text">What type of attack pattern does this timeline represent?</p>
+          <div class="answer-options" id="q4Options" role="radiogroup" aria-label="Question 4 answers">
+            <button class="answer-card" type="button" data-answer="a" role="radio" aria-checked="false">
+              <span class="answer-letter">A</span>
+              <span class="answer-text">Ransomware attack</span>
+            </button>
+            <button class="answer-card" type="button" data-answer="b" role="radio" aria-checked="false">
+              <span class="answer-letter">B</span>
+              <span class="answer-text">DDoS (Distributed Denial of Service)</span>
+            </button>
+            <button class="answer-card" type="button" data-answer="c" role="radio" aria-checked="false">
+              <span class="answer-letter">C</span>
+              <span class="answer-text">Advanced Persistent Threat (APT) / targeted attack</span>
+            </button>
+            <button class="answer-card" type="button" data-answer="d" role="radio" aria-checked="false">
+              <span class="answer-letter">D</span>
+              <span class="answer-text">Insider threat</span>
+            </button>
+          </div>
+          <div class="flex" style="gap:.5rem; flex-wrap:wrap;">
+            <button class="btn primary" id="q4Submit" type="button">Submit Answer</button>
+            <button class="btn ghost" id="q4Hint" type="button">Hint (-5 pts)</button>
+          </div>
+          <p id="q4Feedback" class="status-message" aria-live="polite"></p>
+          <div id="q4Explanation" hidden></div>
+        </div>
+
+        <!-- Q5 (new — synthesis question) -->
+        <div class="question-block" id="questionBlock5" hidden>
+          <span class="question-counter">Question 5 of 5</span>
+          <div class="evidence-container" id="q5Evidence"></div>
+          <p class="question-text">Based on ALL evidence reviewed, what single detection gap allowed the most damage?</p>
+          <div class="answer-options" id="q5Options" role="radiogroup" aria-label="Question 5 answers">
+            <button class="answer-card" type="button" data-answer="a" role="radio" aria-checked="false">
+              <span class="answer-letter">A</span>
+              <span class="answer-text">The mail gateway failed to detect the spoofed sender domain</span>
+            </button>
+            <button class="answer-card" type="button" data-answer="b" role="radio" aria-checked="false">
+              <span class="answer-letter">B</span>
+              <span class="answer-text">C2 beacon traffic ran for over 2 hours without any network monitoring alert</span>
+            </button>
+            <button class="answer-card" type="button" data-answer="c" role="radio" aria-checked="false">
+              <span class="answer-letter">C</span>
+              <span class="answer-text">The HR file server had no access controls on sensitive directories</span>
+            </button>
+            <button class="answer-card" type="button" data-answer="d" role="radio" aria-checked="false">
+              <span class="answer-letter">D</span>
+              <span class="answer-text">The compressed archive should have triggered a data loss prevention alert</span>
+            </button>
+          </div>
+          <div class="flex" style="gap:.5rem; flex-wrap:wrap;">
+            <button class="btn primary" id="q5Submit" type="button">Submit Answer</button>
+            <button class="btn ghost" id="q5Hint" type="button">Hint (-5 pts)</button>
+          </div>
+          <p id="q5Feedback" class="status-message" aria-live="polite"></p>
+          <div id="q5Explanation" hidden></div>
+        </div>
+
+        <div class="part-continue" id="partBContinue" hidden>
+          <span class="part-result" id="partBResult"></span>
+          <button class="btn primary" id="partBNext" type="button">Proceed to Incident Response</button>
+        </div>
+      </section>
+
+      <!-- ===== Phase 3: Incident Response ===== -->
+      <section class="forensics-part" id="partC" hidden aria-labelledby="partCHeading">
+        <div class="part-header">
+          <span class="part-number" id="partCBadge">3</span>
+          <h2 class="part-title" id="partCHeading">Incident Response</h2>
+        </div>
+
+        <p>The board needs your team's security recommendations before the next meeting. Review each control's strengths, limitations, and cost, then select the two that would have most effectively prevented this attack.</p>
+
+        <div class="budget-banner">
+          <span class="budget-icon" aria-hidden="true">&#x1F4B0;</span>
+          <p class="budget-text">
+            <strong>Budget constraint:</strong> Your team can implement exactly <strong>2 new security controls</strong> before the next board meeting. Choose the two that address the root causes of this breach.
+          </p>
+        </div>
+
+        <div class="mitigation-options" id="mitigationOptions" aria-label="Mitigation options">
+          <!-- Cards rendered by JS from data -->
+        </div>
+
+        <div class="flex" style="gap:.5rem; flex-wrap:wrap;">
+          <button class="btn primary" id="partCSubmit" type="button">Submit Recommendations</button>
+          <button class="btn ghost" id="partCHint" type="button">Hint (-5 pts)</button>
+        </div>
+
+        <p id="partCFeedback" class="status-message" aria-live="polite"></p>
+      </section>
+
+      <!-- ===== Incident Report + Completion ===== -->
+      <section class="incident-report" id="incidentReport" hidden aria-labelledby="reportHeading">
+        <h2 id="reportHeading">Incident Report: Case NX-2026-0917</h2>
+        <p class="report-classification">Confidential &mdash; Nexus Corp Security Operations</p>
+
+        <div class="report-body" id="reportBody">
+          <!-- JS populates: Executive Summary, Timeline, Key Findings, Recommended Controls, Score -->
+        </div>
+
+        <div class="vault-reveal">
+          <h3>Case Intelligence</h3>
+          <p>The attacker's initial compromise occurred at <strong>09:14</strong> &mdash; the <strong>9th</strong> hour of the day.</p>
+          <div class="vault-digit-reveal" aria-label="Code word CIPHER">CIPHER</div>
+          <p>Your final code word is <strong>CIPHER</strong>. All six rooms are now complete &mdash; head to the Mission Hub to crack the vault.</p>
+          <a class="btn primary" href="game.html">Return to Mission Hub</a>
+        </div>
+      </section>
+
+    </div><!-- /forensics-dashboard -->
+
+    <!-- Navigation -->
+    <nav class="challenge-nav" aria-label="Puzzle navigation">
+      <a class="btn ghost" href="supply-chain.html">&larr; Supply Chain Attack</a>
+      <a class="btn ghost" href="game.html">Mission Hub</a>
+    </nav>
+
+  </main>
+
+  <!-- Global Footer -->
+  <footer class="site-footer header-bleed">
+    <div class="footer-inner">
+      <nav class="footer-nav" aria-label="Footer">
+        <a href="index.html">Home</a>
+        <span aria-hidden="true">&bull;</span>
+        <a href="game.html">Mission Hub</a>
+      </nav>
+      <p class="footer-note">Investigate the breach and reconstruct the attack to earn the final vault digit.</p>
+      <p class="footer-copy"><small>&copy; 2026 Cyber Escape Rooms</small></p>
+    </div>
+  </footer>
+</body>
+</html>

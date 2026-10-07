@@ -2,41 +2,37 @@
   'use strict';
 
   const PUZZLES = [
-    { key: 'phishing', label: 'Phishing', storage: ['lock_digit_phishing_total'], href: 'phishing.html' },
-    { key: 'encryption', label: 'Encryption', storage: ['lock_digit_caesar_shift'], href: 'encryption.html' },
-    { key: 'password', label: 'Password', storage: ['lock_digit_pw_minutes', 'lock_digit_pw_clues'], href: 'password.html' },
-    { key: 'essential', label: 'ASD Essentials', storage: ['lock_digit_essential'], href: 'essential.html' },
-    { key: 'binary', label: 'Binary', storage: ['lock_digit_binary'], href: 'binary.html' }
+    { key: 'phishing', label: 'Phishing', storage: 'vault_word_phishing', href: 'phishing.html' },
+    { key: 'osint', label: 'OSINT', storage: 'vault_word_osint', href: 'osint.html' },
+    { key: 'incident', label: 'Incident Mgmt', storage: 'vault_word_incident', href: 'incident.html' },
+    { key: 'mfa', label: 'MFA / Auth', storage: 'vault_word_mfa', href: 'mfa.html' },
+    { key: 'supply', label: 'Supply Chain', storage: 'vault_word_supply', href: 'supply-chain.html' },
+    { key: 'forensics', label: 'Forensics', storage: 'vault_word_forensics', href: 'forensics.html' }
   ];
 
-  function readStorageValue(keys) {
-    for (const key of keys) {
-      const raw = localStorage.getItem(key);
-      if (raw == null) continue;
-      const num = Number(raw);
-      if (!Number.isNaN(num) && Number.isFinite(num)) return num;
-      if (/^\d$/.test(raw.trim())) return Number(raw.trim());
-    }
+  function readWord(item) {
+    try {
+      const raw = localStorage.getItem(item.storage);
+      if (raw && typeof raw === 'string' && raw.trim().length > 0) return raw.trim().toUpperCase();
+    } catch (_) {}
     return null;
   }
 
-  function clearDigit(item) {
+  function clearWord(item) {
     if (!item) return;
-    item.storage?.forEach(key => {
-      try { localStorage.removeItem(key); } catch (_) {}
-    });
+    try { localStorage.removeItem(item.storage); } catch (_) {}
   }
 
-  function readDigits() {
+  function readWords() {
     const result = {};
     const progress = window.utils?.readProgress?.() || {};
     PUZZLES.forEach(item => {
-      let digit = readStorageValue(item.storage);
-      if (digit != null && progress[item.key] !== true) {
-        clearDigit(item);
-        digit = null;
+      let word = readWord(item);
+      if (word && progress[item.key] !== true) {
+        clearWord(item);
+        word = null;
       }
-      result[item.key] = digit;
+      result[item.key] = word;
     });
     return result;
   }
@@ -71,9 +67,9 @@
   }
 
   function updateUi() {
-    const digits = readDigits();
+    const words = readWords();
     const status = document.getElementById('vaultStatus');
-    if (!status) return digits;
+    if (!status) return words;
 
     const list = status.querySelector('.vault-status__digits');
     const countEl = status.querySelector('.vault-status__count');
@@ -81,8 +77,8 @@
     let found = 0;
     PUZZLES.forEach((item) => {
       const li = list?.querySelector(`[data-vault-key="${item.key}"]`);
-      const digit = digits[item.key];
-      const hasDigit = digit != null && digit !== '' && !Number.isNaN(Number(digit));
+      const word = words[item.key];
+      const hasWord = word != null;
       if (li) {
         let btn = li.firstElementChild;
         if (!(btn instanceof HTMLButtonElement)) {
@@ -94,16 +90,16 @@
           if (item.href) btn.dataset.href = item.href;
           li.appendChild(btn);
         }
-        btn.textContent = hasDigit ? String(digit) : '•';
+        btn.textContent = hasWord ? '✓' : '•';
         btn.disabled = !item.href;
-        const label = hasDigit
-          ? `${item.label} digit ${String(digit)}`
+        const label = hasWord
+          ? `${item.label} — code word secured`
           : `${item.label} — launch puzzle`;
         btn.setAttribute('aria-label', label);
-        li.classList.toggle('is-found', hasDigit);
+        li.classList.toggle('is-found', hasWord);
         li.setAttribute('aria-label', label);
       }
-      if (hasDigit) found++;
+      if (hasWord) found++;
     });
 
     if (countEl) {
@@ -113,43 +109,38 @@
     const isComplete = found === PUZZLES.length;
     status.classList.toggle('is-complete', isComplete);
     if (isComplete && !vaultCompleteAnnounced) {
-      showToast('All digits collected! The vault is ready to unlock.');
+      showToast('All code words collected! The vault is ready to crack.');
       vaultCompleteAnnounced = true;
     } else if (!isComplete) {
       vaultCompleteAnnounced = false;
     }
-    return digits;
+    return words;
   }
 
-  function persistDigit(item, digit) {
-    if (!item || typeof digit !== 'number' || Number.isNaN(digit)) return;
-    if (item.constant != null) return;
-    const primary = item.storage[0];
-    if (primary) {
-      localStorage.setItem(primary, String(digit));
-    }
+  function persistWord(item, word) {
+    if (!item || typeof word !== 'string' || !word.trim()) return;
+    try {
+      localStorage.setItem(item.storage, word.trim().toUpperCase());
+    } catch (_) {}
   }
 
-  function unlock(key, digit, options = {}) {
+  function unlock(key, word, options = {}) {
     const item = PUZZLES.find(entry => entry.key === key);
     if (!item) return;
-    const numericDigit = Number(digit);
-    if (!Number.isNaN(numericDigit)) {
-      persistDigit(item, numericDigit);
+    if (typeof word === 'string' && word.trim()) {
+      persistWord(item, word);
       try {
         window.stateSync?.queueSave?.('vault');
-      } catch (_) {
-        /* ignore */
-      }
+      } catch (_) {}
     }
     const detail = {
       puzzle: key,
-      digit: Number.isNaN(numericDigit) ? digit : numericDigit,
+      word: String(word).toUpperCase(),
       label: item.label
     };
-    document.dispatchEvent(new CustomEvent('vault:digit', { detail }));
+    document.dispatchEvent(new CustomEvent('vault:word', { detail }));
     updateUi();
-    const message = options?.message || `${item.label} digit unlocked: ${detail.digit}.`;
+    const message = options?.message || `${item.label} code word unlocked.`;
     showToast(message);
   }
 
@@ -174,13 +165,15 @@
 
   window.addEventListener('storage', (event) => {
     if (!event.key) return;
-    const matches = PUZZLES.some(item => item.storage.includes(event.key));
+    const matches = PUZZLES.some(item => item.storage === event.key);
     if (matches) updateUi();
   });
 
   window.vault = {
-    getDigits: readDigits,
+    getWords: readWords,
+    getDigits: readWords,
     refresh,
-    unlock
+    unlock,
+    PUZZLES
   };
 })();

@@ -1,1449 +1,1026 @@
 /* phishing.js — Phishing Spotter (Cyber Escape Rooms)
-   Features
-   - Loads 4 example images (or any provided via ?img=…)
-   - Drawing tools: brush / eraser, adjustable size, mouse + touch
-   - Hotspot scoring from #phishingHotspots (percentage coordinates)
-   - Strict check: a hotspot counts when highlighted within a small radius
-   - Autosave / restore highlights (with manual clear + facilitator auto-place)
-   - Marks puzzle complete in ${user}_progress.phishing when threshold met
-*/
+   ---------------------------------------------------------------------------
+   Players inspect four realistic email screenshots. For each one they:
+     1. drop red flags (click / tap / keyboard) on anything suspicious,
+     2. choose a verdict (Phishing or Legitimate),
+     3. press "Submit highlights".
+   Nothing about correctness is revealed until the team submits. A correct
+   submission unlocks a debrief that outlines every red flag (found / missed)
+   with a short explanation. Wrong submissions cost a few points and can be
+   retried. Hints are progressive and cost points.
 
+   Red-flag areas are rectangles in the image's natural pixel space, so they
+   stay accurate at any rendered size or zoom level.
+*/
 (function () {
   'use strict';
 
-  // ---------- DOM helpers ----------
-  const $  = (sel, root=document) => root.querySelector(sel);
-  const $$ = (sel, root=document) => Array.from(root.querySelectorAll(sel));
-  const announce = (m) => { try { window.a11y?.announce?.(m); } catch(_){} };
-
-  // ---------- Elements ----------
-  const imgEl        = $('#phishingImage');
-  const stageEl      = $('#imageStage');
-  const drawCanvas   = $('#drawCanvas');
-  const brushSizeEl  = $('#brushSize');
-  const feedbackEl   = $('#phishingFeedback');
-  const vulnCountEl  = $('#vulnerabilityCount');
-  const vulnDotsEl   = $('#vulnProgressDots');
-  const submitBtn    = $('#submitButton');
-  const prevBtn      = $('#prevImg');
-  const nextBtn      = $('#nextImg');
-  const slideStatus  = $('#slideStatus');
-  const dotContainer = $('#exampleDots');
-  const markPhishBtn = $('#markPhish');
-  const markLegitBtn = $('#markLegit');
-  const classificationTipEl = $('#classificationTip');
-  const classificationStatusEl = $('#classificationStatus');
-  const classificationBlock = $('#classificationBlock');
-  const clearBtn     = $('#clearBtn');
-  const hintBtn      = $('#phishHintBtn');
-  const revealBtn    = $('#phishRevealBtn');
-  const hintText     = $('#phishHintText');
-  const vaultDisplay = $('#phishVaultValue');
-  const workspaceEl  = $('#phishWorkspace');
-  const imageContainer = stageEl?.parentElement;
-  const zoomInBtn    = $('#phishZoomInBtn');
-  const zoomOutBtn   = $('#phishZoomOutBtn');
-  const fullscreenBtn= $('#phishFullscreenBtn');
-  const autosaveStatusEl = $('#autosaveStatus');
-  const vulnStageEl = $('#vulnerabilityCountStage');
-  const exampleBanner = $('#exampleBanner');
-  const selectAllBtn = $('#selectAllBtn');
-  const vulnReminderEl = $('#vulnerabilityReminders');
-  let resizePending = false;
-
-  if (!imgEl || !drawCanvas) return; // not on this page
-
-  imageContainer?.classList.remove('is-zoomed');
-  stageEl?.classList.remove('is-zoomed');
-
-  const ctx = drawCanvas.getContext('2d', { willReadFrequently: true });
-
-  // A hidden mask canvas we use for scoring (1-bit-ish)
-  const maskCanvas = document.createElement('canvas');
-  const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+  const $ = (sel, root = document) => root.querySelector(sel);
 
   // ---------- Config ----------
-  // How close (in pixels) the highlight must be to the hotspot center to count
-  const HOTSPOT_RADIUS_PX = 70; // generous default for detection tolerance
-  const MAX_STROKE_LENGTH = 1100; // pixels of travel per stroke (loosened)
-  const MAX_STROKE_SPAN = 420;   // max width/height of a single stroke highlight (loosened)
-  const MAX_STROKE_AREA = 190000; // approx area (px^2) before we consider it too large (loosened)
-  // Required proportion of hotspots on an image to count as "complete" for this puzzle
-  const REQUIRED_PCT = 0.5;
-  const AUTO_SAVE_DELAY = 900;
-  const COVERAGE_LIMIT = 0.35;
+  const ROOM_KEY = 'phishing';
+  const MAX_FLAGS = 6;          // flags per email
+  const MAX_FALSE_FLAGS = 2;    // flags on harmless areas tolerated on a passing submission
+  const WRONG_COST = 3;         // points lost for a wrong submission
+  const HINT_COSTS = [5, 5, 10];
+  const HIT_PAD = 14;           // tolerance (natural px) around each red-flag area
+  const ZOOM_STEPS = [1, 1.5, 2, 2.5];
+  const KEY_STEP = 0.015;       // keyboard reticle step (fraction of image)
+  const KEY_STEP_BIG = 0.06;
+  // Code word is assembled at runtime so it never appears in the page markup.
+  const WORD = [77, 69, 82, 67, 85, 82, 89].map((c) => String.fromCharCode(c)).join('');
 
-// ---------- Config ----------
-const IMAGES = ['Picture1.png','Picture2.png','Picture3.png','Picture4.png'];
-const DEFAULT_IMAGE = IMAGES[0];
-
-const IMAGE_LABELS = {
-  'Picture1.png': 'Apple — "sound played"',
-  'Picture2.png': 'iCloud — "storage full"',
-  'Picture3.png': 'Amazon — "order confirmation"',
-  'Picture4.png': 'SharePoint — "file shared"'
-};
-
-// Mark which images are truly phishing (used for digit #1 and auto-scoring)
-// Adjust if your ground truth differs:
-const IS_PHISHING = {
-  'Picture1.png': true,   // iCloud tone email (phishy)
-  'Picture2.png': true,   // iCloud full storage upsell (phishy)
-  'Picture3.png': false,  // Amazon order confirmation (legit example)
-  'Picture4.png': true    // SharePoint "file shared" lure (phishy)
-};
-
-// how many of the examples are phishing (for the lock digit #1)
-function countPhishingGroundTruth() {
-  return IMAGES.reduce((n, name) => n + (IS_PHISHING[name] ? 1 : 0), 0);
-}
-const PHISHING_DIGIT = countPhishingGroundTruth();
-
-function setVaultCallout(value) {
-  if (!vaultDisplay) return;
-  vaultDisplay.textContent = value ?? '—';
-}
-
-function updateVaultCallout(forceValue) {
-  if (typeof forceValue === 'string') {
-    setVaultCallout(forceValue);
-    return;
-  }
-  try {
-    const progress = window.utils?.readProgress?.() || {};
-    const stored = localStorage.getItem('lock_digit_phishing_total');
-    if (progress.phishing && stored) {
-      setVaultCallout(stored);
-    } else {
-      setVaultCallout('—');
-    }
-  } catch (_) {
-    setVaultCallout('—');
-  }
-}
-
-updateVaultCallout();
-
-  const points = window.utils?.points;
-  points?.ensure();
-  let hintUsed = false;
-
-  hintBtn?.addEventListener('click', () => {
-  if (hintUsed) {
-    announce('Hint already revealed.');
-    return;
-  }
-  hintUsed = true;
-
-  const key = window.PHISHING_INSTRUCTOR_KEY?.[state.imgName];
-  const text = key?.hint || 'Scan the sender address, call-to-action URL, and urgency cues first.';
-  if (hintText) {
-    hintText.textContent = text;
-    hintText.removeAttribute('hidden');
-  }
-
-  points?.spend?.(5, 'Phishing hint');
-  announce('Hint revealed.');
-});
-
-  const currentUser = readUser();
-  const currentUsername = (currentUser?.username || '').toLowerCase();
-  const guidesEnabled = currentUsername === 'team1';
-
-  function ensureGuidesLayer() {
-    if (!stageEl) return null;
-    if (!guidesLayer.parentElement) {
-      stageEl.appendChild(guidesLayer);
-    }
-    return guidesLayer;
-  }
-
-  function renderGuides() {
-    ensureGuidesLayer();
-    if (!stageEl || !drawCanvas) return;
-    if (!state.guidesVisible || !IS_PHISHING[state.imgName]) {
-      guidesLayer.setAttribute('hidden', 'hidden');
-      guidesLayer.innerHTML = '';
-      return;
-    }
-
-    const stageWidth = stageEl.clientWidth || drawCanvas.width || 1;
-    const stageHeight = stageEl.clientHeight || drawCanvas.height || 1;
-    const canvasWidth = drawCanvas.width || stageWidth;
-    const canvasHeight = drawCanvas.height || stageHeight;
-
-    guidesLayer.innerHTML = '';
-    guidesLayer.removeAttribute('hidden');
-
-    state.hotspots.forEach(hs => {
-      const guide = document.createElement('div');
-      guide.className = 'phish-guide';
-      const radiusPx = hotspotRadiusPx(hs, { scaleToStage: true });
-      const diameter = Math.max(60, radiusPx * 2);
-      guide.style.width = `${diameter}px`;
-      guide.style.height = `${diameter}px`;
-      guide.style.left = `${hs.xPct * stageWidth}px`;
-      guide.style.top = `${hs.yPct * stageHeight}px`;
-      guidesLayer.appendChild(guide);
-    });
-  }
-
-  if (guidesEnabled && revealBtn) {
-    revealBtn.hidden = false;
-    revealBtn.addEventListener('click', () => {
-      if (!state.guidesUnlocked) {
-        points?.spend?.(15, 'Phishing hotspot reveal');
-        state.guidesUnlocked = true;
-        state.guidesVisible = true;
-        setFeedback('Hotspots revealed. 15 points deducted.', 'warn');
-      } else {
-        state.guidesVisible = !state.guidesVisible;
-        setFeedback(state.guidesVisible ? 'Hotspots revealed.' : 'Hotspots hidden.', 'warn');
-      }
-      renderGuides();
-      revealBtn.textContent = state.guidesVisible ? 'Hide hotspots' : 'Reveal hotspots (−15 pts)';
-    });
-  } else if (revealBtn) {
-    revealBtn.remove();
-  }
-
-
-  // Tool state
-  const IS_DESKTOP = window.matchMedia('(min-width: 900px)').matches;
-  const ZOOM_STEP = 0.25;
-  const DEFAULT_ZOOM = 1;
-
-  const state = {
-    tool: 'brush', // 'brush' | 'eraser'
-    size: 8,
-    drawing: false,
-    lastX: 0,
-    lastY: 0,
-    strokeLength: 0,
-    strokeBounds: null,
-    maskSnapshot: null,
-    scaleX: 1,
-    scaleY: 1,
-    hotspots: [],
-    found: new Set(), // indexes of hotspots found
-    imgName: DEFAULT_IMAGE,
-    zoom: DEFAULT_ZOOM,
-    classification: null,
-    guidesVisible: false,
-    guidesUnlocked: false
-  };
-
-  const ZOOM_MIN = 1;
-  const ZOOM_MAX = 2.5;
-  let overlayEl = null;
-  let workspacePlaceholder = null;
-  let workspaceParent = null;
-  let autoSaveTimer = null;
-  let classificationNudgeTimer = null;
-  const guidesLayer = document.createElement('div');
-  guidesLayer.className = 'phish-guides';
-  guidesLayer.setAttribute('hidden', 'hidden');
-
-  function updateZoomControls() {
-    const atMin = state.zoom <= ZOOM_MIN + 0.001;
-    const atMax = state.zoom >= ZOOM_MAX - 0.001;
-    if (zoomOutBtn) {
-      zoomOutBtn.disabled = atMin;
-      zoomOutBtn.setAttribute('aria-disabled', atMin ? 'true' : 'false');
-    }
-    if (zoomInBtn) {
-      zoomInBtn.disabled = atMax;
-      zoomInBtn.setAttribute('aria-disabled', atMax ? 'true' : 'false');
-    }
-  }
-
-  function applyZoom() {
-    if (!stageEl) return;
-    const isZoomed = state.zoom > 1.02;
-    stageEl.style.transform = `scale(${state.zoom})`;
-    stageEl.classList.toggle('is-zoomed', isZoomed);
-    updateZoomControls();
-    renderGuides();
-  }
-
-  function setZoom(value) {
-    const clamped = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, value));
-    state.zoom = Number(clamped.toFixed(2));
-    applyZoom();
-  }
-
-  function ensureOverlay() {
-    if (!overlayEl) {
-      overlayEl = document.createElement('div');
-      overlayEl.id = 'phishOverlay';
-      overlayEl.className = 'phish-overlay';
-    }
-    return overlayEl;
-  }
-
-  function enterFullscreen() {
-    if (!workspaceEl || workspaceEl.classList.contains('is-fullscreen')) return;
-    const overlay = ensureOverlay();
-    workspaceParent = workspaceEl.parentElement;
-    workspacePlaceholder = document.createComment('phish-workspace');
-    workspaceParent?.insertBefore(workspacePlaceholder, workspaceEl);
-    overlay.appendChild(workspaceEl);
-    workspaceEl.classList.add('is-fullscreen');
-    document.body.appendChild(overlay);
-    document.body.classList.add('phish-overlay-open');
-    fullscreenBtn.textContent = 'Exit Fullscreen';
-  }
-
-  function exitFullscreen() {
-    if (!workspaceEl || !workspaceEl.classList.contains('is-fullscreen')) return;
-    workspaceEl.classList.remove('is-fullscreen');
-    if (workspaceParent && workspacePlaceholder) {
-      workspaceParent.insertBefore(workspaceEl, workspacePlaceholder);
-      workspacePlaceholder.remove();
-    }
-    workspaceParent = null;
-    workspacePlaceholder = null;
-    overlayEl?.remove();
-    document.body.classList.remove('phish-overlay-open');
-    fullscreenBtn.textContent = 'Fullscreen';
-  }
-
-  function toggleFullscreen() {
-    if (workspaceEl?.classList.contains('is-fullscreen')) {
-      exitFullscreen();
-    } else {
-      enterFullscreen();
-    }
-  }
-
-  updateZoomControls();
-
-  // Add slideshow state + helpers (keeps track of current email example)
-  const slideshow = {
-    index: 0,
-    order: IMAGES.slice(),
-    get total() { return this.order.length; },
-    clamp(i) {
-      if (!this.total) return 0;
-      if (i < 0) return 0;
-      if (i >= this.total) return this.total - 1;
-      return i;
+  const EMAILS = [
+    {
+      img: 'Picture1.png', w: 1146, h: 974,
+      from: 'FindMy',
+      subject: 'A sound was played on John’s iPhone',
+      phishing: true,
+      required: 2,
+      flags: [
+        {
+          key: true,
+          title: 'Fake sender address',
+          rects: [[88, 244, 300, 272]],
+          text: 'The email comes from findmy@appl3.co: a number 3 instead of the letter e, and .co instead of .com. Apple only sends from apple.com addresses. Always read the sender address character by character.'
+        },
+        {
+          title: 'An alarming alert you didn’t trigger',
+          rects: [[370, 462, 810, 522]],
+          text: 'A sound played on your phone at 4:12 AM? Unexpected security alerts are designed to make you worry and act fast without thinking. If you didn’t do it, check in the app itself, not via the email.'
+        },
+        {
+          title: 'Links that invite you to “take action”',
+          rects: [[335, 530, 810, 567]],
+          text: 'Link text can say icloud.com while pointing anywhere. Attackers use familiar-looking links to reach a fake login page. Hover (or long-press) to preview a link, or open the app/website yourself.'
+        }
+      ],
+      hints: [
+        'Before trusting any alert, check exactly <strong>who</strong> sent it. Read slowly, character by character.',
+        'Look closely at the address next to “FindMy”. Is that really Apple’s domain? Then ask yourself: did John expect this alert, and where do the blue links want to take him?'
+      ]
     },
-    current() {
-      return this.order[this.index] || DEFAULT_IMAGE;
-    }
-  };
-
-  function currentName() {
-    return slideshow.current();
-  }
-
-  function isImageComplete(name) {
-    if (!name) return false;
-    return localStorage.getItem(`phish_done_${name}`) === '1';
-  }
-
-  function updateSlideUi() {
-    const current = currentName();
-    const total = Math.max(slideshow.total, 1);
-    const complete = isImageComplete(current);
-    if (stageEl) {
-      stageEl.classList.toggle('is-complete', !!complete);
-    }
-    if (imageContainer) {
-      imageContainer.classList.toggle('is-complete', !!complete);
-    }
-    if (slideStatus) {
-      if (!slideshow.total) {
-        slideStatus.textContent = 'No examples available.';
-      } else {
-        const label = IMAGE_LABELS[current] || current;
-        slideStatus.textContent = `Example ${slideshow.index + 1} of ${total} — ${label}`;
-      }
-    }
-    if (exampleBanner) {
-      const label = IMAGE_LABELS[current] || current;
-      exampleBanner.textContent = `Example ${slideshow.index + 1} of ${total} — ${label}`;
-    }
-    if (prevBtn) {
-      prevBtn.disabled = slideshow.index <= 0;
-      prevBtn.setAttribute('aria-disabled', prevBtn.disabled ? 'true' : 'false');
-    }
-    if (nextBtn) {
-      nextBtn.disabled = slideshow.index >= slideshow.total - 1;
-      nextBtn.setAttribute('aria-disabled', nextBtn.disabled ? 'true' : 'false');
-    }
-
-    // Highlight current link in the list nav (if present)
-    $$('.thumb-nav a').forEach((link, i) => {
-      if (slideshow.order[i]) {
-        const isCurrent = slideshow.order[i] === current;
-        const isDone = isImageComplete(slideshow.order[i]);
-        link.classList.toggle('is-active', isCurrent);
-        if (isCurrent) link.setAttribute('aria-current', 'page');
-        else link.removeAttribute('aria-current');
-        link.classList.toggle('is-complete', isDone);
-        link.setAttribute('data-complete', isDone ? 'true' : 'false');
-        const label = link.textContent?.trim() || '';
-        if (isDone) {
-          link.setAttribute('aria-label', `${label} (complete)`);
-        } else {
-          if (link.getAttribute('aria-label')) link.removeAttribute('aria-label');
+    {
+      img: 'Picture2.png', w: 1150, h: 990,
+      from: 'iCloud',
+      subject: 'iCloud full!',
+      phishing: true,
+      required: 3,
+      flags: [
+        {
+          key: true,
+          title: 'Lookalike sender domain',
+          rects: [[80, 240, 380, 270]],
+          text: 'apple-noreply@icloudsecure.co is not an Apple address. Adding words like “secure” to a brand name is a classic trick to look trustworthy.'
+        },
+        {
+          title: 'Sloppy grammar',
+          rects: [[200, 400, 940, 500]],
+          text: '“you storage plan”, “you documents”, “apps are not update across you devices”. Big companies proofread their emails; repeated mistakes are a strong phishing sign.'
+        },
+        {
+          title: 'Pressure to pay through a link',
+          rects: [[205, 512, 790, 595]],
+          text: 'The email pushes you to “upgrade” and pay via a link. Payment links in unexpected emails often lead to card-stealing pages. Manage subscriptions in your device settings instead.'
+        },
+        {
+          title: 'Urgent, shouty subject',
+          rects: [[15, 197, 130, 230]],
+          text: '“iCloud full!” uses alarm and an exclamation mark to rush you. Urgency is the number one tool of phishers.'
+        },
+        {
+          title: 'Brand name written wrongly',
+          rects: [[205, 606, 340, 630]],
+          text: '“The icloud team”: Apple always writes its own brand as iCloud. Small branding mistakes give fakes away.'
         }
-      }
-    });
-
-    updateDotUi();
-  }
-
-  function updateAutosaveStatus(message) {
-    if (!autosaveStatusEl) return;
-    autosaveStatusEl.textContent = message || 'Autosave ready.';
-  }
-
-  function queueAutoSave(reason = 'auto') {
-    if (!maskHasAnyInk()) return;
-    clearTimeout(autoSaveTimer);
-    autoSaveTimer = setTimeout(() => {
-      saveHighlights({ silent: true, source: reason });
-    }, AUTO_SAVE_DELAY);
-  }
-
-  function nudgeClassification(message) {
-    if (!classificationBlock) return;
-    classificationBlock.classList.add('is-nudged');
-    if (classificationTipEl) {
-      classificationTipEl.textContent = message || 'Select "This is Phishing" to unlock highlighting.';
-      classificationTipEl.removeAttribute('hidden');
+      ],
+      hints: [
+        'Real companies proofread their emails. Scammers often don’t, and they love urgency and payments.',
+        'Check the sender domain, read the main paragraph word by word (“you” or “your”?), and look at what the blue links want you to do.'
+      ]
+    },
+    {
+      img: 'Picture3.png', w: 1176, h: 992,
+      from: 'Amazon.com',
+      subject: 'Your Amazon.com order #114-8512462-3346182',
+      phishing: false,
+      required: 0,
+      flags: [],
+      trust: [
+        {
+          title: 'Genuine sender domain',
+          rects: [[100, 243, 390, 265]],
+          text: 'no-reply@amazon.com is Amazon’s real domain: no extra words, numbers or odd endings.'
+        },
+        {
+          title: 'Details that match',
+          rects: [[25, 195, 495, 225], [405, 455, 550, 470]],
+          text: 'The order number in the subject matches the one in the body, and the email is addressed to John by name.'
+        },
+        {
+          title: 'No pressure, no password request',
+          rects: [[405, 818, 765, 842]],
+          text: 'It doesn’t rush you, threaten you or ask you to log in or pay. It even says the address can’t receive replies. Still, if in doubt, open the Amazon app yourself rather than clicking.'
+        }
+      ],
+      hints: [
+        'Not every email in this inbox is a trap. Judge it on evidence, not nerves.',
+        'Compare the sender domain with the company name, check the order number in the subject against the body, and ask: does it rush you, or ask you to log in or pay?'
+      ],
+      finalHint: 'Analyst note: the sender is the genuine amazon.com domain, the details are consistent and there is no pressure or request for credentials. Our analysts would treat this one as legitimate.'
+    },
+    {
+      img: 'Picture4.png', w: 1130, h: 958,
+      from: 'SharePoint',
+      subject: 'A file has been shared with you',
+      phishing: true,
+      required: 3,
+      flags: [
+        {
+          key: true,
+          title: 'Typo-squatted sender',
+          rects: [[85, 232, 390, 262]],
+          text: 'sharepoint@sharep0int.com uses a zero instead of the letter o. Real SharePoint notifications come from Microsoft’s own domains.'
+        },
+        {
+          title: 'Fake brand logo',
+          rects: [[240, 850, 340, 885]],
+          text: '“Minisoft” is not Microsoft. Copycat logos are built to pass a quick glance.'
+        },
+        {
+          title: 'Tempting file name',
+          rects: [[410, 585, 712, 658]],
+          text: '“Employee Bonuses” is chosen to make you curious enough to click. Attackers love money, HR and payroll topics.'
+        },
+        {
+          title: 'Nobody says who shared it',
+          rects: [[20, 190, 315, 220], [380, 432, 740, 468]],
+          text: 'A real share notification tells you which colleague shared the file. “A file has been shared with you” from no one is a generic lure.'
+        },
+        {
+          title: 'The “Open” button',
+          rects: [[470, 758, 652, 808]],
+          text: 'This button would take John to a fake Microsoft login page to harvest his password. Open shared files from SharePoint or Teams directly instead.'
+        }
+      ],
+      hints: [
+        'Scammers imitate the tools you use at work every day. Check the small print as carefully as the big print.',
+        'Check the spelling of the sender domain and the company logo at the bottom. Then ask: who actually shared this file, and why is its name so tempting?'
+      ]
     }
+  ];
+
+  // ---------- Elements ----------
+  const img = $('#phishingImage');
+  const stage = $('#phishStage');
+  if (!img || !stage) return;
+
+  const viewport = $('#phishViewport');
+  const pinsLayer = $('#phishPins');
+  const boxesLayer = $('#phishBoxes');
+  const reticle = $('#phishReticle');
+  const inboxEl = $('#phishInbox');
+  const viewerHeading = $('#phishViewerHeading');
+  const flagCountEl = $('#phishFlagCount');
+  const zoomInBtn = $('#phishZoomInBtn');
+  const zoomOutBtn = $('#phishZoomOutBtn');
+  const zoomLabel = $('#phishZoomLabel');
+  const flagListEl = $('#phishFlagList');
+  const undoBtn = $('#phishUndoBtn');
+  const clearBtn = $('#phishClearBtn');
+  const phishBtn = $('#markPhish');
+  const legitBtn = $('#markLegit');
+  const submitBtn = $('#submitButton');
+  const feedbackEl = $('#phishingFeedback');
+  const hintBtn = $('#phishHintBtn');
+  const hintListEl = $('#phishHintList');
+  const workPanel = $('#phishWorkPanel');
+  const debriefPanel = $('#phishDebriefPanel');
+  const debriefSummary = $('#phishDebriefSummary');
+  const debriefList = $('#phishDebriefList');
+  const nextBtn = $('#phishNextBtn');
+  const completeEl = $('#phishComplete');
+  const vaultCallout = $('#phishVaultValue');
+
+  const utils = window.utils;
+  const points = utils?.points;
+  const announce = (msg) => { try { window.a11y?.announce?.(msg); } catch (_) { /* ignore */ } };
+
+  const user = utils?.getUser?.() || null;
+  const TEAM = String(user?.username || 'team').toLowerCase();
+  // Prefix matches state-sync / admin reset patterns (`${team}_phishing_…`).
+  const STORE_KEY = `${TEAM}_phishing_room_v2`;
+
+  // ---------- State ----------
+  let state = freshState();
+  let zoomIndex = 0;
+  const cursor = { x: 0.5, y: 0.3 };
+
+  function freshEmailState() {
+    return { pins: [], verdict: null, attempts: 0, hints: 0, spotlight: null, done: false, found: [], feedback: null };
+  }
+
+  function freshState() {
+    const emails = {};
+    EMAILS.forEach((e) => { emails[e.img] = freshEmailState(); });
+    return { v: 2, current: 0, seq: 0, pctAt: 0, emails };
+  }
+
+  function loadState() {
+    const base = freshState();
     try {
-      classificationBlock.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return base;
+      const saved = JSON.parse(raw);
+      if (!saved || saved.v !== 2 || typeof saved.emails !== 'object') return base;
+      base.current = Math.max(0, Math.min(EMAILS.length - 1, Number(saved.current) || 0));
+      base.seq = Number(saved.seq) || 0;
+      base.pctAt = Number(saved.pctAt) || 0;
+      EMAILS.forEach((e) => {
+        const s = saved.emails[e.img];
+        if (!s) return;
+        const t = base.emails[e.img];
+        t.pins = Array.isArray(s.pins)
+          ? s.pins
+              .filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y))
+              .slice(0, MAX_FLAGS)
+              .map((p) => ({ id: Number(p.id) || ++base.seq, x: clamp01(p.x), y: clamp01(p.y), result: p.result === 'hit' || p.result === 'miss' ? p.result : null }))
+          : [];
+        t.verdict = s.verdict === 'phish' || s.verdict === 'legit' ? s.verdict : null;
+        t.attempts = Number(s.attempts) || 0;
+        t.hints = Math.max(0, Math.min(3, Number(s.hints) || 0));
+        t.spotlight = Number.isInteger(s.spotlight) ? s.spotlight : null;
+        t.done = !!s.done;
+        t.found = Array.isArray(s.found) ? s.found.filter(Number.isInteger) : [];
+        t.feedback = s.feedback && typeof s.feedback.msg === 'string' ? { msg: s.feedback.msg, tone: s.feedback.tone } : null;
+      });
     } catch (_) {
-      /* ignore scroll issues */
+      return base;
     }
-    if (message) setFeedback(message, 'warn');
-    clearTimeout(classificationNudgeTimer);
-    classificationNudgeTimer = setTimeout(() => {
-      classificationBlock.classList.remove('is-nudged');
-    }, 3200);
+    return base;
   }
 
-  function enforceCoverageLimit() {
-    if (!maskCanvas.width || !maskCanvas.height) return;
-    const totalPixels = maskCanvas.width * maskCanvas.height;
-    if (!totalPixels) return;
-    const data = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height).data;
-    let ink = 0;
-    for (let i = 3; i < data.length; i += 4) {
-      if (data[i] > 0) ink += 1;
-    }
-    const coverage = ink / totalPixels;
-    if (coverage > COVERAGE_LIMIT) {
-      eraseAll();
-      setFeedback('Highlights should target individual clues, not the entire email. Try again with smaller circles.', 'warn');
-    }
+  function persist() {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (_) { /* storage full / blocked */ }
   }
 
-  const dotButtons = [];
-
-  function buildDots() {
-    if (!dotContainer) return;
-    dotContainer.innerHTML = '';
-    dotButtons.length = 0;
-    slideshow.order.forEach((name, idx) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'carousel-dot';
-      btn.id = `exampleDot-${idx}`;
-      btn.setAttribute('role', 'tab');
-      btn.setAttribute('aria-selected', 'false');
-      btn.setAttribute('aria-label', `Show example ${idx + 1}: ${IMAGE_LABELS[name] || name}`);
-      btn.title = IMAGE_LABELS[name] || name;
-      btn.addEventListener('click', () => goto(idx));
-      dotContainer.appendChild(btn);
-      dotButtons.push(btn);
-    });
-    updateDotUi();
+  function save() {
+    persist();
+    syncProgress();
   }
 
-  function updateDotUi() {
-    if (!dotButtons.length) return;
-    dotButtons.forEach((btn, idx) => {
-      const isActive = slideshow.index === idx;
-      const name = slideshow.order[idx];
-      const isDone = isImageComplete(name);
-      btn.classList.toggle('is-active', isActive);
-      btn.classList.toggle('is-complete', isDone);
-      btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
-      if (isDone) {
-        btn.setAttribute('data-complete', 'true');
-        btn.setAttribute('aria-label', `Show example ${idx + 1}: ${(IMAGE_LABELS[name] || name)} (complete)`);
-      } else {
-        btn.removeAttribute('data-complete');
-        btn.setAttribute('aria-label', `Show example ${idx + 1}: ${IMAGE_LABELS[name] || name}`);
-      }
-      if (isActive) {
-        dotContainer?.setAttribute('aria-activedescendant', btn.id);
-      }
+  const clamp01 = (n) => Math.max(0, Math.min(1, Number(n) || 0));
+  const cur = () => EMAILS[state.current];
+  const st = (e = cur()) => state.emails[e.img];
+  const doneCount = () => EMAILS.filter((e) => state.emails[e.img].done).length;
+  const allDone = () => doneCount() === EMAILS.length;
+
+  function hasStarted() {
+    return EMAILS.some((e) => {
+      const s = state.emails[e.img];
+      return s.done || s.pins.length || s.verdict || s.attempts || s.hints;
     });
   }
 
-  function goto(index) {
-    if (!slideshow.total) return;
-    slideshow.index = slideshow.clamp(index);
-    const name = currentName();
-    if (state.imgName === name) {
-      updateSlideUi();
-      return;
-    }
-    state.imgName = name;
-    hintUsed = false;
-    hintText?.setAttribute('hidden', 'hidden');
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.set('img', name);
-      history.replaceState(null, '', url);
-    } catch (_) {
-      // ignore if URL parsing fails (older browsers)
-    }
-    syncClassificationUi();
-    imgEl.setAttribute('data-loading', 'true');
-    imgEl.src = `assets/${name}`;
-    updateSlideUi();
+  function roomFlagComplete() {
+    try { return !!utils?.readProgress?.().phishing; } catch (_) { return false; }
   }
 
-  function next() {
-    if (slideshow.index >= slideshow.total - 1) return;
-    goto(slideshow.index + 1);
+  // ---------- Progress broadcast (Mission Hub + HUD) ----------
+  function syncProgress() {
+    if (!utils?.setProgressPercent) return;
+    if (roomFlagComplete()) return;
+    const done = doneCount();
+    let pct = Math.round((done / EMAILS.length) * 100);
+    if (pct >= 100) return; // completion handled by completeRoom()
+    // A small non-zero value once the team has started, so a background
+    // sync never mistakes an in-progress room for a freshly reset one.
+    if (pct === 0 && hasStarted()) pct = 5;
+    if (pct === 0) return;
+    const existing = utils.getProgressPercent?.(ROOM_KEY) ?? 0;
+    if (existing === pct) return;
+    utils.setProgressPercent(ROOM_KEY, pct);
+    state.pctAt = Date.now();
+    persist();
+    try { window.stateSync?.saveNow?.('phishing-progress'); } catch (_) { /* ignore */ }
   }
 
-  function prev() {
-    if (slideshow.index <= 0) return;
-    goto(slideshow.index - 1);
+  // ---------- Geometry ----------
+  function rectContains(e, rect, x, y, pad) {
+    const px = x * e.w;
+    const py = y * e.h;
+    return px >= rect[0] - pad && px <= rect[2] + pad && py >= rect[1] - pad && py <= rect[3] + pad;
   }
 
-  // ---------- Utility: Storage ----------
-  function readUser() {
-    try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; }
-  }
-  function progressKey(u) { return `${u?.username || 'team'}_progress`; }
-
-  function markCompleteIfReady() {
-    const required = Math.ceil(state.hotspots.length * REQUIRED_PCT);
-    const highlightReady = !IS_PHISHING[state.imgName] || state.found.size >= required;
-    const totalSlides = IMAGES.length || 1;
-    const doneSlides = IMAGES.reduce((count, name) => count + (localStorage.getItem(`phish_done_${name}`) === '1' ? 1 : 0), 0);
-    const allSlidesDone = doneSlides === totalSlides;
-
-    if (highlightReady && allSlidesDone) {
-      const u = readUser();
-      const key = progressKey(u);
-      let p;
-      try { p = JSON.parse(localStorage.getItem(key) || '{}'); } catch { p = {}; }
-      if (!p.phishing) {
-        p.phishing = true;
-        localStorage.setItem(key, JSON.stringify(p));
-        setFeedback(`Full gallery cleared! Digit ${PHISHING_DIGIT} locked in.`, 'success');
-        announce('Phishing puzzle complete');
-        try {
-          window.utils?.setProgressFlag?.('phishing', true, u);
-        } catch (_) {}
-      try {
-        localStorage.setItem('lock_digit_phishing_total', String(PHISHING_DIGIT));
-      } catch (_) {}
-      updateVaultCallout(String(PHISHING_DIGIT));
-        window.vault?.unlock('phishing', PHISHING_DIGIT, {
-          message: `Phishing digit ${PHISHING_DIGIT} secured. Add it to the vault.`
-        });
-        window.stateSync?.queueSave?.('phishing-complete');
-      }
-    }
-    updateVulnText();
-    updateSlideUi();
+  function rectDistance(e, rect, x, y) {
+    const cx = (rect[0] + rect[2]) / 2;
+    const cy = (rect[1] + rect[3]) / 2;
+    return Math.hypot(x * e.w - cx, y * e.h - cy);
   }
 
-  function storageKey() {
-    const u = readUser();
-    const user = u?.username || 'team';
-    return `${user}_phishing_${state.imgName}`;
-  }
-
-  // Save mask as PNG data URL + found indexes
-  function saveHighlights(options = {}) {
-    const { silent = false, source = 'manual' } = options;
-    if (!maskHasAnyInk() && !silent) {
-      setFeedback('Add at least one highlight before saving.', 'warn');
-      return;
-    }
-    const data = {
-      mask: maskCanvas.toDataURL('image/png'),
-      found: Array.from(state.found)
-    };
-    localStorage.setItem(storageKey(), JSON.stringify(data));
-    clearTimeout(autoSaveTimer);
-    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    if (silent) {
-      updateAutosaveStatus(`Autosaved at ${timestamp}.`);
-    } else {
-      setFeedback('Saved your highlights.', 'success');
-      updateAutosaveStatus(`Saved at ${timestamp}.`);
-    }
-  }
-
-  async function loadHighlights(options = {}) {
-    const { silent = false } = options;
-    const raw = localStorage.getItem(storageKey());
-    if (!raw) {
-      if (!silent) setFeedback('No saved highlights for this image.');
-      return;
-    }
-    try {
-      const data = JSON.parse(raw);
-      await drawDataUrlToCanvas(data.mask, maskCanvas, maskCtx);
-      // Mirror the mask to visible canvas lightly
-      redrawFromMask();
-      state.found = new Set(Array.isArray(data.found) ? data.found : []);
-      if (!silent) setFeedback('Loaded saved highlights.', 'success');
-      updateAutosaveStatus('Highlights restored from autosave.');
-      markCompleteIfReady();
-    } catch {
-      if (!silent) setFeedback('Could not load saved highlights.', 'warn');
-    }
-  }
-
-  function eraseAll() {
-    resetStrokeState();
-    ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
-    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-    state.found.clear();
-    setFeedback('Cleared.');
-    updateAutosaveStatus('Canvas cleared. Autosave will resume on the next stroke.');
-    updateVulnText();
-  }
-
-  function selectAll() {
-    // Draw circles on all hotspots into both mask + visible canvas
-    state.hotspots.forEach((hs, i) => {
-      const { x, y } = pctToPx(hs);
-      maskCtx.beginPath();
-      maskCtx.fillStyle = '#000'; // mask drawn area
-      maskCtx.arc(x, y, HOTSPOT_RADIUS_PX * 0.8, 0, Math.PI * 2);
-      maskCtx.fill();
-
-      ctx.beginPath();
-      ctx.strokeStyle = 'rgba(9,255,170,0.35)';
-      ctx.lineWidth = 3;
-      ctx.arc(x, y, HOTSPOT_RADIUS_PX * 0.8, 0, Math.PI * 2);
-      ctx.stroke();
-
-      state.found.add(i);
-    });
-    setFeedback('Auto-placed markers for demo.');
-    markCompleteIfReady();
-  }
-// Instructor-only metadata (not required hotspots)
-// Exposed on window so admin tools / hint UI can read it too.
-window.PHISHING_INSTRUCTOR_KEY = {
-  "Picture1.png": {
-    verdict: "Phishing",
-    explainers: [
-      "Lookalike sender domain: 'appl3.co' (number 3 instead of letter 'e') — common impersonation trick.",
-      "Subtle visual inconsistencies (fonts/spacing) can be present; these are instructor hints and not required to be circled.",
-      "Hovering links may reveal non-Apple domains — advanced check for instructors (do not require players to hover)."
-    ],
-    hint: "Check the sender address closely and the sender card at top-left. If the domain contains numbers or odd spellings it is suspicious."
-  },
-
-  "Picture2.png": {
-    verdict: "Phishing",
-    explainers: [
-      "Domain 'icloudsecure.co' is not an official Apple domain.",
-      "Poor grammar and inconsistent casing ('you documents', 'not update') — strong phishing indicator.",
-      "The 'upgrade' CTA is a common lure — treat payment/upgrade prompts as high risk (instructor-level check)."
-    ],
-    hint: "Look for domain mismatches and obvious grammar mistakes. These are quick visual checks players can perform."
-  },
-
-  "Picture3.png": {
-    verdict: "Likely Legitimate",
-    explainers: [
-      "Sender appears to be 'no-reply@amazon.com' with normal formatting — still advise verifying the domain before clicking links.",
-      "Order details and order numbers are common in genuine notifications; confirm the sender domain in the sender card.",
-      "Hover-to-verify links is an advanced action; include as an instructor verification step rather than a required player action."
-    ],
-    hint: "Confirm the sender domain and check order details. If everything matches and grammar/formatting look clean, it's probably legitimate."
-  },
-
-  "Picture4.png": {
-    verdict: "Phishing",
-    explainers: [
-      "Lookalike sender domain 'sharep0int.com' uses a zero in place of an 'o' — common typo-squatting trick.",
-      "The shared file targets financial / high-stress content (e.g., 'Employee Bonuses') — attackers use this to trigger quick clicks.",
-      "Do not require players to circle the green 'anyone with the link' icon or assume the 'Open' button will harvest credentials — these are instructor-level behaviors to explain in feedback."
-    ],
-    hint: "Files that reference finance or HR topics are high-value lures. Verify sender spelling and avoid clicking 'Open' unless you can confirm the share was legitimate."
-  }
-};
-
-  // ---------- Hotspots JSON ----------
-  function getHotspotMap() {
-    const el = $('#phishingHotspots');
-    if (!el) return {};
-    try { return JSON.parse(el.textContent || '{}'); } catch { return {}; }
-  }
-
-  const HOTSPOTS = getHotspotMap();
-
-  // ---------- Init image & canvas ----------
-  function resolveInitialImage() {
-    // Prefer query string if present; else whatever src ends with; else default
-    const params = new URLSearchParams(location.search);
-    const q = params.get('img');
-    if (q && IMAGES.includes(q)) return q;
-    const src = imgEl.getAttribute('src') || '';
-    const m = src.match(/([^/]+)$/);
-    if (m && IMAGES.includes(m[1])) return m[1];
-    return DEFAULT_IMAGE;
-  }
-
-  function fitCanvasToImage() {
-    const rect = imgEl.getBoundingClientRect();
-    const naturalW = imgEl.naturalWidth || 0;
-    const naturalH = imgEl.naturalHeight || 0;
-    const aspectFromNatural = naturalW > 0 ? naturalH / naturalW : null;
-    const aspectFromRect = rect.width > 0 ? rect.height / rect.width : null;
-    const aspect = aspectFromNatural || aspectFromRect || 0.75;
-
-    const containerWidth = imageContainer?.clientWidth || rect.width || 0;
-    const fallbackWidth = naturalW || 640;
-    const MIN_STAGE_WIDTH = 320;
-    const MAX_STAGE_WIDTH = 960;
-    const baseWidth = containerWidth > 0 ? containerWidth : fallbackWidth;
-    const clampedWidth = Math.max(MIN_STAGE_WIDTH, Math.min(MAX_STAGE_WIDTH, Math.round(baseWidth)));
-    const targetW = clampedWidth;
-    const targetH = Math.max(220, Math.round(targetW * aspect));
-
-    if (drawCanvas.width === targetW && drawCanvas.height === targetH) {
-      return;
-    }
-
-    drawCanvas.width  = targetW;
-    drawCanvas.height = targetH;
-    maskCanvas.width  = targetW;
-    maskCanvas.height = targetH;
-
-    state.scaleX = naturalW > 0 ? targetW / naturalW : 1;
-    state.scaleY = naturalH > 0 ? targetH / naturalH : 1;
-
-    if (stageEl) {
-      stageEl.style.setProperty('--stage-width', `${targetW}px`);
-      stageEl.style.setProperty('--stage-height', `${targetH}px`);
-    }
-
-    redrawFromMask();
-    applyZoom();
-  }
-
-  function loadHotspotsForImage() {
-    resetStrokeState();
-    state.imgName = currentName();
-    const truth = !!IS_PHISHING[state.imgName];
-    const hotspotSource = HOTSPOTS[state.imgName] || [];
-    state.hotspots = hotspotSource.map(h => ({
-      xPct: Number(h.xPct),
-      yPct: Number(h.yPct),
-      radius: Number.isFinite(h.radius) ? Number(h.radius) : null,
-      label: h.label || 'Indicator'
-    }));
-    state.isPhishExample = truth;
-    state.found.clear();
-    let storedClassification = null;
-    try { storedClassification = localStorage.getItem(`class_${state.imgName}`); } catch (_) {}
-    if (!storedClassification) {
-      storedClassification = truth ? 'phish' : 'legit';
-      try { localStorage.setItem(`class_${state.imgName}`, storedClassification); } catch (_) {}
-      window.stateSync?.queueSave?.('phishing-classification');
-    }
-    state.classification = storedClassification;
-    clearTimeout(autoSaveTimer);
-    updateAutosaveStatus('Autosave ready.');
-    updateVulnText();
-    syncClassificationUi();
-    renderGuides();
-  }
-
-  // Convert pct hotspot to canvas pixel coords
-  function pctToPx(h) {
-    const rect = imgEl.getBoundingClientRect();
-    const w = drawCanvas.width || rect.width;
-    const hgt = drawCanvas.height || rect.height;
-    return {
-      x: Math.round(h.xPct * w),
-      y: Math.round(h.yPct * hgt)
-    };
-  }
-
-  function hotspotRadiusPx(h, { scaleToStage = false } = {}) {
-    const baseWidth = scaleToStage
-      ? (stageEl?.clientWidth || drawCanvas.width || 640)
-      : (drawCanvas.width || 0);
-    const effectiveWidth = baseWidth || drawCanvas.width || 640;
-    if (Number.isFinite(h.radius) && h.radius > 0) {
-      return Math.max(HOTSPOT_RADIUS_PX * 0.6, Math.round(h.radius * effectiveWidth));
-    }
-    return Math.max(HOTSPOT_RADIUS_PX, Math.round(effectiveWidth * 0.12));
-  }
-
-  function broadcastProgress() {
-    const setPercent = window.utils?.setProgressPercent;
-    if (typeof setPercent !== 'function') return;
-    const totalSlides = IMAGES.length || 1;
-    const doneSlides = IMAGES.reduce((count, name) => count + (localStorage.getItem(`phish_done_${name}`) === '1' ? 1 : 0), 0);
-    const percent = Math.round((doneSlides / totalSlides) * 100);
-    const complete = doneSlides === totalSlides;
-    setPercent('phishing', complete ? 100 : percent, { complete });
-  }
-
-  function updateVulnText() {
-    if (!vulnCountEl && !vulnStageEl) return;
-    const current = state.imgName;
-    const isPhishExample = !!IS_PHISHING[current];
-    const total = state.hotspots.length || 0;
-    const found = state.found.size;
-    const required = Math.ceil(total * REQUIRED_PCT);
-    const effectiveFound = isPhishExample ? found : total;
-    const remaining = Math.max(total - effectiveFound, 0);
-    const needed = Math.max(required - effectiveFound, 0);
-    const remainingLabels = state.hotspots
-      .map((spot, idx) => (!state.found.has(idx) ? (spot.label || `Clue ${idx + 1}`) : null))
-      .filter(Boolean);
-
-    if (total) {
-      let extra = '';
-      if (effectiveFound === 0) {
-        const firstClue = remainingLabels[0] ? remainingLabels[0].replace(/\s+/g, ' ').trim() : 'the most suspicious clue you can find';
-        extra = ` Start by circling ${firstClue}.`;
-      } else if (remaining > 0) {
-        if (needed > 0) {
-          extra = ` Keep hunting - ${needed === 1 ? 'one more critical clue' : `${needed} more critical clues`} will meet the target.`;
-        } else {
-          extra = ` Nice work! ${remaining === 1 ? 'One bonus clue remains if you want the full sweep.' : `${remaining} bonus clues remain if you want the full sweep.`}`;
-        }
-      } else {
-        extra = ' All clues are marked - excellent coverage!';
-      }
-      const totalSlides = IMAGES.length || 0;
-      const doneSlides = IMAGES.reduce((count, name) => count + (localStorage.getItem(`phish_done_${name}`) === '1' ? 1 : 0), 0);
-      const slideSummary = totalSlides ? ` Examples cleared: ${doneSlides}/${totalSlides}.` : '';
-      const message = isPhishExample
-        ? `You marked ${found} out of ${total} vulnerabilities.${extra}${slideSummary}`
-        : `Review the legitimacy cues (${total} available) and confirm your verdict.${slideSummary}`;
-      if (vulnCountEl) {
-        if (isPhishExample) {
-          let neededMsg;
-          if (found === 0) {
-            neededMsg = `${required} needed to unlock this example. Start with the clearest red flag.`;
-          } else if (needed > 0) {
-            neededMsg = `${Math.max(needed, 0)} more to meet the target.`;
-          } else {
-            neededMsg = 'Target met — mark extras if you spot them.';
-          }
-          vulnCountEl.textContent = `Found ${found}/${total}. ${neededMsg}`;
-        } else {
-          vulnCountEl.textContent = `Legitimacy scan ready — there are ${total} cues to verify before confirming.`;
-        }
-      }
-      if (vulnDotsEl) renderVulnDots(total, isPhishExample ? found : 0, required);
-      if (vulnStageEl) vulnStageEl.textContent = message;
-      if (vulnReminderEl) {
-        if (isPhishExample) {
-          if (needed > 0) {
-            vulnReminderEl.textContent = 'Scan for additional red flags or tap a hint if you get stuck.';
-          } else {
-            vulnReminderEl.textContent = 'All required clues are marked. Submit when ready.';
-          }
-          vulnReminderEl.removeAttribute('hidden');
-        } else {
-          vulnReminderEl.textContent = 'Everything looks genuine so far. Confirm "Looks Legit" when you are confident.';
-          vulnReminderEl.removeAttribute('hidden');
-        }
-      }
-    } else {
-      if (vulnCountEl) vulnCountEl.textContent = 'No hotspots defined for this image.';
-      if (vulnStageEl) vulnStageEl.textContent = 'No hotspots defined for this image.';
-      if (vulnDotsEl) vulnDotsEl.innerHTML = '';
-      if (vulnReminderEl) vulnReminderEl.setAttribute('hidden', 'hidden');
-    }
-    broadcastProgress();
-    renderGuides();
-  }
-
-  function renderVulnDots(total, found, required) {
-    if (!vulnDotsEl) return;
-    vulnDotsEl.innerHTML = '';
-    if (!total) return;
-    for (let i = 0; i < total; i += 1) {
-      const dot = document.createElement('span');
-      dot.className = 'phish-progress__dot';
-      if (i < found) dot.classList.add('is-met');
-      if (i >= required) dot.classList.add('is-bonus');
-      dot.setAttribute('aria-label', i < found ? `Clue ${i + 1} marked` : `Clue ${i + 1} pending`);
-      vulnDotsEl.appendChild(dot);
-    }
-  }
-
-  function syncClassificationUi() {
-    const saved = localStorage.getItem(`class_${currentName()}`);
-    const isPhish = saved === 'phish';
-    const isLegit = saved === 'legit';
-    state.classification = saved || null;
-    if (markPhishBtn) {
-      markPhishBtn.setAttribute('aria-pressed', isPhish ? 'true' : 'false');
-      markPhishBtn.classList.toggle('is-selected', isPhish);
-    }
-    if (markLegitBtn) {
-      markLegitBtn.setAttribute('aria-pressed', isLegit ? 'true' : 'false');
-      markLegitBtn.classList.toggle('is-selected', isLegit);
-    }
-    if (classificationTipEl) {
-      if (isPhish) {
-        classificationTipEl.setAttribute('hidden', 'hidden');
-      } else if (isLegit) {
-        classificationTipEl.textContent = 'Looks Legit selected — highlights stay locked until you switch back.';
-        classificationTipEl.removeAttribute('hidden');
-      } else {
-        classificationTipEl.textContent = 'Select "This is Phishing" to unlock highlighting.';
-        classificationTipEl.removeAttribute('hidden');
-      }
-    }
-    if (classificationStatusEl) {
-      if (isPhish) {
-        classificationStatusEl.textContent = 'Marked as phishing.';
-        classificationStatusEl.classList.add('is-phish');
-        classificationStatusEl.classList.remove('is-legit');
-      } else if (isLegit) {
-        classificationStatusEl.textContent = 'Marked as legitimate — highlighting locked.';
-        classificationStatusEl.classList.add('is-legit');
-        classificationStatusEl.classList.remove('is-phish');
-      } else {
-        classificationStatusEl.textContent = 'Choose a verdict to continue highlighting.';
-        classificationStatusEl.classList.remove('is-phish', 'is-legit');
-      }
-    }
-    if (isPhish) classificationBlock?.classList.remove('is-nudged');
-  }
-
-  function setFeedback(msg, tone='info') {
-    if (!feedbackEl) return;
-    feedbackEl.textContent = msg || '';
-    feedbackEl.classList.remove('ok', 'warn');
-    if (!msg) {
-      feedbackEl.removeAttribute('data-tone');
-      return;
-    }
-    const normalized = tone === 'success' ? 'success' : tone === 'warn' ? 'warn' : 'info';
-    if (normalized === 'success') feedbackEl.classList.add('ok');
-    if (normalized === 'warn') feedbackEl.classList.add('warn');
-    if (normalized === 'info') feedbackEl.removeAttribute('data-tone');
-    else feedbackEl.setAttribute('data-tone', normalized);
-    announce(msg);
-  }
-
-  // ---------- Tools ----------
-  function setTool(name) {
-    state.tool = name === 'eraser' ? 'eraser' : 'brush';
-    // Toggle aria-pressed on tool buttons if present
-    $$('.tool-btn').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === state.tool)));
-    setFeedback(state.tool === 'brush' ? 'Brush selected' : 'Eraser selected');
-  }
-  window.setTool = setTool; // called by HTML buttons
-
-  const clampBrushSize = (val) => {
-    const min = Number(brushSizeEl?.min || 2);
-    const max = Number(brushSizeEl?.max || 24);
-    const num = Math.round(Number(val) || 8);
-    return Math.max(min, Math.min(max, num));
-  };
-
-  if (brushSizeEl) {
-    state.size = clampBrushSize(brushSizeEl.value);
-    brushSizeEl.addEventListener('input', () => {
-      state.size = clampBrushSize(brushSizeEl.value);
-    });
-  }
-
-  // ---------- Drawing (mouse + touch) ----------
-  function getPos(evt) {
-    const rect = drawCanvas.getBoundingClientRect();
-    const scaleX = rect.width ? (drawCanvas.width / rect.width) : 1;
-    const scaleY = rect.height ? (drawCanvas.height / rect.height) : 1;
-    const touch = evt.touches && evt.touches[0];
-    const clientX = touch ? touch.clientX : evt.clientX;
-    const clientY = touch ? touch.clientY : evt.clientY;
-    return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY
-    };
-  }
-
-  function resetStrokeState() {
-    state.strokeLength = 0;
-    state.strokeBounds = null;
-    state.maskSnapshot = null;
-  }
-
-  function restoreMaskSnapshot(snapshot = state.maskSnapshot) {
-    if (snapshot) {
-      maskCtx.putImageData(snapshot, 0, 0);
-      redrawFromMask();
-    }
-  }
-
-  function exceedsStrokeLimits() {
-    if (!state.strokeBounds) return false;
-    const width = Math.abs(state.strokeBounds.maxX - state.strokeBounds.minX);
-    const height = Math.abs(state.strokeBounds.maxY - state.strokeBounds.minY);
-    const area = width * height;
-    return state.strokeLength > MAX_STROKE_LENGTH || width > MAX_STROKE_SPAN || height > MAX_STROKE_SPAN || area > MAX_STROKE_AREA;
-  }
-
-  function strokeIsBroad(bounds) {
-    if (!bounds) return false;
-    const width = Math.abs(bounds.maxX - bounds.minX);
-    const height = Math.abs(bounds.maxY - bounds.minY);
-    const area = width * height;
-    return width > 320 || height > 320 || area > 90000;
-  }
-
-  function beginDraw(x, y) {
-    if (state.classification !== 'phish') {
-      nudgeClassification('Select "This is Phishing" before highlighting clues.');
-      announce('Highlighting disabled until classification is set to phishing');
-      return;
-    }
-    state.drawing = true;
-    state.lastX = x;
-    state.lastY = y;
-    state.strokeLength = 0;
-    state.strokeBounds = { minX: x, maxX: x, minY: y, maxY: y };
-    try {
-      state.maskSnapshot = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
-    } catch {
-      state.maskSnapshot = null;
-    }
-    drawStroke(x, y, true);
-    registerHotspotHit(x, y);
-  }
-
-  function finishStroke() {
-    if (!state.drawing) return;
-    state.drawing = false;
-    const bounds = state.strokeBounds ? { ...state.strokeBounds } : null;
-    const snapshot = state.maskSnapshot;
-    const wasBrush = state.tool === 'brush';
-
-    if (exceedsStrokeLimits()) {
-      restoreMaskSnapshot(snapshot);
-      setFeedback('Keep highlights focused on the suspicious detail, not the entire email.', 'warn');
-      updateVulnText();
-      resetStrokeState();
-      return;
-    }
-
-    const prevFound = new Set(state.found);
-    recomputeFoundFromMask();
-    updateVulnText();
-    const madeProgress = state.found.size > prevFound.size;
-
-    if (wasBrush && bounds && !madeProgress && strokeIsBroad(bounds)) {
-      restoreMaskSnapshot(snapshot);
-      state.found = prevFound;
-      updateVulnText();
-      setFeedback('Circle the specific clue—broad strokes are ignored.', 'warn');
-      resetStrokeState();
-      return;
-    }
-
-    enforceCoverageLimit();
-    queueAutoSave('stroke');
-    markCompleteIfReady();
-    resetStrokeState();
-  }
-
-  function moveDraw(x, y) {
-    if (!state.drawing) return;
-    const dx = x - state.lastX;
-    const dy = y - state.lastY;
-    state.strokeLength += Math.hypot(dx, dy);
-    if (state.strokeBounds) {
-      state.strokeBounds.minX = Math.min(state.strokeBounds.minX, x);
-      state.strokeBounds.maxX = Math.max(state.strokeBounds.maxX, x);
-      state.strokeBounds.minY = Math.min(state.strokeBounds.minY, y);
-      state.strokeBounds.maxY = Math.max(state.strokeBounds.maxY, y);
-    }
-    drawStroke(x, y, false);
-    registerHotspotHit(x, y);
-    state.lastX = x;
-    state.lastY = y;
-    if (exceedsStrokeLimits()) {
-      state.drawing = false;
-      restoreMaskSnapshot();
-      setFeedback('Keep highlights focused on the suspicious detail, not the entire email.', 'warn');
-      resetStrokeState();
-      updateVulnText();
-    }
-  }
-
-  function drawStroke(x, y, first) {
-    // Draw on visible canvas (nice stroke) AND mask canvas (solid circle/line)
-    const size = state.size;
-
-    // Visible
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = size;
-    if (state.tool === 'eraser') {
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.strokeStyle = 'rgba(0,0,0,1)';
-    } else {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = 'rgba(9,255,170,0.35)';
-    }
-    ctx.beginPath();
-    if (first) {
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + 0.01, y + 0.01);
-    } else {
-      ctx.moveTo(state.lastX, state.lastY);
-      ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-
-    // Mask (always paint black for brush, erase to clear)
-    maskCtx.lineCap = 'round';
-    maskCtx.lineJoin = 'round';
-    maskCtx.lineWidth = size;
-    maskCtx.beginPath();
-    if (state.tool === 'eraser') {
-      maskCtx.globalCompositeOperation = 'destination-out';
-      maskCtx.strokeStyle = 'rgba(0,0,0,1)';
-    } else {
-      maskCtx.globalCompositeOperation = 'source-over';
-      maskCtx.strokeStyle = '#000';
-    }
-    if (first) {
-      maskCtx.moveTo(x, y);
-      maskCtx.lineTo(x + 0.01, y + 0.01);
-    } else {
-      maskCtx.moveTo(state.lastX, state.lastY);
-      maskCtx.lineTo(x, y);
-    }
-    maskCtx.stroke();
-  }
-
-  function registerHotspotHit(x, y) {
-    if (state.tool === 'eraser') return;
-    if (!state.isPhishExample) return;
-    let gained = false;
-    state.hotspots.forEach((hs, idx) => {
-      if (state.found.has(idx)) return;
-      const { x: hx, y: hy } = pctToPx(hs);
-      const radius = hotspotRadiusPx(hs) * 1.1;
-      const dx = hx - x;
-      const dy = hy - y;
-      if ((dx * dx + dy * dy) <= radius * radius) {
-        state.found.add(idx);
-        gained = true;
-      }
-    });
-    if (gained) {
-      updateVulnText();
-    }
-  }
-
-  // Events
-  drawCanvas.addEventListener('mousedown', (e) => { const p = getPos(e); beginDraw(p.x, p.y); });
-  drawCanvas.addEventListener('mousemove', (e) => { const p = getPos(e); moveDraw(p.x, p.y); });
-  window.addEventListener('mouseup', finishStroke);
-
-  drawCanvas.addEventListener('touchstart', (e) => { const p = getPos(e); beginDraw(p.x, p.y); e.preventDefault(); }, { passive:false });
-  drawCanvas.addEventListener('touchmove',  (e) => { const p = getPos(e); moveDraw(p.x, p.y);  e.preventDefault(); }, { passive:false });
-  drawCanvas.addEventListener('touchend',   (e) => { finishStroke(); e.preventDefault(); }, { passive:false });
-  drawCanvas.addEventListener('touchcancel',(e) => { finishStroke(); e.preventDefault(); }, { passive:false });
-
-  zoomInBtn?.addEventListener('click', () => setZoom(state.zoom + ZOOM_STEP));
-  zoomOutBtn?.addEventListener('click', () => setZoom(state.zoom - ZOOM_STEP));
-  fullscreenBtn?.addEventListener('click', () => toggleFullscreen());
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && workspaceEl?.classList.contains('is-fullscreen')) {
-      exitFullscreen();
-    }
-  });
-
-  // ---------- Scoring ----------
-  function recomputeFoundFromMask() {
-    state.found.clear();
-    const total = state.hotspots.length;
-    if (!total) return;
-
-    const imgData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height).data;
-
-    for (let i = 0; i < total; i++) {
-      const hs = state.hotspots[i];
-      const { x, y } = pctToPx(hs);
-      const radius = hotspotRadiusPx(hs);
-      if (anyInkNear(imgData, x, y, radius, maskCanvas.width, maskCanvas.height)) {
-        state.found.add(i);
-      }
-    }
-  }
-
-  function anyInkNear(data, cx, cy, r, w, h) {
-    const x0 = Math.max(0, Math.floor(cx - r));
-    const y0 = Math.max(0, Math.floor(cy - r));
-    const x1 = Math.min(w - 1, Math.ceil(cx + r));
-    const y1 = Math.min(h - 1, Math.ceil(cy + r));
-    const r2 = r * r;
-
-    for (let y = y0; y <= y1; y++) {
-      const dy = y - cy;
-      const dy2 = dy * dy;
-      const row = y * w * 4;
-      for (let x = x0; x <= x1; x++) {
-        const dx = x - cx;
-        if (dx*dx + dy2 <= r2) {
-          const idx = row + x * 4;
-          // Mask draws black (#000) with alpha 255 — check alpha > 0
-          if (data[idx + 3] > 0) return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  function redrawFromMask() {
-    // Light visual hint (optional) — we simply overlay the mask as a faint color
-    ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.drawImage(maskCanvas, 0, 0);
-    // Convert black mask to green-ish tint
-    const id = ctx.getImageData(0, 0, drawCanvas.width, drawCanvas.height);
-    const d = id.data;
-    for (let i=0; i<d.length; i+=4) {
-      const a = d[i+3];
-      if (a > 0) {
-        d[i]   = 0;   // R
-        d[i+1] = 255; // G
-        d[i+2] = 170; // B
-        d[i+3] = Math.min(220, a); // alpha
-      }
-    }
-    ctx.putImageData(id, 0, 0);
-  }
-
-  // ---------- Submit ----------
-  function submitHighlights() {
-    recomputeFoundFromMask();
-    updateVulnText();
-    const name = currentName();
-    const total = state.hotspots.length;
-    const found = state.found.size;
-    const required = Math.ceil(total * REQUIRED_PCT);
-
-    const storedClass = localStorage.getItem(`class_${name}`);
-    const userClass = storedClass || state.classification;
-    const truth = !!IS_PHISHING[name];
-
-    // Require a classification
-    if (!userClass) {
-      setFeedback('Choose "Is phishing" or "Isn\'t phishing" first.', 'warn');
-      return;
-    }
-    // If they said phishing, require at least one highlight
-    if (userClass === 'phish' && !maskHasAnyInk()) {
-      setFeedback('Mark at least one suspicious indicator (highlight).', 'warn');
-      return;
-    }
-
-    // Score: classification must match truth, and if phishing, highlights must meet threshold.
-    const okClass = (userClass === 'phish') === truth;
-    const okHotspots = truth ? (found >= required) : true;
-
-    if (okClass && okHotspots) {
-      setFeedback('Correct for this example.', 'success');
-
-      // Track per-image completion to gate the overall puzzle
-      localStorage.setItem(`phish_done_${name}`, '1');
-
-      // If all images are done, mark puzzle complete
-      const allDone = IMAGES.every(n => localStorage.getItem(`phish_done_${n}`) === '1');
-      if (allDone) {
-        markCompleteIfReady(); // also sets phishing flag
-      }
-
-      updateSlideUi();
-
-      // Move to next image (cycle once)
-      if (slideshow.index < slideshow.total - 1) next();
-    } else {
-      setFeedback('Not quite. Check your choice and highlights.', 'warn');
-    }
-  }
-
-
-  window.eraseAll        = eraseAll;
-  window.selectAll       = selectAll;
-  window.submitHighlights= submitHighlights;
-
-  function maskHasAnyInk(){
-  const id = maskCtx.getImageData(0,0,maskCanvas.width,maskCanvas.height).data;
-  for (let i=3;i<id.length;i+=4){ if(id[i]>0) return true; }
-  return false;
-}
-
-function classify(isPhish){
-  const name = currentName();
-  const value = isPhish ? 'phish' : 'legit';
-  try {
-    localStorage.setItem(`class_${name}`, value);
-  } catch (_) {}
-  state.classification = value;
-  setFeedback(isPhish ? 'Marked as phishing.' : 'Marked as not phishing.', 'success');
-  syncClassificationUi();
-  window.stateSync?.queueSave?.('phishing-classification');
-  updateVulnText();
-}
-
-
-  // ---------- Image lifecycle ----------
-  function syncCanvasPositioning() {
-    // Keep canvas aligned over the image within the scrollable stage
-    const rImg = imgEl.getBoundingClientRect();
-    const rStage = stageEl.getBoundingClientRect();
-    // Not needed if canvas is positioned absolute inside stage at 0,0 — which it is
-    // We just ensure sizing is correct:
-    fitCanvasToImage();
-  }
-
-  function drawDataUrlToCanvas(dataUrl, canvas, context) {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => { 
-        const w = canvas.width, h = canvas.height;
-        context.clearRect(0,0,w,h);
-        // Draw scaled to current canvas size
-        context.drawImage(img, 0, 0, w, h);
-        resolve();
-      };
-      img.onerror = reject;
-      img.src = dataUrl;
-    });
-  }
-
-  function onImageReady() {
-    imgEl.removeAttribute('data-loading');
-    loadHotspotsForImage();
-    fitCanvasToImage();
-    state.zoom = DEFAULT_ZOOM;
-    applyZoom();
-    maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-    ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
-    state.found.clear();
-    updateVulnText();
-    updateSlideUi();
-    // Try to load saved highlights for this image
-    loadHighlights({ silent: true }).catch(()=>{ /* ignore */ });
-  }
-
-  imgEl.addEventListener('load', onImageReady);
-
-  // Resize observers to keep overlay aligned on responsive changes
-  const ro = new ResizeObserver(() => {
-    if (resizePending) return;
-    resizePending = true;
-    requestAnimationFrame(() => {
-      resizePending = false;
-      syncCanvasPositioning();
-    });
-  });
-  ro.observe(stageEl);
-
-  // ---------- Boot ----------
-  document.addEventListener('DOMContentLoaded', () => {
-    // Ensure tool button reflects default
-    setTool('brush');
-    updateAutosaveStatus('Autosave ready - your highlights restore automatically.');
-
-    // Determine starting slide from query/src
-    const initialName = resolveInitialImage();
-    const startIndex = Math.max(0, IMAGES.indexOf(initialName));
-    slideshow.index = startIndex;
-    state.imgName = currentName();
-    buildDots();
-    updateSlideUi();
-    setZoom(DEFAULT_ZOOM);
-
-    // Wire slideshow buttons & keyboard toggles
-    prevBtn?.addEventListener('click', prev);
-    nextBtn?.addEventListener('click', next);
-
-    // Convert list links into in-page navigation
-    $$('.thumb-nav a').forEach((link, idx) => {
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        goto(idx);
+  /** Which red flag (index) a pin lands on, or -1. */
+  function flagForPin(e, pin) {
+    let best = -1;
+    let bestDist = Infinity;
+    e.flags.forEach((flag, idx) => {
+      flag.rects.forEach((rect) => {
+        if (!rectContains(e, rect, pin.x, pin.y, HIT_PAD)) return;
+        const d = rectDistance(e, rect, pin.x, pin.y);
+        if (d < bestDist) { bestDist = d; best = idx; }
       });
     });
+    return best;
+  }
 
-    // Classification buttons
-    markPhishBtn?.addEventListener('click', () => classify(true));
-    markLegitBtn?.addEventListener('click', () => {
-      const proceed = window.confirm('Marking this as "Looks Legit" will advance you to the next example and costs points if incorrect. Continue?');
-      if (!proceed) return;
-      classify(false);
-    });
-
-    // File operations
-    clearBtn?.addEventListener('click', eraseAll);
-    selectAllBtn?.addEventListener('click', () => {
-      if (!confirm('Auto-place markers is intended for facilitators. Continue?')) {
-        setFeedback('Manual practice keeps your skills sharp. Try highlighting the clues yourself.', 'warn');
-        return;
+  function evaluate(e, pins) {
+    const found = new Set();
+    let misses = 0;
+    let duplicates = 0;
+    const results = new Map();
+    pins.forEach((pin) => {
+      const idx = flagForPin(e, pin);
+      if (idx < 0) {
+        misses += 1;
+        results.set(pin.id, 'miss');
+      } else {
+        if (found.has(idx)) duplicates += 1;
+        found.add(idx);
+        results.set(pin.id, 'hit');
       }
-      selectAll();
     });
-    submitBtn?.addEventListener('click', submitHighlights);
+    return { found, misses, duplicates, results };
+  }
 
-    window.utils?.initStatusHud('phishing', {
+  // ---------- Feedback ----------
+  function setFeedback(msg, tone = 'info', { persistIt = true } = {}) {
+    if (persistIt) st().feedback = msg ? { msg, tone } : null;
+    renderFeedback(msg ? { msg, tone } : null);
+    if (msg) announce(msg);
+  }
+
+  function renderFeedback(fb) {
+    if (!feedbackEl) return;
+    feedbackEl.classList.remove('ok', 'warn');
+    feedbackEl.removeAttribute('data-tone');
+    feedbackEl.textContent = fb?.msg || '';
+    if (!fb?.msg) return;
+    if (fb.tone === 'success') { feedbackEl.classList.add('ok'); feedbackEl.setAttribute('data-tone', 'success'); }
+    else if (fb.tone === 'warn') { feedbackEl.classList.add('warn'); feedbackEl.setAttribute('data-tone', 'warn'); }
+    else feedbackEl.setAttribute('data-tone', 'info');
+  }
+
+  // ---------- Rendering ----------
+  function el(tag, props = {}, text) {
+    const node = document.createElement(tag);
+    Object.entries(props).forEach(([k, v]) => {
+      if (k === 'className') node.className = v;
+      else if (k === 'style') Object.assign(node.style, v);
+      else node.setAttribute(k, v);
+    });
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
+  function statusFor(e) {
+    const s = state.emails[e.img];
+    if (s.done) return { key: 'done', label: e.phishing ? 'Phishing — reported' : 'Safe — cleared' };
+    if (s.pins.length || s.verdict || s.attempts || s.hints) return { key: 'progress', label: 'In review' };
+    return { key: 'new', label: 'Unread' };
+  }
+
+  function renderInbox() {
+    if (!inboxEl) return;
+    inboxEl.innerHTML = '';
+    EMAILS.forEach((e, idx) => {
+      const status = statusFor(e);
+      const li = el('li');
+      const btn = el('button', {
+        type: 'button',
+        className: 'phx-mail',
+        'data-status': status.key,
+        'aria-current': idx === state.current ? 'true' : 'false',
+        'aria-label': `Email ${idx + 1}: ${e.from}, “${e.subject}”. ${status.label}.`
+      });
+      btn.appendChild(el('span', { className: 'phx-mail__from' }, e.from));
+      btn.appendChild(el('span', { className: 'phx-mail__subject' }, e.subject));
+      btn.appendChild(el('span', { className: 'phx-mail__status' }, status.label));
+      btn.addEventListener('click', () => goTo(idx));
+      li.appendChild(btn);
+      inboxEl.appendChild(li);
+    });
+  }
+
+  function pctStyle(e, rect) {
+    return {
+      left: `${(rect[0] / e.w) * 100}%`,
+      top: `${(rect[1] / e.h) * 100}%`,
+      width: `${((rect[2] - rect[0]) / e.w) * 100}%`,
+      height: `${((rect[3] - rect[1]) / e.h) * 100}%`
+    };
+  }
+
+  function addBox(e, rect, cls, tag) {
+    const box = el('div', { className: `phx-box ${cls}`.trim(), style: pctStyle(e, rect) });
+    if (tag != null) box.appendChild(el('span', { className: 'phx-box__tag' }, String(tag)));
+    boxesLayer.appendChild(box);
+  }
+
+  function renderBoxes() {
+    boxesLayer.innerHTML = '';
+    const e = cur();
+    const s = st();
+    if (s.done) {
+      if (e.phishing) {
+        const found = new Set(s.found);
+        e.flags.forEach((flag, idx) => {
+          flag.rects.forEach((rect, rIdx) => addBox(e, rect, found.has(idx) ? '' : 'is-missed', rIdx === 0 ? idx + 1 : null));
+        });
+      } else {
+        (e.trust || []).forEach((t, idx) => {
+          t.rects.forEach((rect, rIdx) => addBox(e, rect, 'is-trust', rIdx === 0 ? idx + 1 : null));
+        });
+      }
+      return;
+    }
+    if (Number.isInteger(s.spotlight) && e.flags[s.spotlight]) {
+      e.flags[s.spotlight].rects.forEach((rect) => addBox(e, rect, 'is-spotlight', null));
+    }
+  }
+
+  function pinLabel(pin, n) {
+    if (pin.result === 'hit') return `Flag ${n}: on a real red flag`;
+    if (pin.result === 'miss') return `Flag ${n}: not a red flag`;
+    return `Flag ${n}`;
+  }
+
+  function renderPins() {
+    pinsLayer.innerHTML = '';
+    const s = st();
+    s.pins.forEach((pin, i) => {
+      const n = i + 1;
+      const btn = el('button', {
+        type: 'button',
+        className: `phx-pin${pin.result === 'hit' ? ' is-hit' : ''}${pin.result === 'miss' ? ' is-miss' : ''}`,
+        tabindex: '-1',
+        'aria-label': s.done ? pinLabel(pin, n) : `${pinLabel(pin, n)}. Remove`,
+        title: s.done ? pinLabel(pin, n) : 'Click to remove this flag',
+        style: { left: `${pin.x * 100}%`, top: `${pin.y * 100}%` }
+      });
+      btn.appendChild(el('span', { className: 'phx-pin__num', 'aria-hidden': 'true' }, pin.result === 'hit' ? '✓' : pin.result === 'miss' ? '✕' : String(n)));
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (st().done) return;
+        removePin(pin.id);
+      });
+      pinsLayer.appendChild(btn);
+    });
+  }
+
+  function renderFlagList() {
+    const s = st();
+    flagListEl.innerHTML = '';
+    if (!s.pins.length) {
+      const li = el('li', { className: 'phx-empty' }, 'No flags yet. Click or tap the email to add one.');
+      flagListEl.appendChild(li);
+    }
+    s.pins.forEach((pin, i) => {
+      const n = i + 1;
+      const li = el('li');
+      const chip = el('button', {
+        type: 'button',
+        className: `phx-flagchip${pin.result ? ` is-${pin.result}` : ''}`,
+        'aria-label': `Remove ${pinLabel(pin, n).toLowerCase()}`
+      });
+      const suffix = pin.result === 'hit' ? ' ✓' : pin.result === 'miss' ? ' (miss)' : '';
+      chip.appendChild(document.createTextNode(`Flag ${n}${suffix}`));
+      chip.appendChild(el('span', { 'aria-hidden': 'true' }, '×'));
+      chip.addEventListener('click', () => removePin(pin.id));
+      li.appendChild(chip);
+      flagListEl.appendChild(li);
+    });
+    undoBtn.disabled = !s.pins.length;
+    clearBtn.disabled = !s.pins.length;
+    flagCountEl.textContent = `${s.pins.length} / ${MAX_FLAGS} flags`;
+  }
+
+  function renderVerdict() {
+    const v = st().verdict;
+    [[phishBtn, 'phish'], [legitBtn, 'legit']].forEach(([btn, val]) => {
+      if (!btn) return;
+      const on = v === val;
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      btn.classList.toggle('is-selected', on);
+    });
+  }
+
+  function hintButtonLabel(e, level) {
+    if (level >= 3) return 'No more hints for this email';
+    if (level === 2) return e.phishing ? `Spotlight a red flag (−${HINT_COSTS[2]} pts)` : `Analyst verdict (−${HINT_COSTS[2]} pts)`;
+    if (level === 1) return `Stronger hint (−${HINT_COSTS[1]} pts)`;
+    return `Get a hint (−${HINT_COSTS[0]} pts)`;
+  }
+
+  function hintText(e, level, s) {
+    if (level < 2) return e.hints[level];
+    if (!e.phishing) return e.finalHint;
+    if (Number.isInteger(s.spotlight)) return 'Spotlight: one red flag is outlined in yellow on the email. Drop a flag on it.';
+    return 'Spotlight: every red flag on this email already has one of your flags on it. Check your verdict and submit.';
+  }
+
+  function renderHints() {
+    const e = cur();
+    const s = st();
+    hintListEl.innerHTML = '';
+    for (let i = 0; i < s.hints; i += 1) {
+      const li = el('li');
+      const p = el('p', { className: 'hint-callout' });
+      const strong = el('strong', {}, `Hint ${i + 1}: `);
+      p.appendChild(strong);
+      const span = el('span');
+      // Hint copy is static and trusted (authored above); allow <strong>.
+      span.innerHTML = hintText(e, i, s);
+      p.appendChild(span);
+      li.appendChild(p);
+      hintListEl.appendChild(li);
+    }
+    hintBtn.textContent = hintButtonLabel(e, s.hints);
+    hintBtn.disabled = s.hints >= 3;
+  }
+
+  function renderDebrief() {
+    const e = cur();
+    const s = st();
+    debriefList.innerHTML = '';
+    const heading = $('#phxDebriefHeading');
+    if (e.phishing) {
+      const found = new Set(s.found);
+      if (heading) heading.textContent = 'What gave it away';
+      debriefSummary.textContent = `Phishing confirmed. You flagged ${found.size} of ${e.flags.length} red flags${s.attempts > 1 ? ` (in ${s.attempts} attempts)` : ' on the first try'}. Green boxes are ones you found; orange dashed boxes are ones you missed.`;
+      e.flags.forEach((flag, idx) => {
+        const isFound = found.has(idx);
+        const li = el('li', { className: isFound ? '' : 'is-missed' });
+        li.appendChild(el('span', { className: 'phx-debrief__num', 'aria-hidden': 'true' }, String(idx + 1)));
+        const body = el('div');
+        const h = el('h4', {}, flag.title);
+        h.appendChild(el('span', { className: 'phx-debrief__state' }, isFound ? 'Found' : 'Missed'));
+        body.appendChild(h);
+        body.appendChild(el('p', {}, flag.text));
+        li.appendChild(body);
+        debriefList.appendChild(li);
+      });
+    } else {
+      if (heading) heading.textContent = 'Why this one is genuine';
+      debriefSummary.textContent = `Correct: this email is legitimate${s.attempts > 1 ? ` (in ${s.attempts} attempts)` : ''}. Not every email is a trap. Being able to trust the real ones matters too.`;
+      (e.trust || []).forEach((t, idx) => {
+        const li = el('li', { className: 'is-trust' });
+        li.appendChild(el('span', { className: 'phx-debrief__num', 'aria-hidden': 'true' }, String(idx + 1)));
+        const body = el('div');
+        const h = el('h4', {}, t.title);
+        h.appendChild(el('span', { className: 'phx-debrief__state' }, 'Checks out'));
+        body.appendChild(h);
+        body.appendChild(el('p', {}, t.text));
+        li.appendChild(body);
+        debriefList.appendChild(li);
+      });
+    }
+    nextBtn.textContent = allDone() ? 'See your code word ↑' : 'Next email →';
+  }
+
+  function renderZoom() {
+    const z = ZOOM_STEPS[zoomIndex];
+    stage.style.width = `${z * 100}%`;
+    zoomLabel.textContent = `${Math.round(z * 100)}%`;
+    zoomOutBtn.disabled = zoomIndex <= 0;
+    zoomInBtn.disabled = zoomIndex >= ZOOM_STEPS.length - 1;
+  }
+
+  function renderReticle() {
+    reticle.style.left = `${cursor.x * 100}%`;
+    reticle.style.top = `${cursor.y * 100}%`;
+  }
+
+  function renderStage() {
+    const e = cur();
+    const s = st();
+    const src = `assets/${e.img}`;
+    if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+    img.alt = `Screenshot of email ${state.current + 1}: from ${e.from}, subject “${e.subject}”.`;
+    stage.classList.toggle('is-locked', s.done);
+    stage.setAttribute('aria-label', s.done
+      ? `Email ${state.current + 1} (reviewed). Flags are locked.`
+      : `Email ${state.current + 1} from ${e.from}. Click or tap to drop a red flag.`);
+    viewerHeading.textContent = `Email ${state.current + 1} of ${EMAILS.length} — ${e.from}`;
+    renderBoxes();
+    renderPins();
+    renderReticle();
+  }
+
+  function renderPanel() {
+    const s = st();
+    workPanel.hidden = s.done;
+    debriefPanel.hidden = !s.done;
+    if (s.done) {
+      renderDebrief();
+    } else {
+      renderFlagList();
+      renderVerdict();
+      renderHints();
+      renderFeedback(s.feedback);
+    }
+    flagCountEl.textContent = `${s.pins.length} / ${MAX_FLAGS} flags`;
+  }
+
+  function renderVaultCallout() {
+    if (!vaultCallout) return;
+    if (allDone() && roomFlagComplete()) {
+      vaultCallout.textContent = '';
+      vaultCallout.appendChild(document.createTextNode('Code word: '));
+      vaultCallout.appendChild(el('strong', {}, WORD));
+      vaultCallout.appendChild(document.createTextNode(' — enter it in the vault on the Mission Hub.'));
+    }
+  }
+
+  function renderComplete() {
+    if (!completeEl) return;
+    if (!(allDone() && roomFlagComplete())) {
+      completeEl.hidden = true;
+      completeEl.innerHTML = '';
+      return;
+    }
+    const attempts = EMAILS.reduce((n, e) => n + Math.max(0, state.emails[e.img].attempts - 1), 0);
+    const hints = EMAILS.reduce((n, e) => n + state.emails[e.img].hints, 0);
+    completeEl.innerHTML = '';
+    completeEl.appendChild(el('h2', {}, 'Inbox secured'));
+    completeEl.appendChild(el('p', {}, 'All four emails handled: three phishing attempts reported, one genuine email trusted.'));
+    completeEl.appendChild(el('div', { className: 'phx-codeword', 'aria-label': `Code word ${WORD}` }, WORD));
+    const p = el('p');
+    p.appendChild(document.createTextNode('Code word: '));
+    p.appendChild(el('strong', {}, WORD));
+    p.appendChild(document.createTextNode(' — enter it in the vault on the Mission Hub.'));
+    completeEl.appendChild(p);
+    completeEl.appendChild(el('p', { className: 'muted' }, `Retries: ${attempts} · Hints used: ${hints}`));
+    const row = el('div', { className: 'phx-row', style: { justifyContent: 'center' } });
+    row.appendChild(el('a', { className: 'btn primary', href: 'game.html' }, 'Go to the Mission Hub'));
+    row.appendChild(el('a', { className: 'btn ghost', href: 'osint.html' }, 'Next room: OSINT →'));
+    completeEl.appendChild(row);
+    completeEl.hidden = false;
+  }
+
+  function render() {
+    renderInbox();
+    renderStage();
+    renderPanel();
+    renderZoom();
+    renderVaultCallout();
+    renderComplete();
+  }
+
+  // ---------- Actions ----------
+  function goTo(idx) {
+    const next = Math.max(0, Math.min(EMAILS.length - 1, idx));
+    if (next === state.current) return;
+    state.current = next;
+    cursor.x = 0.5; cursor.y = 0.3;
+    persist();
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('img', EMAILS[next].img);
+      history.replaceState(null, '', url);
+    } catch (_) { /* ignore */ }
+    render();
+    if (viewport) viewport.scrollTop = 0;
+    announce(`Email ${next + 1} of ${EMAILS.length}: from ${EMAILS[next].from}.`);
+  }
+
+  function addPin(x, y) {
+    const s = st();
+    if (s.done) return;
+    if (s.pins.length >= MAX_FLAGS) {
+      setFeedback(`You've used all ${MAX_FLAGS} flags. Remove one before adding another.`, 'warn', { persistIt: false });
+      return;
+    }
+    state.seq += 1;
+    s.pins.push({ id: state.seq, x: clamp01(x), y: clamp01(y), result: null });
+    save();
+    renderPins();
+    renderFlagList();
+    renderInbox();
+    announce(`Flag ${s.pins.length} dropped.`);
+  }
+
+  function removePin(id) {
+    const s = st();
+    if (s.done) return;
+    const before = s.pins.length;
+    s.pins = s.pins.filter((p) => p.id !== id);
+    if (s.pins.length === before) return;
+    save();
+    renderPins();
+    renderFlagList();
+    renderInbox();
+    announce('Flag removed.');
+  }
+
+  function undoPin() {
+    const s = st();
+    if (s.done || !s.pins.length) return;
+    removePin(s.pins[s.pins.length - 1].id);
+  }
+
+  function clearPins() {
+    const s = st();
+    if (s.done || !s.pins.length) return;
+    s.pins = [];
+    save();
+    renderPins();
+    renderFlagList();
+    renderInbox();
+    announce('All flags cleared.');
+  }
+
+  function setVerdict(v) {
+    const s = st();
+    if (s.done) return;
+    s.verdict = s.verdict === v ? null : v;
+    save();
+    renderVerdict();
+    renderInbox();
+  }
+
+  function useHint() {
+    const e = cur();
+    const s = st();
+    if (s.done || s.hints >= 3) return;
+    const level = s.hints;
+    const cost = HINT_COSTS[level];
+    points?.spend?.(cost, `Phishing hint ${level + 1} (email ${state.current + 1})`);
+    if (level === 2 && e.phishing) {
+      const hitNow = evaluate(e, s.pins).found;
+      const order = e.flags.map((f, i) => i).sort((a, b) => (e.flags[b].key ? 1 : 0) - (e.flags[a].key ? 1 : 0));
+      const target = order.find((i) => !hitNow.has(i));
+      s.spotlight = Number.isInteger(target) ? target : null;
+    }
+    s.hints = level + 1;
+    save();
+    renderHints();
+    renderBoxes();
+    renderInbox();
+    announce(`Hint ${level + 1} revealed. ${cost} points deducted.`);
+  }
+
+  function markSuccess(e, s, found) {
+    s.done = true;
+    s.found = Array.from(found || []);
+    s.spotlight = null;
+    s.feedback = null;
+    save();
+    render();
+    announce(e.phishing ? 'Correct. Phishing email reported. Debrief shown.' : 'Correct. This email is legitimate. Debrief shown.');
+    if (allDone()) completeRoom();
+  }
+
+  function submit() {
+    const e = cur();
+    const s = st();
+    if (s.done) return;
+
+    // Validation only (no penalty, no correctness info)
+    if (!s.verdict) {
+      setFeedback('Pick your verdict first: Phishing or Legitimate.', 'warn', { persistIt: false });
+      return;
+    }
+    if (s.verdict === 'phish' && !s.pins.length) {
+      setFeedback('Drop at least one red flag on the email to show what gave it away.', 'warn', { persistIt: false });
+      return;
+    }
+    if (s.verdict === 'legit' && s.pins.length) {
+      setFeedback('You said this email is legitimate, but it still has flags on it. Clear the flags or change your verdict.', 'warn', { persistIt: false });
+      return;
+    }
+
+    s.attempts += 1;
+    const saidPhish = s.verdict === 'phish';
+
+    if (saidPhish !== e.phishing) {
+      points?.spend?.(WRONG_COST, 'Phishing: wrong verdict');
+      setFeedback(`Not quite. That verdict doesn't match what our analysts found. Take another careful look at who sent it and what it wants from John. −${WRONG_COST} points.`, 'warn');
+      save();
+      renderInbox();
+      return;
+    }
+
+    if (!e.phishing) {
+      markSuccess(e, s, []);
+      return;
+    }
+
+    const ev = evaluate(e, s.pins);
+    s.pins.forEach((p) => { p.result = ev.results.get(p.id) || null; });
+    const keyMissing = e.flags.some((f, i) => f.key && !ev.found.has(i));
+    const enough = ev.found.size >= e.required;
+    const tooMany = ev.misses > MAX_FALSE_FLAGS;
+
+    if (enough && !keyMissing && !tooMany) {
+      markSuccess(e, s, ev.found);
+      return;
+    }
+
+    points?.spend?.(WRONG_COST, 'Phishing: not enough red flags');
+    const parts = ['Your verdict is right: this one is phishing. But your evidence isn’t strong enough yet.'];
+    parts.push('Green flags landed on real red flags; grey flags are on harmless parts of the email.');
+    if (!enough) {
+      parts.push(`You need at least ${e.required} different red flags on this email.`);
+      if (ev.duplicates) parts.push('Two flags on the same clue only count once.');
+    } else if (keyMissing) {
+      parts.push('The biggest giveaway on this email still hasn’t been flagged.');
+    }
+    if (tooMany) parts.push(`Too many flags are on harmless areas (${ev.misses}). Remove the grey ones.`);
+    parts.push(`−${WRONG_COST} points.`);
+    setFeedback(parts.join(' '), 'warn');
+    save();
+    renderPins();
+    renderFlagList();
+    renderInbox();
+  }
+
+  function goNext() {
+    if (allDone()) {
+      completeEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      completeEl?.querySelector('a')?.focus({ preventScroll: true });
+      return;
+    }
+    for (let step = 1; step <= EMAILS.length; step += 1) {
+      const idx = (state.current + step) % EMAILS.length;
+      if (!state.emails[EMAILS[idx].img].done) { goTo(idx); stage.focus({ preventScroll: true }); break; }
+    }
+  }
+
+  // ---------- Completion ----------
+  function completeRoom() {
+    const already = roomFlagComplete() && localStorage.getItem('vault_word_phishing') === WORD;
+    if (!already) {
+      try { utils?.setProgressFlag?.(ROOM_KEY, true); } catch (_) { /* ignore */ }
+      try { utils?.setProgressPercent?.(ROOM_KEY, 100); } catch (_) { /* ignore */ }
+      try { localStorage.setItem('vault_word_phishing', WORD); } catch (_) { /* ignore */ }
+      try { window.vault?.unlock?.(ROOM_KEY, WORD, { message: `Code word ${WORD} secured.` }); } catch (_) { /* ignore */ }
+      try { window.stateSync?.queueSave?.('phishing-complete'); } catch (_) { /* ignore */ }
+      state.pctAt = Date.now();
+      persist();
+    }
+    renderVaultCallout();
+    renderComplete();
+    renderInbox();
+    if (!already) {
+      announce(`Room complete. Code word ${WORD}. Enter it in the vault on the Mission Hub.`);
+      setTimeout(() => completeEl?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 250);
+    }
+  }
+
+  // ---------- Input: pointer (mouse + touch) ----------
+  stage.addEventListener('click', (ev) => {
+    if (ev.target.closest('.phx-pin')) return;
+    stage.classList.remove('is-kbd');
+    if (st().done) return;
+    const rect = img.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const x = (ev.clientX - rect.left) / rect.width;
+    const y = (ev.clientY - rect.top) / rect.height;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return;
+    cursor.x = x; cursor.y = y;
+    renderReticle();
+    addPin(x, y);
+  });
+
+  stage.addEventListener('pointerdown', () => stage.classList.remove('is-kbd'));
+
+  // ---------- Input: keyboard ----------
+  stage.addEventListener('keydown', (ev) => {
+    const step = ev.shiftKey ? KEY_STEP_BIG : KEY_STEP;
+    let handled = true;
+    switch (ev.key) {
+      case 'ArrowLeft': cursor.x = clamp01(cursor.x - step); break;
+      case 'ArrowRight': cursor.x = clamp01(cursor.x + step); break;
+      case 'ArrowUp': cursor.y = clamp01(cursor.y - step); break;
+      case 'ArrowDown': cursor.y = clamp01(cursor.y + step); break;
+      case 'Enter':
+      case ' ': {
+        if (st().done) break;
+        const e = cur();
+        const near = st().pins.find((p) => Math.hypot((p.x - cursor.x) * e.w, (p.y - cursor.y) * e.h) < 18);
+        if (near) removePin(near.id); else addPin(cursor.x, cursor.y);
+        break;
+      }
+      case 'Backspace':
+      case 'Delete':
+        undoPin();
+        break;
+      default:
+        handled = false;
+    }
+    if (!handled) return;
+    ev.preventDefault();
+    stage.classList.add('is-kbd');
+    renderReticle();
+    if (ev.key.startsWith('Arrow')) {
+      try { reticle.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (_) { /* ignore */ }
+    }
+  });
+
+  stage.addEventListener('focus', () => {
+    // Show the aiming reticle for keyboard users (not after a mouse click).
+    if (!stage.matches(':focus-visible')) return;
+    stage.classList.add('is-kbd');
+  });
+
+  // ---------- Wire controls ----------
+  undoBtn?.addEventListener('click', undoPin);
+  clearBtn?.addEventListener('click', clearPins);
+  phishBtn?.addEventListener('click', () => setVerdict('phish'));
+  legitBtn?.addEventListener('click', () => setVerdict('legit'));
+  submitBtn?.addEventListener('click', submit);
+  hintBtn?.addEventListener('click', useHint);
+  nextBtn?.addEventListener('click', goNext);
+  zoomInBtn?.addEventListener('click', () => { zoomIndex = Math.min(ZOOM_STEPS.length - 1, zoomIndex + 1); renderZoom(); });
+  zoomOutBtn?.addEventListener('click', () => { zoomIndex = Math.max(0, zoomIndex - 1); renderZoom(); });
+
+  // ---------- Background sync safety ----------
+  // state-sync wipes `${team}_phishing_*` keys when the server says this room
+  // is at 0%. That's how an admin "reopen" works, but it can also fire if a
+  // pull lands before our first progress push. Tell the two apart by time.
+  window.addEventListener('state-sync:applied', (ev) => {
+    const remote = ev?.detail?.state || {};
+    const remoteReset = remote.vault?.resetVersion;
+    if (remoteReset && String(remoteReset) !== String(bootResetVersion)) return; // full reset → page reloads
+
+    if (remote.progress?.phishing && !allDone()) {
+      // Completed elsewhere (another device or facilitator).
+      EMAILS.forEach((e) => { state.emails[e.img].done = true; });
+      persist();
+      render();
+      completeRoom();
+      return;
+    }
+
+    const stillStored = localStorage.getItem(STORE_KEY) != null;
+    if (stillStored || !hasStarted()) return;
+    const remoteMetaAt = Number(remote.progressMeta?.phishing?.updatedAt) || 0;
+    if (!remote.progress?.phishing && remoteMetaAt > (state.pctAt || 0)) {
+      // Facilitator reopened the room: start fresh.
+      state = freshState();
+      persist();
+      render();
+      setFeedback('This room was reset by the facilitator.', 'info', { persistIt: false });
+      return;
+    }
+    // Race with our own push: restore what we had.
+    persist();
+    try { window.utils?.setProgressPercent?.(ROOM_KEY, Math.max(5, Math.round((doneCount() / EMAILS.length) * 100))); } catch (_) { /* ignore */ }
+    state.pctAt = Date.now();
+    persist();
+    try { window.stateSync?.saveNow?.('phishing-restore'); } catch (_) { /* ignore */ }
+  });
+
+  // ---------- Boot ----------
+  const bootResetVersion = localStorage.getItem(`${TEAM}_reset_version`);
+
+  function cleanupLegacyKeys() {
+    try {
+      Object.keys(localStorage).forEach((k) => {
+        if (/^class_Picture\d/.test(k) || /^phish_done_Picture\d/.test(k) || k.startsWith(`${TEAM}_phishing_Picture`)) {
+          localStorage.removeItem(k);
+        }
+      });
+    } catch (_) { /* ignore */ }
+  }
+
+  function boot() {
+    cleanupLegacyKeys();
+    state = loadState();
+    // Deep link support (?img=Picture3.png)
+    try {
+      const q = new URLSearchParams(location.search).get('img');
+      const idx = EMAILS.findIndex((e) => e.img === q);
+      if (idx >= 0) state.current = idx;
+    } catch (_) { /* ignore */ }
+    // Room already completed (e.g. on another device): show everything cleared.
+    if (roomFlagComplete() && !allDone()) {
+      EMAILS.forEach((e) => { state.emails[e.img].done = true; });
+    }
+    persist();
+
+    utils?.initStatusHud?.(ROOM_KEY, {
       score: '#phishPointsTotal',
       delta: '#phishPointsDelta',
       progressFill: '#phishProgressFill',
       progressLabel: '#phishProgressText'
     });
+    points?.ensure?.();
 
-    // If src differs from the desired start, update it
-    const desiredSrc = `assets/${state.imgName}`;
-    if ((imgEl.getAttribute('src') || '').replace(/^assets\//, 'assets/') !== desiredSrc) {
-      imgEl.src = desiredSrc;
-    } else if (imgEl.complete && imgEl.naturalWidth) {
-      onImageReady();
-    }
+    render();
+    if (allDone()) completeRoom();
+    else syncProgress();
+  }
 
-    // Keyboard shortcuts
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'b' || e.key === 'B') setTool('brush');
-      if (e.key === 'e' || e.key === 'E') setTool('eraser');
-      if (e.key === '[') {
-        state.size = clampBrushSize(state.size - 2);
-        if (brushSizeEl) brushSizeEl.value = String(state.size);
-      }
-      if (e.key === ']') {
-        state.size = clampBrushSize(state.size + 2);
-        if (brushSizeEl) brushSizeEl.value = String(state.size);
-      }
-      if (e.key === 'ArrowLeft') { prev(); }
-      if (e.key === 'ArrowRight') { next(); }
-    });
-  });
-
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
 })();

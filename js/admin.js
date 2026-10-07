@@ -12,15 +12,17 @@
 
   // ---------- Helpers ------------------------------------------------------
 
+  // Seed list; any team found in the database is added on each Neon pull.
   const TEAMS = ['team1', 'trojan_horsin', 'blackhoodies', 'cipherettes', 'peas', 'sats', 'darkwebaliens', 'crossguild', 'hobarthackers', 'specs', 'gatecrashers', 'rootkitrebels'];
 
-  const PUZZLES = ['phishing', 'password', 'encryption', 'essential', 'binary'];
+  const PUZZLES = ['phishing', 'osint', 'incident', 'mfa', 'supply', 'forensics'];
   const PUZZLE_LABELS = {
-    phishing: 'Phishing',
-    password: 'Password',
-    encryption: 'Encryption',
-    essential: 'Essential',
-    binary: 'Binary'
+    phishing: 'Phishing Spotter',
+    osint: 'OSINT Investigation',
+    incident: 'Incident Management',
+    mfa: 'MFA / Authentication',
+    supply: 'Supply Chain Attack',
+    forensics: 'Network Forensics'
   };
 
   const SCORE_BASE = 100;
@@ -29,10 +31,11 @@
 
   const DEFAULT_PROGRESS = {
     phishing: false,
-    password: false,
-    encryption: false,
-    essential: false,
-    binary: false
+    osint: false,
+    incident: false,
+    mfa: false,
+    supply: false,
+    forensics: false
   };
 
   const qs = (sel, root = document) => root.querySelector(sel);
@@ -336,12 +339,12 @@
     const resetVersion = Date.now();
     writeVault(team, { resetVersion });
     [
-      'lock_digit_phishing_total',
-      'lock_digit_caesar_shift',
-      'lock_digit_pw_clues',
-      'lock_digit_pw_minutes',
-      'lock_digit_essential',
-      'lock_digit_binary'
+      'vault_word_phishing',
+      'vault_word_osint',
+      'vault_word_incident',
+      'vault_word_mfa',
+      'vault_word_supply',
+      'vault_word_forensics'
     ].forEach(key => localStorage.removeItem(key));
     queueTeamPush(team, 'vault-reset');
     return { total: SCORE_BASE, delta: 0, log: [entry] };
@@ -349,13 +352,7 @@
 
   function setTeamPuzzleProgress(team, puzzle, value) {
     const key = `${team}_progress`;
-    const progress = getJSON(key, {
-      phishing: false,
-      password: false,
-      encryption: false,
-      essential: false,
-      binary: false
-    });
+    const progress = getJSON(key, { ...DEFAULT_PROGRESS });
     progress[puzzle] = !!value;
     setJSON(key, progress);
     const metaKey = `${team}_progress_meta`;
@@ -818,7 +815,7 @@
       const metaEl = document.createElement('span');
       metaEl.className = 'admin-podium__meta';
       const avgDisplay = fmtSecs(row.avgTime);
-      metaEl.textContent = `${row.completed}/4 puzzles • Avg ${avgDisplay}`;
+      metaEl.textContent = `${row.completed}/${PUZZLES.length} puzzles • Avg ${avgDisplay}`;
 
       column.append(rankEl, teamEl, scoreEl, metaEl);
       li.appendChild(column);
@@ -1243,20 +1240,21 @@
         writeVault(team, { resetVersion });
         resetTeamScore(team, 'Reset via admin');
       });
-      ['lock_digit_phishing_total',
-       'lock_digit_caesar_shift',
-       'lock_digit_pw_clues',
-       'lock_digit_pw_minutes',
-       'lock_digit_essential',
-       'lock_digit_binary'
+      ['vault_word_phishing',
+       'vault_word_osint',
+       'vault_word_incident',
+       'vault_word_mfa',
+       'vault_word_supply',
+       'vault_word_forensics'
       ].forEach(key => localStorage.removeItem(key));
       try {
         const payload = TEAMS.map(getTeamStateSnapshot);
-        await fetch('/.netlify/functions/push', {
+        const res = await fetch('/.netlify/functions/push', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ teams: payload })
         });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (status) {
           status.textContent = 'All teams reset.';
           status.classList.add('status-ok');
@@ -1438,6 +1436,7 @@
       data.teams.forEach(row => {
         if (!row || !row.team) return;
         const team = String(row.team).toLowerCase();
+        if (!TEAMS.includes(team)) TEAMS.push(team);
         const issues = [];
         const progress = normalizeProgress(row.progress, issues);
         setJSON(`${team}_progress`, progress);

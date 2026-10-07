@@ -2,10 +2,11 @@ import { Client } from 'pg';
 
 export const DEFAULT_PROGRESS = {
   phishing: false,
-  password: false,
-  encryption: false,
-  essential: false,
-  binary: false
+  osint: false,
+  incident: false,
+  mfa: false,
+  supply: false,
+  forensics: false
 };
 
 const DEFAULT_HEADERS = { 'content-type': 'application/json' };

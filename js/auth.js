@@ -155,12 +155,16 @@
       localStorage.setItem(scoreLogKey, JSON.stringify(state.scoreLog || []));
       localStorage.setItem(activityKey, JSON.stringify(state.activity || []));
       if (state.vault) {
-        if (state.vault.phishing) localStorage.setItem('lock_digit_phishing_total', String(state.vault.phishing));
-        if (state.vault.encryption) localStorage.setItem('lock_digit_caesar_shift', String(state.vault.encryption));
-        if (state.vault.password) localStorage.setItem('lock_digit_pw_minutes', String(state.vault.password));
-        if (state.vault.essential) localStorage.setItem('lock_digit_essential', String(state.vault.essential));
-        if (state.vault.binary) localStorage.setItem('lock_digit_binary', String(state.vault.binary));
+        if (state.vault.phishing) localStorage.setItem('vault_word_phishing', String(state.vault.phishing));
+        if (state.vault.osint) localStorage.setItem('vault_word_osint', String(state.vault.osint));
+        if (state.vault.incident) localStorage.setItem('vault_word_incident', String(state.vault.incident));
+        if (state.vault.mfa) localStorage.setItem('vault_word_mfa', String(state.vault.mfa));
+        if (state.vault.supply) localStorage.setItem('vault_word_supply', String(state.vault.supply));
+        if (state.vault.forensics) localStorage.setItem('vault_word_forensics', String(state.vault.forensics));
         localStorage.setItem(`${team}_vault`, JSON.stringify(state.vault));
+        if (state.vault.resetVersion) {
+          localStorage.setItem(`${team}_reset_version`, String(state.vault.resetVersion));
+        }
       }
     } catch (err) {
       console.warn('Unable to hydrate team state', err);

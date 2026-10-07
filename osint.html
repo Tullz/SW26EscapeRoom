@@ -1,0 +1,1574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Recover access to a locked employee account by investigating their social media profile — an OSINT escape room challenge." />
+  <link rel="icon" href="assets/favicon.png" type="image/png" />
+
+  <!-- Tight CSP (local assets only) -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 img-src 'self' data:;
+                 style-src 'self' 'unsafe-inline';
+                 script-src 'self';
+                 connect-src 'self';
+                 object-src 'none';
+                 base-uri 'self'">
+
+  <title>Cyber Escape Rooms — OSINT Investigation</title>
+
+  <link rel="stylesheet" href="css/styles.css" />
+
+  <style>
+    /* === Social-media profile theme === */
+    .sm-profile {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .sm-header {
+      background: linear-gradient(135deg, #1a2332 0%, #0f1720 100%);
+      padding: 1.5rem 1.25rem 1rem;
+      display: flex;
+      gap: 1rem;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sm-avatar {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand), var(--accent));
+      display: grid;
+      place-items: center;
+      font-size: 2rem;
+      font-weight: 700;
+      color: #0b0f14;
+      flex-shrink: 0;
+      border: 3px solid var(--panel);
+      box-shadow: 0 4px 12px rgba(0,0,0,.4);
+    }
+
+    .sm-identity {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .sm-name {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #fff;
+      margin: 0;
+    }
+
+    .sm-handle {
+      color: var(--brand);
+      font-size: .9rem;
+      margin-top: .15rem;
+    }
+
+    .sm-bio {
+      color: var(--muted);
+      font-size: .88rem;
+      margin-top: .35rem;
+      line-height: 1.45;
+    }
+
+    .sm-stats {
+      display: flex;
+      gap: 1.25rem;
+      padding: .75rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(15,23,36,.5);
+    }
+
+    .sm-stat {
+      text-align: center;
+    }
+
+    .sm-stat strong {
+      display: block;
+      color: #fff;
+      font-size: 1.05rem;
+    }
+
+    .sm-stat span {
+      color: var(--muted);
+      font-size: .78rem;
+    }
+
+    /* Tabs */
+    .sm-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: rgba(15,23,36,.3);
+      overflow-x: auto;
+    }
+
+    .sm-tab {
+      flex: 1;
+      min-width: 0;
+      padding: .75rem .5rem;
+      text-align: center;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: .88rem;
+      font-weight: 600;
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      transition: color .2s, border-color .2s;
+      white-space: nowrap;
+    }
+
+    .sm-tab:hover {
+      color: var(--ink);
+    }
+
+    .sm-tab[aria-selected="true"] {
+      color: var(--brand);
+      border-bottom-color: var(--brand);
+    }
+
+    .sm-tab-panel {
+      display: none;
+      padding: 1rem 1.25rem;
+    }
+
+    .sm-tab-panel.is-active {
+      display: block;
+    }
+
+    /* Posts */
+    .sm-post {
+      padding: 1rem 0;
+      border-bottom: 1px solid rgba(42,47,54,.5);
+    }
+
+    .sm-post:last-child {
+      border-bottom: none;
+    }
+
+    .sm-post-head {
+      display: flex;
+      gap: .65rem;
+      align-items: center;
+      margin-bottom: .5rem;
+    }
+
+    .sm-post-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand), var(--accent));
+      display: grid;
+      place-items: center;
+      font-size: .85rem;
+      font-weight: 700;
+      color: #0b0f14;
+      flex-shrink: 0;
+    }
+
+    .sm-post-meta {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .sm-post-author {
+      font-weight: 600;
+      color: #fff;
+      font-size: .88rem;
+    }
+
+    .sm-post-date {
+      color: var(--muted);
+      font-size: .78rem;
+    }
+
+    .sm-post-body {
+      color: var(--ink);
+      line-height: 1.55;
+      font-size: .92rem;
+    }
+
+    .sm-post-engagement {
+      display: flex;
+      gap: 1.25rem;
+      margin-top: .6rem;
+      color: var(--muted);
+      font-size: .8rem;
+    }
+
+    .sm-post-engagement span {
+      cursor: default;
+    }
+
+    .sm-post-comment {
+      margin-top: .5rem;
+      padding: .5rem .75rem;
+      background: rgba(11,15,20,.5);
+      border-radius: 10px;
+      border: 1px solid rgba(42,47,54,.4);
+    }
+
+    .sm-post-comment .sm-comment-author {
+      font-weight: 600;
+      color: var(--brand);
+      font-size: .82rem;
+    }
+
+    .sm-post-comment .sm-comment-text {
+      color: var(--muted);
+      font-size: .84rem;
+      margin-top: .15rem;
+    }
+
+    /* Photos — CSS-styled placeholder cards */
+    .sm-photo-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: .75rem;
+    }
+
+    .sm-photo-card {
+      background: rgba(11,15,20,.6);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .sm-photo-placeholder {
+      aspect-ratio: 4/3;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: .35rem;
+      padding: .75rem;
+      text-align: center;
+      font-size: .8rem;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+
+    .sm-photo-placeholder .photo-icon {
+      font-size: 2.2rem;
+      line-height: 1;
+    }
+
+    .sm-photo-placeholder .photo-desc {
+      font-size: .76rem;
+      color: var(--muted);
+      opacity: .85;
+    }
+
+    .photo-scene-park {
+      background: linear-gradient(180deg, rgba(34,139,34,.12) 0%, rgba(139,90,43,.08) 100%);
+    }
+
+    .photo-scene-gym {
+      background: linear-gradient(135deg, rgba(88,166,255,.1) 0%, rgba(200,200,200,.06) 100%);
+    }
+
+    .photo-scene-sunset {
+      background: linear-gradient(180deg, rgba(255,140,50,.15) 0%, rgba(200,100,180,.08) 100%);
+    }
+
+    .photo-scene-stadium {
+      background: linear-gradient(135deg, rgba(0,0,0,.15) 0%, rgba(255,255,255,.04) 100%);
+    }
+
+    .photo-scene-cake {
+      background: linear-gradient(135deg, rgba(255,192,203,.12) 0%, rgba(139,69,19,.06) 100%);
+    }
+
+    .photo-scene-office {
+      background: linear-gradient(135deg, rgba(88,166,255,.08) 0%, rgba(9,255,136,.05) 100%);
+    }
+
+    .photo-scene-couch {
+      background: linear-gradient(135deg, rgba(160,82,45,.1) 0%, rgba(255,228,196,.06) 100%);
+    }
+
+    .photo-scene-street {
+      background: linear-gradient(180deg, rgba(128,128,128,.1) 0%, rgba(34,139,34,.06) 100%);
+    }
+
+    .photo-scene-family {
+      background: linear-gradient(135deg, rgba(255,215,0,.1) 0%, rgba(255,140,0,.06) 100%);
+    }
+
+    .photo-scene-rice {
+      background: linear-gradient(180deg, rgba(34,139,34,.15) 0%, rgba(0,100,0,.06) 100%);
+    }
+
+    .photo-scene-coffee {
+      background: linear-gradient(135deg, rgba(139,90,43,.15) 0%, rgba(255,228,196,.06) 100%);
+    }
+
+    .photo-scene-puppy {
+      background: linear-gradient(135deg, rgba(255,215,0,.12) 0%, rgba(255,182,83,.06) 100%);
+    }
+
+    .sm-photo-caption {
+      padding: .65rem .75rem;
+      font-size: .84rem;
+      color: var(--ink);
+      line-height: 1.4;
+    }
+
+    .sm-photo-date {
+      font-size: .75rem;
+      color: var(--muted);
+      margin-top: .25rem;
+    }
+
+    /* About */
+    .sm-about-section {
+      margin-bottom: 1rem;
+    }
+
+    .sm-about-section:last-child {
+      margin-bottom: 0;
+    }
+
+    .sm-about-heading {
+      font-size: .82rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--brand);
+      font-weight: 700;
+      margin-bottom: .5rem;
+      padding-bottom: .35rem;
+      border-bottom: 1px solid rgba(88,166,255,.2);
+    }
+
+    .sm-about-row {
+      display: flex;
+      gap: .75rem;
+      padding: .45rem 0;
+      font-size: .9rem;
+      color: var(--ink);
+    }
+
+    .sm-about-row .sm-about-icon {
+      flex-shrink: 0;
+      width: 20px;
+      text-align: center;
+    }
+
+    .sm-about-row .sm-about-label {
+      color: var(--muted);
+      min-width: 100px;
+    }
+
+    /* Check-ins */
+    .sm-checkin {
+      display: flex;
+      gap: .75rem;
+      padding: .75rem 0;
+      border-bottom: 1px solid rgba(42,47,54,.4);
+      align-items: flex-start;
+    }
+
+    .sm-checkin:last-child {
+      border-bottom: none;
+    }
+
+    .sm-checkin-icon {
+      font-size: 1.3rem;
+      flex-shrink: 0;
+      width: 32px;
+      text-align: center;
+      padding-top: .1rem;
+    }
+
+    .sm-checkin-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .sm-checkin-place {
+      font-weight: 600;
+      color: #fff;
+      font-size: .9rem;
+    }
+
+    .sm-checkin-note {
+      color: var(--muted);
+      font-size: .84rem;
+      margin-top: .15rem;
+    }
+
+    .sm-checkin-date {
+      color: var(--muted);
+      font-size: .75rem;
+      margin-top: .2rem;
+    }
+
+    /* === Account recovery simulation === */
+    .recovery-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+
+    .recovery-header {
+      background: linear-gradient(135deg, #1a2332 0%, #0f1720 100%);
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .recovery-header h3 {
+      color: #fff;
+      font-size: 1.1rem;
+      margin: 0;
+    }
+
+    .recovery-header p {
+      color: var(--muted);
+      font-size: .82rem;
+      margin-top: .25rem;
+    }
+
+    .recovery-logo {
+      display: inline-flex;
+      align-items: center;
+      gap: .5rem;
+      margin-bottom: .5rem;
+      font-size: .82rem;
+      color: var(--brand);
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .recovery-logo-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: linear-gradient(135deg, var(--brand), var(--accent));
+      display: grid;
+      place-items: center;
+      font-size: .9rem;
+      color: #0b0f14;
+    }
+
+    .recovery-body {
+      padding: 1.5rem;
+    }
+
+    .recovery-step-indicator {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .35rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .recovery-step-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--border);
+      transition: background .3s;
+    }
+
+    .recovery-step-dot.is-active {
+      background: var(--brand);
+      box-shadow: 0 0 6px rgba(88,166,255,.5);
+    }
+
+    .recovery-step-dot.is-done {
+      background: var(--accent);
+    }
+
+    .recovery-step-dot.is-failed {
+      background: var(--danger);
+    }
+
+    .recovery-step-bar {
+      width: 24px;
+      height: 2px;
+      background: var(--border);
+    }
+
+    .recovery-question-label {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: .75rem;
+      text-align: center;
+    }
+
+    .recovery-input-group {
+      display: flex;
+      gap: .5rem;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+
+    .recovery-input-group input[type="text"] {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .recovery-attempts {
+      text-align: center;
+      font-size: .78rem;
+      color: var(--muted);
+      margin-top: .5rem;
+    }
+
+    .recovery-result {
+      text-align: center;
+      margin-top: .75rem;
+      font-size: .9rem;
+      font-weight: 600;
+    }
+
+    .recovery-result.is-pass {
+      color: var(--accent);
+    }
+
+    .recovery-result.is-fail {
+      color: var(--danger);
+    }
+
+    .recovery-summary {
+      margin-top: 1rem;
+      padding: 1rem;
+      border-radius: 12px;
+      text-align: center;
+    }
+
+    .recovery-summary.is-pass {
+      border: 1px solid rgba(9,255,136,.35);
+      background: rgba(9,255,136,.06);
+      color: var(--ink);
+    }
+
+    .recovery-summary.is-fail {
+      border: 1px solid rgba(255,85,85,.35);
+      background: rgba(255,85,85,.06);
+      color: var(--ink);
+    }
+
+    .recovery-summary strong {
+      display: block;
+      font-size: 1rem;
+      margin-bottom: .35rem;
+    }
+
+    .recovery-summary.is-pass strong {
+      color: var(--accent);
+    }
+
+    .recovery-summary.is-fail strong {
+      color: var(--danger);
+    }
+
+    /* Puzzle sections */
+    .osint-section {
+      margin-top: 1.25rem;
+    }
+
+    .osint-section.is-locked {
+      opacity: .45;
+      pointer-events: none;
+    }
+
+    .osint-section.is-complete {
+      opacity: .7;
+    }
+
+    .osint-choices {
+      display: grid;
+      gap: .5rem;
+      margin-top: .5rem;
+    }
+
+    .osint-choice {
+      background: rgba(11,15,20,.5);
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      padding: .75rem 1rem;
+      color: var(--ink);
+      font-size: .9rem;
+      cursor: pointer;
+      text-align: left;
+      transition: border-color .2s, background .2s;
+    }
+
+    .osint-choice:hover {
+      border-color: var(--brand);
+      background: rgba(88,166,255,.08);
+    }
+
+    .osint-choice.is-selected {
+      border-color: var(--brand);
+      background: rgba(88,166,255,.15);
+    }
+
+    .osint-choice.is-correct {
+      border-color: var(--accent);
+      background: rgba(9,255,136,.12);
+    }
+
+    .osint-choice.is-wrong {
+      border-color: var(--danger);
+      background: rgba(255,85,85,.1);
+      opacity: .6;
+    }
+
+    .osint-choice[disabled] {
+      cursor: default;
+      pointer-events: none;
+    }
+
+    .osint-explanation {
+      margin-top: .75rem;
+      padding: .85rem 1rem;
+      border-radius: 12px;
+      border: 1px solid rgba(9,255,136,.35);
+      background: rgba(9,255,136,.06);
+      color: var(--ink);
+      font-size: .88rem;
+      line-height: 1.5;
+    }
+
+    .osint-explanation strong {
+      color: var(--accent);
+    }
+
+    .osint-vault-reveal {
+      margin-top: 1.25rem;
+      padding: 1.25rem;
+      border-radius: 16px;
+      border: 2px solid var(--accent);
+      background: linear-gradient(135deg, rgba(9,255,136,.12), rgba(88,166,255,.08));
+      text-align: center;
+    }
+
+    .osint-vault-reveal h3 {
+      color: var(--accent);
+      font-size: 1.25rem;
+      margin-bottom: .5rem;
+    }
+
+    .osint-vault-word {
+      font-size: 3rem;
+      font-weight: 800;
+      color: var(--accent);
+      text-shadow: 0 0 12px rgba(9,255,136,.5);
+      margin: .5rem 0;
+    }
+
+    /* Mission failed panel */
+    .mission-failed {
+      margin-top: 1.25rem;
+      padding: 1.25rem;
+      border-radius: 16px;
+      border: 2px solid var(--danger);
+      background: linear-gradient(135deg, rgba(255,85,85,.1), rgba(255,50,50,.04));
+      text-align: center;
+    }
+
+    .mission-failed h3 {
+      color: var(--danger);
+      font-size: 1.25rem;
+      margin-bottom: .5rem;
+    }
+
+    .mission-failed p {
+      color: var(--ink);
+      font-size: .9rem;
+      line-height: 1.5;
+      margin-bottom: .75rem;
+    }
+
+    /* Narrative step label */
+    .narrative-label {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .2rem .65rem;
+      border-radius: 999px;
+      font-size: .72rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      background: rgba(88,166,255,.18);
+      color: var(--brand);
+      font-weight: 700;
+      margin-bottom: .5rem;
+    }
+
+    .narrative-label.is-done {
+      background: rgba(9,255,136,.18);
+      color: var(--accent);
+    }
+
+    @media (max-width: 600px) {
+      .sm-header {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+      .sm-stats {
+        justify-content: center;
+      }
+      .sm-photo-grid {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      }
+      .recovery-input-group {
+        flex-direction: column;
+      }
+    }
+  </style>
+
+  <script src="js/accessibility.js" defer></script>
+  <script src="js/utils.js" defer></script>
+  <script src="js/state-sync.js" defer></script>
+  <script src="js/session.js" defer></script>
+  <script src="js/vault.js" defer></script>
+  <script src="js/osint.js" defer></script>
+</head>
+
+<body data-session="team">
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <!-- Global Header -->
+  <header class="site-header site-header--bar" aria-label="Global">
+    <div class="site-header__inner">
+      <div class="header-left">
+        <button class="nav-btn ghost nav-btn--back" type="button" data-back="game.html" data-tooltip="Back to previous page">
+          <span aria-hidden="true">&larr;</span>
+          <span>Back</span>
+        </button>
+        <a class="brand" href="game.html">
+          <img src="assets/logo.png" alt="" class="logo" />
+          <span class="brand-copy">
+            <span class="brand-name">Cyber Escape Rooms</span>
+            <span class="brand-tagline">Team-based security missions</span>
+          </span>
+        </a>
+      </div>
+
+      <div class="header-actions">
+        <nav class="main-nav" aria-label="Primary">
+          <a class="nav-link" href="game.html">Mission Hub</a>
+        </nav>
+        <a class="nav-btn nav-btn--next" href="incident.html" aria-label="Next challenge: Incident Management">
+          Next<span aria-hidden="true">&rarr;</span>
+        </a>
+        <div class="vault-status" id="vaultStatus" role="status" aria-live="polite" data-visible="team">
+          <span class="vault-status__label">Vault</span>
+          <ol class="vault-status__digits">
+            <li data-vault-key="phishing">&bull;</li>
+            <li data-vault-key="osint">&bull;</li>
+            <li data-vault-key="incident">&bull;</li>
+            <li data-vault-key="mfa">&bull;</li>
+            <li data-vault-key="supply">&bull;</li>
+            <li data-vault-key="forensics">&bull;</li>
+          </ol>
+          <span class="vault-status__count">0/6</span>
+        </div>
+        <button class="nav-btn alert nav-btn--logout" type="button" data-action="logout">Logout</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container-xl" id="main" role="main" tabindex="-1">
+    <header class="game-header">
+      <h1 class="glow">OSINT Investigation</h1>
+      <p class="mt-1" style="color:var(--muted)">
+        Jordan Taylor has been locked out of their work account. Your team needs to recover access using information from their public social media profile.
+      </p>
+    </header>
+
+    <!-- Briefing -->
+    <section class="intro-banner mt-2" aria-labelledby="osintBriefHeading">
+      <h2 id="osintBriefHeading">Mission briefing</h2>
+      <p>An employee at Meridian Solutions has been locked out of their corporate account after a password reset. Your security team has been asked to help recover access. To do this, you will need to use publicly available information from their social media profile to answer security questions, predict their password, and understand how this information could be weaponised.</p>
+      <ol>
+        <li><strong>Investigate the profile</strong> — browse all four tabs of Jordan Taylor's social media to gather intelligence.</li>
+        <li><strong>Pass the security verification</strong> — answer account recovery questions using what you found.</li>
+        <li><strong>Predict the password</strong> — determine what weak password Jordan is likely using.</li>
+        <li><strong>Identify the attack vector</strong> — pick the most effective spear-phishing approach.</li>
+      </ol>
+      <div class="vault-callout" role="status">
+        <span class="tag">Code word</span>
+        <p>Complete the mission successfully to earn your code word. You must pass the security verification and predict the password correctly.</p>
+      </div>
+    </section>
+
+    <!-- Status HUD -->
+    <section class="status-hud" aria-label="Team status">
+      <div class="points-box">
+        <p class="points-box__label">Team points</p>
+        <p class="points-box__value" id="osintPointsTotal">000</p>
+        <p class="points-box__delta" id="osintPointsDelta" aria-live="polite"></p>
+      </div>
+      <div class="progress-mini">
+        <p class="progress-mini__label">Puzzle progress</p>
+        <div class="progress-mini__track">
+          <div class="progress-mini__fill" id="osintProgressFill"></div>
+        </div>
+        <p class="progress-mini__text" id="osintProgressText">0% complete</p>
+      </div>
+    </section>
+
+    <!-- Points intel -->
+    <section class="card points-card mt-2" aria-labelledby="osintPointsHeading">
+      <details class="points-panel">
+        <summary id="osintPointsHeading">Points intel</summary>
+        <p>Your team's score carries over from earlier puzzles. Incorrect answers and hints cost points. Be thorough but deliberate.</p>
+        <ul>
+          <li>Wrong security question answer: <strong>-3 points</strong></li>
+          <li>Wrong password prediction: <strong>-3 points</strong></li>
+          <li>Wrong phishing pick: <strong>-3 points</strong></li>
+          <li>Each hint used: <strong>-5 points</strong></li>
+          <li>You get 2 attempts per security question</li>
+          <li>Must answer at least 2 of 3 security questions to proceed</li>
+        </ul>
+      </details>
+    </section>
+
+    <!-- ==================== Profile Investigation ==================== -->
+    <section class="card mt-2" id="osintPartA" aria-labelledby="partAHeading">
+      <span class="narrative-label" id="partALabel">Recon phase</span>
+      <h2 id="partAHeading" style="margin-bottom:0">Target profile located</h2>
+      <p class="muted">Browse Jordan's social media profile carefully. All four tabs may contain information you will need to recover the account.</p>
+
+      <div class="sm-profile mt-1">
+        <!-- Profile header -->
+        <div class="sm-header">
+          <div class="sm-avatar" aria-hidden="true">JT</div>
+          <div class="sm-identity">
+            <p class="sm-name">Jordan Taylor</p>
+            <p class="sm-handle">@jordtay_mel</p>
+            <p class="sm-bio">Marketing Coordinator at Meridian Solutions | Melbourne born and raised | Dog parent | Collingwood til I die | Living my best life</p>
+          </div>
+        </div>
+
+        <!-- Stats bar -->
+        <div class="sm-stats">
+          <div class="sm-stat">
+            <strong>847</strong>
+            <span>Posts</span>
+          </div>
+          <div class="sm-stat">
+            <strong>1,243</strong>
+            <span>Friends</span>
+          </div>
+          <div class="sm-stat">
+            <strong>389</strong>
+            <span>Photos</span>
+          </div>
+          <div class="sm-stat">
+            <strong>52</strong>
+            <span>Check-ins</span>
+          </div>
+        </div>
+
+        <!-- Tab bar -->
+        <div class="sm-tabs" role="tablist" aria-label="Profile sections">
+          <button class="sm-tab" role="tab" id="tabPosts" aria-selected="true" aria-controls="panelPosts">Posts</button>
+          <button class="sm-tab" role="tab" id="tabPhotos" aria-selected="false" aria-controls="panelPhotos">Photos</button>
+          <button class="sm-tab" role="tab" id="tabAbout" aria-selected="false" aria-controls="panelAbout">About</button>
+          <button class="sm-tab" role="tab" id="tabCheckins" aria-selected="false" aria-controls="panelCheckins">Check-ins</button>
+        </div>
+
+        <!-- ===== POSTS TAB ===== -->
+        <div class="sm-tab-panel is-active" role="tabpanel" id="panelPosts" aria-labelledby="tabPosts">
+
+          <!-- Post 1: mundane -->
+          <article class="sm-post">
+            <div class="sm-post-head">
+              <div class="sm-post-avatar" aria-hidden="true">JT</div>
+              <div class="sm-post-meta">
+                <p class="sm-post-author">Jordan Taylor</p>
+                <p class="sm-post-date">12 September 2026</p>
+              </div>
+            </div>
+            <div class="sm-post-body">
+              Monday motivation! New week, new campaigns to launch. The marketing team is absolutely smashing it this quarter. Grateful for such an awesome crew at work.
+            </div>
+            <div class="sm-post-engagement">
+              <span>23 likes</span>
+              <span>4 comments</span>
+            </div>
+          </article>
+
+          <!-- Post 2: Bali holiday (location data) -->
+          <article class="sm-post">
+            <div class="sm-post-head">
+              <div class="sm-post-avatar" aria-hidden="true">JT</div>
+              <div class="sm-post-meta">
+                <p class="sm-post-author">Jordan Taylor</p>
+                <p class="sm-post-date">28 August 2026</p>
+              </div>
+            </div>
+            <div class="sm-post-body">
+              Just landed in Bali!! A whole week of sun, surf, and nasi goreng. Already in love with this place. Sam reckons we should just stay forever and I'm not gonna argue. Holiday mode: ACTIVATED
+            </div>
+            <div class="sm-post-engagement">
+              <span>89 likes</span>
+              <span>21 comments</span>
+            </div>
+            <div class="sm-post-comment">
+              <p class="sm-comment-author">Sam Whitfield</p>
+              <p class="sm-comment-text">Best trip ever!! Don't forget sunscreen this time babe</p>
+            </div>
+            <div class="sm-post-comment">
+              <p class="sm-comment-author">Liam Nguyen</p>
+              <p class="sm-comment-text">You two are living the dream! Bring me back some coffee yeah?</p>
+            </div>
+          </article>
+
+          <!-- Post 3: mundane food post -->
+          <article class="sm-post">
+            <div class="sm-post-head">
+              <div class="sm-post-avatar" aria-hidden="true">JT</div>
+              <div class="sm-post-meta">
+                <p class="sm-post-author">Jordan Taylor</p>
+                <p class="sm-post-date">15 August 2026</p>
+              </div>
+            </div>
+            <div class="sm-post-body">
+              Found the most incredible ramen place in Fitzroy. Honestly life-changing broth. If you know, you know. Not sharing the name because I don't want it to get too busy haha
+            </div>
+            <div class="sm-post-engagement">
+              <span>34 likes</span>
+              <span>12 comments</span>
+            </div>
+          </article>
+
+          <!-- Post 4: Collingwood game (interests, patterns) -->
+          <article class="sm-post">
+            <div class="sm-post-head">
+              <div class="sm-post-avatar" aria-hidden="true">JT</div>
+              <div class="sm-post-meta">
+                <p class="sm-post-author">Jordan Taylor</p>
+                <p class="sm-post-date">3 August 2026</p>
+              </div>
+            </div>
+            <div class="sm-post-body">
+              GAME DAY!! Let's go Pies!! Heading to the MCG with the crew. Collingwood by 30 points, calling it now. Side by side, we stick together! #GoPies #AFLFinals
+            </div>
+            <div class="sm-post-engagement">
+              <span>56 likes</span>
+              <span>18 comments</span>
+            </div>
+            <div class="sm-post-comment">
+              <p class="sm-comment-author">Bryce Mitchell</p>
+              <p class="sm-comment-text">LET'S GOOOO! Saving you a spot at the gate</p>
+            </div>
+          </article>
+
+          <!-- Post 5: Work anniversary (start year) -->
+          <article class="sm-post">
+            <div class="sm-post-head">
+              <div class="sm-post-avatar" aria-hidden="true">JT</div>
+              <div class="sm-post-meta">
+                <p class="sm-post-author">Jordan Taylor</p>
+                <p class="sm-post-date">14 July 2026</p>
+              </div>
+            </div>
+            <div class="sm-post-body">
+              Can't believe it's been 5 years at Meridian Solutions! Started as a grad in 2021 and look at me now. Marketing Coordinator and loving every minute. Here's to many more years with this incredible team. Thanks to everyone who's supported me along the way!
+            </div>
+            <div class="sm-post-engagement">
+              <span>112 likes</span>
+              <span>32 comments</span>
+            </div>
+            <div class="sm-post-comment">
+              <p class="sm-comment-author">Meridian Solutions</p>
+              <p class="sm-comment-text">Happy work anniversary Jordan! You're such a valued member of the team. Here's to many more!</p>
+            </div>
+          </article>
+
+          <!-- Post 6: Gym post (routine) -->
+          <article class="sm-post">
+            <div class="sm-post-head">
+              <div class="sm-post-avatar" aria-hidden="true">JT</div>
+              <div class="sm-post-meta">
+                <p class="sm-post-author">Jordan Taylor</p>
+                <p class="sm-post-date">2 July 2026</p>
+              </div>
+            </div>
+            <div class="sm-post-body">
+              Tuesday morning grind at FitZone done! Nothing like a 6am spin class to wake you up. It's become my favourite routine - every Tuesday and Thursday without fail. Feeling stronger every week.
+            </div>
+            <div class="sm-post-engagement">
+              <span>18 likes</span>
+              <span>3 comments</span>
+            </div>
+            <div class="sm-post-comment">
+              <p class="sm-comment-author">Sam Whitfield</p>
+              <p class="sm-comment-text">Meanwhile I'll be sleeping thanks very much</p>
+            </div>
+          </article>
+
+          <!-- Post 7: mundane weekend post -->
+          <article class="sm-post">
+            <div class="sm-post-head">
+              <div class="sm-post-avatar" aria-hidden="true">JT</div>
+              <div class="sm-post-meta">
+                <p class="sm-post-author">Jordan Taylor</p>
+                <p class="sm-post-date">22 June 2026</p>
+              </div>
+            </div>
+            <div class="sm-post-body">
+              Lazy Sunday with Biscuit at the park. He found the muddiest puddle within 30 seconds, naturally. Bath time incoming. This dog is going to be the death of me (but I love him).
+            </div>
+            <div class="sm-post-engagement">
+              <span>67 likes</span>
+              <span>9 comments</span>
+            </div>
+          </article>
+
+          <!-- Post 8: Mum's birthday (mother's maiden name) -->
+          <article class="sm-post">
+            <div class="sm-post-head">
+              <div class="sm-post-avatar" aria-hidden="true">JT</div>
+              <div class="sm-post-meta">
+                <p class="sm-post-author">Jordan Taylor</p>
+                <p class="sm-post-date">8 June 2026</p>
+              </div>
+            </div>
+            <div class="sm-post-body">
+              Happy birthday Mum! Love you Margaret Chen-Taylor. The best mum anyone could ask for. Thanks for always believing in me and making the best dumplings on the planet. Here's to many more birthdays together!
+            </div>
+            <div class="sm-post-engagement">
+              <span>94 likes</span>
+              <span>15 comments</span>
+            </div>
+            <div class="sm-post-comment">
+              <p class="sm-comment-author">Margaret Chen-Taylor</p>
+              <p class="sm-comment-text">Thank you sweetheart! You make me so proud every day. Love you always xx</p>
+            </div>
+            <div class="sm-post-comment">
+              <p class="sm-comment-author">David Taylor</p>
+              <p class="sm-comment-text">Happy birthday love! Dinner tonight yeah?</p>
+            </div>
+          </article>
+
+          <!-- Post 9: Throwback hometown (Ballarat) -->
+          <article class="sm-post">
+            <div class="sm-post-head">
+              <div class="sm-post-avatar" aria-hidden="true">JT</div>
+              <div class="sm-post-meta">
+                <p class="sm-post-author">Jordan Taylor</p>
+                <p class="sm-post-date">18 May 2026</p>
+              </div>
+            </div>
+            <div class="sm-post-body">
+              Throwback to growing up in Ballarat. Drove through the old neighbourhood last weekend and the nostalgia hit HARD. Sturt Street still looks exactly the same. Miss those quiet country mornings sometimes, but Melbourne is home now. #ThrowbackThursday #Ballarat
+            </div>
+            <div class="sm-post-engagement">
+              <span>41 likes</span>
+              <span>7 comments</span>
+            </div>
+            <div class="sm-post-comment">
+              <p class="sm-comment-author">Emily Tran</p>
+              <p class="sm-comment-text">Omg the memories!! Remember walking to school together? Ballarat High days were the best</p>
+            </div>
+          </article>
+
+          <!-- Post 10: Birthday (March 15) -->
+          <article class="sm-post">
+            <div class="sm-post-head">
+              <div class="sm-post-avatar" aria-hidden="true">JT</div>
+              <div class="sm-post-meta">
+                <p class="sm-post-author">Jordan Taylor</p>
+                <p class="sm-post-date">15 March 2026</p>
+              </div>
+            </div>
+            <div class="sm-post-body">
+              Another year older! Thanks everyone for the birthday messages, feeling so loved today. Sam surprised me with breakfast in bed and Biscuit brought me his favourite toy as a "gift" haha. Best birthday morning ever. Time to celebrate!
+            </div>
+            <div class="sm-post-engagement">
+              <span>156 likes</span>
+              <span>48 comments</span>
+            </div>
+            <div class="sm-post-comment">
+              <p class="sm-comment-author">Sam Whitfield</p>
+              <p class="sm-comment-text">Happy birthday to my favourite human! Love you endlessly</p>
+            </div>
+          </article>
+
+        </div>
+
+        <!-- ===== PHOTOS TAB ===== -->
+        <div class="sm-tab-panel" role="tabpanel" id="panelPhotos" aria-labelledby="tabPhotos">
+          <div class="sm-photo-grid">
+
+            <div class="sm-photo-card">
+              <div class="sm-photo-placeholder photo-scene-sunset">
+                <span class="photo-icon" aria-hidden="true">&#127773;</span>
+                <span class="photo-desc">Golden sunset from a villa balcony, ocean in the background</span>
+              </div>
+              <div class="sm-photo-caption">
+                Bali sunset from our villa balcony. Unreal!
+                <p class="sm-photo-date">29 Aug 2026</p>
+              </div>
+            </div>
+
+            <div class="sm-photo-card">
+              <div class="sm-photo-placeholder photo-scene-park">
+                <span class="photo-icon" aria-hidden="true">&#128054;</span>
+                <span class="photo-desc">Photo of Biscuit the golden retriever running through grass</span>
+              </div>
+              <div class="sm-photo-caption">
+                Biscuit at the dog park! Look at that face. Best boy ever.
+                <p class="sm-photo-date">20 Aug 2026</p>
+              </div>
+            </div>
+
+            <div class="sm-photo-card">
+              <div class="sm-photo-placeholder photo-scene-gym">
+                <span class="photo-icon" aria-hidden="true">&#128170;</span>
+                <span class="photo-desc">Selfie at FitZone Gym, spin bikes visible behind</span>
+              </div>
+              <div class="sm-photo-caption">
+                Post-workout selfie at FitZone. Tuesday spin class survivors club!
+                <p class="sm-photo-date">16 Jul 2026</p>
+              </div>
+            </div>
+
+            <div class="sm-photo-card">
+              <div class="sm-photo-placeholder photo-scene-stadium">
+                <span class="photo-icon" aria-hidden="true">&#127944;</span>
+                <span class="photo-desc">Crowd shot from the stands at the MCG, black and white scarves</span>
+              </div>
+              <div class="sm-photo-caption">
+                PIES WIN! Game day at the MCG with the crew. #GoPies
+                <p class="sm-photo-date">3 Aug 2026</p>
+              </div>
+            </div>
+
+            <div class="sm-photo-card">
+              <div class="sm-photo-placeholder photo-scene-cake">
+                <span class="photo-icon" aria-hidden="true">&#127874;</span>
+                <span class="photo-desc">Chocolate mud cake with "Happy Birthday JT" written in icing</span>
+              </div>
+              <div class="sm-photo-caption">
+                Birthday cake!! Sam outdid themselves this year. Chocolate mud cake with "Happy Birthday JT" on top
+                <p class="sm-photo-date">15 Mar 2026</p>
+              </div>
+            </div>
+
+            <div class="sm-photo-card">
+              <div class="sm-photo-placeholder photo-scene-office">
+                <span class="photo-icon" aria-hidden="true">&#128144;</span>
+                <span class="photo-desc">Desk with flowers and a congratulations card, office background</span>
+              </div>
+              <div class="sm-photo-caption">
+                5 year work anniversary celebration at Meridian! The team surprised me with flowers and a card. Started in 2021 as a grad - look at me now!
+                <p class="sm-photo-date">14 Jul 2026</p>
+              </div>
+            </div>
+
+            <div class="sm-photo-card">
+              <div class="sm-photo-placeholder photo-scene-couch">
+                <span class="photo-icon" aria-hidden="true">&#128054;</span>
+                <span class="photo-desc">Golden retriever sprawled across a couch, looking pleased with himself</span>
+              </div>
+              <div class="sm-photo-caption">
+                Biscuit says good morning! He stole my spot on the couch again.
+                <p class="sm-photo-date">5 Jul 2026</p>
+              </div>
+            </div>
+
+            <div class="sm-photo-card">
+              <div class="sm-photo-placeholder photo-scene-street">
+                <span class="photo-icon" aria-hidden="true">&#127795;</span>
+                <span class="photo-desc">Tree-lined avenue with memorial plaques, wide country road</span>
+              </div>
+              <div class="sm-photo-caption">
+                Throwback: Sturt Street, Ballarat. The avenue of honour. Miss this place sometimes.
+                <p class="sm-photo-date">18 May 2026</p>
+              </div>
+            </div>
+
+            <div class="sm-photo-card">
+              <div class="sm-photo-placeholder photo-scene-family">
+                <span class="photo-icon" aria-hidden="true">&#128106;</span>
+                <span class="photo-desc">Family at a restaurant table, plates of dumplings, birthday candles</span>
+              </div>
+              <div class="sm-photo-caption">
+                Mum's birthday dinner! Love you Margaret Chen-Taylor. Best dumplings as always.
+                <p class="sm-photo-date">8 Jun 2026</p>
+              </div>
+            </div>
+
+            <div class="sm-photo-card">
+              <div class="sm-photo-placeholder photo-scene-rice">
+                <span class="photo-icon" aria-hidden="true">&#127807;</span>
+                <span class="photo-desc">Lush green terraced rice paddies stretching into mist</span>
+              </div>
+              <div class="sm-photo-caption">
+                Ubud rice terraces. Bali is something else. Already planning the next trip!
+                <p class="sm-photo-date">31 Aug 2026</p>
+              </div>
+            </div>
+
+            <div class="sm-photo-card">
+              <div class="sm-photo-placeholder photo-scene-coffee">
+                <span class="photo-icon" aria-hidden="true">&#9749;</span>
+                <span class="photo-desc">Latte art in a ceramic cup, gym bag on the table beside it</span>
+              </div>
+              <div class="sm-photo-caption">
+                Morning coffee at Collins Street before gym. The usual Tuesday ritual.
+                <p class="sm-photo-date">9 Jul 2026</p>
+              </div>
+            </div>
+
+            <div class="sm-photo-card">
+              <div class="sm-photo-placeholder photo-scene-puppy">
+                <span class="photo-icon" aria-hidden="true">&#127881;</span>
+                <span class="photo-desc">Small golden retriever puppy with a tiny dog-shaped cake</span>
+              </div>
+              <div class="sm-photo-caption">
+                Biscuit's first birthday! We got him a doggy cake and he absolutely demolished it.
+                <p class="sm-photo-date">12 Feb 2026</p>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- ===== ABOUT TAB ===== -->
+        <div class="sm-tab-panel" role="tabpanel" id="panelAbout" aria-labelledby="tabAbout">
+
+          <div class="sm-about-section">
+            <p class="sm-about-heading">Overview</p>
+            <div class="sm-about-row">
+              <span class="sm-about-icon" aria-hidden="true">&#128188;</span>
+              <span class="sm-about-label">Works at</span>
+              <span>Marketing Coordinator at <strong>Meridian Solutions</strong></span>
+            </div>
+            <div class="sm-about-row">
+              <span class="sm-about-icon" aria-hidden="true">&#127891;</span>
+              <span class="sm-about-label">Studied at</span>
+              <span><strong>RMIT University</strong> - Bachelor of Communications (Marketing)</span>
+            </div>
+            <div class="sm-about-row">
+              <span class="sm-about-icon" aria-hidden="true">&#127979;</span>
+              <span class="sm-about-label">Went to</span>
+              <span><strong>Ballarat High School</strong></span>
+            </div>
+            <div class="sm-about-row">
+              <span class="sm-about-icon" aria-hidden="true">&#127968;</span>
+              <span class="sm-about-label">Lives in</span>
+              <span><strong>Melbourne</strong>, Australia</span>
+            </div>
+            <div class="sm-about-row">
+              <span class="sm-about-icon" aria-hidden="true">&#128205;</span>
+              <span class="sm-about-label">From</span>
+              <span><strong>Ballarat</strong>, Victoria</span>
+            </div>
+            <div class="sm-about-row">
+              <span class="sm-about-icon" aria-hidden="true">&#10084;</span>
+              <span class="sm-about-label">In a relationship with</span>
+              <span><strong>Sam Whitfield</strong></span>
+            </div>
+          </div>
+
+          <div class="sm-about-section">
+            <p class="sm-about-heading">Contact Info</p>
+            <div class="sm-about-row">
+              <span class="sm-about-icon" aria-hidden="true">&#128231;</span>
+              <span class="sm-about-label">Email</span>
+              <span>jordan.taylor@meridian.com.au</span>
+            </div>
+            <div class="sm-about-row">
+              <span class="sm-about-icon" aria-hidden="true">&#127760;</span>
+              <span class="sm-about-label">Socials</span>
+              <span>@jordtay_mel (same handle everywhere)</span>
+            </div>
+          </div>
+
+          <div class="sm-about-section">
+            <p class="sm-about-heading">Life Events</p>
+            <div class="sm-about-row">
+              <span class="sm-about-icon" aria-hidden="true">&#128188;</span>
+              <span class="sm-about-label">Jul 2021</span>
+              <span>Started working at <strong>Meridian Solutions</strong></span>
+            </div>
+            <div class="sm-about-row">
+              <span class="sm-about-icon" aria-hidden="true">&#127891;</span>
+              <span class="sm-about-label">Nov 2020</span>
+              <span>Graduated from <strong>RMIT University</strong></span>
+            </div>
+            <div class="sm-about-row">
+              <span class="sm-about-icon" aria-hidden="true">&#128205;</span>
+              <span class="sm-about-label">Jan 2018</span>
+              <span>Moved to <strong>Melbourne</strong></span>
+            </div>
+            <div class="sm-about-row">
+              <span class="sm-about-icon" aria-hidden="true">&#128054;</span>
+              <span class="sm-about-label">Feb 2025</span>
+              <span>Adopted <strong>Biscuit</strong> (golden retriever puppy!)</span>
+            </div>
+          </div>
+
+          <div class="sm-about-section">
+            <p class="sm-about-heading">Favourites</p>
+            <div class="sm-about-row">
+              <span class="sm-about-icon" aria-hidden="true">&#127944;</span>
+              <span class="sm-about-label">Sport</span>
+              <span><strong>Collingwood</strong> (AFL) - Member since 2019</span>
+            </div>
+            <div class="sm-about-row">
+              <span class="sm-about-icon" aria-hidden="true">&#127947;</span>
+              <span class="sm-about-label">Gym</span>
+              <span><strong>FitZone</strong>, Collins Street</span>
+            </div>
+            <div class="sm-about-row">
+              <span class="sm-about-icon" aria-hidden="true">&#127860;</span>
+              <span class="sm-about-label">Food</span>
+              <span>Ramen, dumplings, anything spicy</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ===== CHECK-INS TAB ===== -->
+        <div class="sm-tab-panel" role="tabpanel" id="panelCheckins" aria-labelledby="tabCheckins">
+
+          <article class="sm-checkin">
+            <div class="sm-checkin-icon" aria-hidden="true">&#127947;</div>
+            <div class="sm-checkin-body">
+              <p class="sm-checkin-place">FitZone Gym - Collins Street</p>
+              <p class="sm-checkin-note">Tuesday spin class! Feeling the burn today</p>
+              <p class="sm-checkin-date">10 Sep 2026 - 6:14am</p>
+            </div>
+          </article>
+
+          <article class="sm-checkin">
+            <div class="sm-checkin-icon" aria-hidden="true">&#127947;</div>
+            <div class="sm-checkin-body">
+              <p class="sm-checkin-place">FitZone Gym - Collins Street</p>
+              <p class="sm-checkin-note">Thursday morning weights session done</p>
+              <p class="sm-checkin-date">5 Sep 2026 - 6:22am</p>
+            </div>
+          </article>
+
+          <article class="sm-checkin">
+            <div class="sm-checkin-icon" aria-hidden="true">&#9992;</div>
+            <div class="sm-checkin-body">
+              <p class="sm-checkin-place">Ngurah Rai International Airport, Bali</p>
+              <p class="sm-checkin-note">Holiday time! See you in a week Melbourne</p>
+              <p class="sm-checkin-date">28 Aug 2026 - 2:45pm</p>
+            </div>
+          </article>
+
+          <article class="sm-checkin">
+            <div class="sm-checkin-icon" aria-hidden="true">&#127860;</div>
+            <div class="sm-checkin-body">
+              <p class="sm-checkin-place">Warung Babi Guling Ibu Oka, Ubud</p>
+              <p class="sm-checkin-note">Best food in Bali hands down</p>
+              <p class="sm-checkin-date">30 Aug 2026 - 12:30pm</p>
+            </div>
+          </article>
+
+          <article class="sm-checkin">
+            <div class="sm-checkin-icon" aria-hidden="true">&#127947;</div>
+            <div class="sm-checkin-body">
+              <p class="sm-checkin-place">FitZone Gym - Collins Street</p>
+              <p class="sm-checkin-note">Tuesday grind! New PB on the bike today</p>
+              <p class="sm-checkin-date">27 Aug 2026 - 6:08am</p>
+            </div>
+          </article>
+
+          <article class="sm-checkin">
+            <div class="sm-checkin-icon" aria-hidden="true">&#127947;</div>
+            <div class="sm-checkin-body">
+              <p class="sm-checkin-place">FitZone Gym - Collins Street</p>
+              <p class="sm-checkin-note">Thursday morning. The usual</p>
+              <p class="sm-checkin-date">22 Aug 2026 - 6:31am</p>
+            </div>
+          </article>
+
+          <article class="sm-checkin">
+            <div class="sm-checkin-icon" aria-hidden="true">&#127944;</div>
+            <div class="sm-checkin-body">
+              <p class="sm-checkin-place">Melbourne Cricket Ground (MCG)</p>
+              <p class="sm-checkin-note">GAME DAY! Go Pies!!</p>
+              <p class="sm-checkin-date">3 Aug 2026 - 1:15pm</p>
+            </div>
+          </article>
+
+          <article class="sm-checkin">
+            <div class="sm-checkin-icon" aria-hidden="true">&#127947;</div>
+            <div class="sm-checkin-body">
+              <p class="sm-checkin-place">FitZone Gym - Collins Street</p>
+              <p class="sm-checkin-note">Tuesday crew! Love this place</p>
+              <p class="sm-checkin-date">30 Jul 2026 - 6:19am</p>
+            </div>
+          </article>
+
+          <article class="sm-checkin">
+            <div class="sm-checkin-icon" aria-hidden="true">&#128188;</div>
+            <div class="sm-checkin-body">
+              <p class="sm-checkin-place">Meridian Solutions HQ</p>
+              <p class="sm-checkin-note">5 year anniversary celebrations! Cake in the breakroom</p>
+              <p class="sm-checkin-date">14 Jul 2026 - 9:05am</p>
+            </div>
+          </article>
+
+          <article class="sm-checkin">
+            <div class="sm-checkin-icon" aria-hidden="true">&#127947;</div>
+            <div class="sm-checkin-body">
+              <p class="sm-checkin-place">FitZone Gym - Collins Street</p>
+              <p class="sm-checkin-note">Thursday session. Legs are going to hate me tomorrow</p>
+              <p class="sm-checkin-date">11 Jul 2026 - 6:25am</p>
+            </div>
+          </article>
+
+          <article class="sm-checkin">
+            <div class="sm-checkin-icon" aria-hidden="true">&#128054;</div>
+            <div class="sm-checkin-body">
+              <p class="sm-checkin-place">Albert Park Lake</p>
+              <p class="sm-checkin-note">Sunday walk with Biscuit. He tried to swim and immediately regretted it</p>
+              <p class="sm-checkin-date">6 Jul 2026 - 10:40am</p>
+            </div>
+          </article>
+
+          <article class="sm-checkin">
+            <div class="sm-checkin-icon" aria-hidden="true">&#127860;</div>
+            <div class="sm-checkin-body">
+              <p class="sm-checkin-place">Chin Chin, Flinders Lane</p>
+              <p class="sm-checkin-note">Birthday dinner with Sam! This place never disappoints</p>
+              <p class="sm-checkin-date">15 Mar 2026 - 7:30pm</p>
+            </div>
+          </article>
+
+        </div>
+      </div><!-- end .sm-profile -->
+    </section>
+
+    <!-- ==================== Security Question Challenge ==================== -->
+    <section class="card mt-2 osint-section is-locked" id="osintPartB" aria-labelledby="partBHeading">
+      <span class="narrative-label" id="partBLabel">Security verification</span>
+      <h2 id="partBHeading" style="margin-bottom:0">Account recovery initiated</h2>
+      <p class="muted">To regain access to this account, please answer the following security questions. You have 2 attempts per question.</p>
+
+      <div class="recovery-panel mt-1" id="recoveryPanel">
+        <div class="recovery-header">
+          <div class="recovery-logo">
+            <span class="recovery-logo-icon" aria-hidden="true">&#128274;</span>
+            Meridian Solutions Account Recovery
+          </div>
+          <h3>Identity Verification Required</h3>
+          <p>Please answer your security questions to recover your account.</p>
+        </div>
+        <div class="recovery-body" id="recoveryBody" aria-live="polite">
+          <!-- Rendered by JS -->
+        </div>
+      </div>
+
+      <div class="flex mt-1" style="gap:.5rem; flex-wrap:wrap">
+        <button class="btn ghost sm" id="osintHintBtnB" type="button">Hint (-5 pts)</button>
+      </div>
+      <p id="osintHintTextB" class="status-message mt-1" hidden></p>
+    </section>
+
+    <!-- ==================== Password Prediction ==================== -->
+    <section class="card mt-2 osint-section is-locked" id="osintPartC" aria-labelledby="partCHeading">
+      <span class="narrative-label" id="partCLabel">Access granted</span>
+      <h2 id="partCHeading" style="margin-bottom:0">Predict the password</h2>
+      <p class="muted">Now that you've recovered the account, you can see the password hint reads: "my best friend + a special year." Based on everything you've learned about Jordan, which password are they most likely using?</p>
+
+      <div id="osintPasswordChoices" class="osint-choices mt-1">
+        <button class="osint-choice" data-pw="biscuit2021" type="button">Biscuit2021!</button>
+        <button class="osint-choice" data-pw="meridian" type="button">M3ridian$olutions</button>
+        <button class="osint-choice" data-pw="jordtay" type="button">JordTay#Melbourne</button>
+        <button class="osint-choice" data-pw="sam" type="button">S@mAndJordan15</button>
+      </div>
+
+      <div class="flex mt-1" style="gap:.5rem; flex-wrap:wrap">
+        <button class="btn ghost sm" id="osintHintBtnC" type="button">Hint (-5 pts)</button>
+      </div>
+      <p id="osintHintTextC" class="status-message mt-1" hidden></p>
+      <p id="osintFeedbackC" class="status-message mt-1" aria-live="polite"></p>
+      <div id="osintExplanationC" class="osint-explanation" hidden></div>
+    </section>
+
+    <!-- ==================== Spear Phish Draft ==================== -->
+    <section class="card mt-2 osint-section is-locked" id="osintPartD" aria-labelledby="partDHeading">
+      <span class="narrative-label" id="partDLabel">Threat assessment</span>
+      <h2 id="partDHeading" style="margin-bottom:0">Craft the attack</h2>
+      <p class="muted">An attacker with the same intelligence you just gathered wants to target Jordan with a phishing email. Which subject line would be the most effective and why?</p>
+
+      <div id="osintPhishChoices" class="osint-choices mt-1">
+        <button class="osint-choice" data-phish="fitzone" type="button">Your FitZone membership renewal is overdue</button>
+        <button class="osint-choice" data-phish="it" type="button">Important message from IT department</button>
+        <button class="osint-choice" data-phish="linkedin" type="button">You have a new LinkedIn connection request</button>
+        <button class="osint-choice" data-phish="urgent" type="button">Urgent: Your account has been compromised</button>
+      </div>
+
+      <div class="flex mt-1" style="gap:.5rem; flex-wrap:wrap">
+        <button class="btn ghost sm" id="osintHintBtnD" type="button">Hint (-5 pts)</button>
+      </div>
+      <p id="osintHintTextD" class="status-message mt-1" hidden></p>
+      <p id="osintFeedbackD" class="status-message mt-1" aria-live="polite"></p>
+      <div id="osintExplanationD" class="osint-explanation" hidden></div>
+    </section>
+
+    <!-- ==================== Vault Reveal ==================== -->
+    <div id="osintVaultReveal" class="osint-vault-reveal mt-2" hidden>
+      <h3>Mission Complete</h3>
+      <p class="muted">You successfully recovered the account, predicted the password, and identified the attack vector. This is exactly how attackers exploit public information.</p>
+      <p class="osint-vault-word" aria-live="polite">SHADOW</p>
+      <p>Your code word is <strong style="color:var(--accent)">SHADOW</strong>. It has been recorded.</p>
+    </div>
+
+    <!-- ==================== Mission Failed ==================== -->
+    <div id="osintMissionFailed" class="mission-failed mt-2" hidden>
+      <h3>Mission Failed</h3>
+      <p>You were unable to recover the account or predict the password. The code word has not been awarded.</p>
+      <p class="muted">Review Jordan's profile more carefully and try again.</p>
+      <button class="btn primary mt-1" id="osintRetryBtn" type="button">Retry Mission</button>
+    </div>
+
+    <!-- Resources -->
+    <section class="card resources-card mt-2" aria-labelledby="osintResourcesHeading">
+      <h2 id="osintResourcesHeading">Further learning</h2>
+      <ul>
+        <li><a href="https://www.cyber.gov.au/protect-yourself/staying-secure-online/protect-your-personal-information" target="_blank" rel="noopener">ACSC — Protect your personal information</a></li>
+        <li><a href="https://www.cisa.gov/news-events/news/staying-safe-social-networking-sites" target="_blank" rel="noopener">CISA — Staying safe on social networking sites</a></li>
+        <li><a href="https://www.esafety.gov.au/key-topics/privacy" target="_blank" rel="noopener">eSafety — Online privacy</a></li>
+      </ul>
+    </section>
+
+    <!-- Puzzle navigation -->
+    <nav class="challenge-nav" aria-label="Puzzle navigation">
+      <a class="btn ghost" href="game.html">&larr; Mission Hub</a>
+      <a class="btn" href="incident.html">Next: Incident Management &rarr;</a>
+    </nav>
+  </main>
+
+  <!-- Global Footer -->
+  <footer class="site-footer header-bleed">
+    <div class="footer-inner">
+      <nav class="footer-nav" aria-label="Footer">
+        <a href="index.html">Home</a>
+        <span aria-hidden="true">&bull;</span>
+        <a href="game.html">Mission Hub</a>
+      </nav>
+      <p class="footer-note">Recover the account to earn your code word.</p>
+      <p class="footer-copy"><small>&copy; 2026 Cyber Escape Rooms</small></p>
+    </div>
+  </footer>
+
+</body>
+</html>

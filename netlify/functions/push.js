@@ -76,7 +76,7 @@ export default async (req) => {
       const sanitized = sanitizeRow(raw);
       await client.query(
         `insert into team_state (team, progress, progress_meta, times, score, score_log, activity, endless, bonus, vault, updated_at)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now())
+         values ($1,$2::jsonb,$3::jsonb,$4::jsonb,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb, now())
          on conflict (team) do update set
            progress = excluded.progress,
            progress_meta = excluded.progress_meta,
@@ -88,7 +88,8 @@ export default async (req) => {
            bonus = excluded.bonus,
            vault = excluded.vault,
            updated_at = now()`,
-        [team, sanitized.progress, sanitized.progressMeta, sanitized.times, sanitized.score, sanitized.scoreLog, sanitized.activity, sanitized.endless, sanitized.bonus, sanitized.vault]
+        // pg would send JS arrays as Postgres arrays, not JSON, so serialise jsonb values explicitly.
+        [team, JSON.stringify(sanitized.progress), JSON.stringify(sanitized.progressMeta), JSON.stringify(sanitized.times), sanitized.score, JSON.stringify(sanitized.scoreLog), JSON.stringify(sanitized.activity), JSON.stringify(sanitized.endless), JSON.stringify(sanitized.bonus), JSON.stringify(sanitized.vault)]
       );
     }
 

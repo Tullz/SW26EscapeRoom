@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="A midnight security alarm at Meridian. Spot the intruder, stop the leak, tell the right people and fix the cause." />
+  <link rel="icon" href="assets/favicon.png" type="image/png" />
+
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 img-src 'self' data:;
+                 style-src 'self' 'unsafe-inline';
+                 script-src 'self';
+                 connect-src 'self';
+                 object-src 'none';
+                 base-uri 'self'">
+
+  <title>Cyber Escape Rooms — Incident Management</title>
+
+  <link rel="stylesheet" href="css/styles.css" />
+  <script src="js/accessibility.js" defer></script>
+  <script src="js/utils.js" defer></script>
+  <script src="js/state-sync.js" defer></script>
+  <script src="js/session.js" defer></script>
+  <script src="js/vault.js" defer></script>
+  <script src="js/incident.js" defer></script>
+
+  <style>
+    /* ---- Incident room: "The Midnight Alert" ---- */
+    #main [hidden] { display: none !important; }
+    .ir-step, .ir-success, .ir-done, #irS4B { scroll-margin-top: 110px; }
+
+    .ir-wrap { display: grid; gap: 1.25rem; }
+
+    /* Step tracker */
+    .ir-stepper {
+      list-style: none; margin: 0; padding: 0;
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem;
+    }
+    .ir-stepper li {
+      display: flex; align-items: center; gap: .55rem;
+      padding: .65rem .8rem; border-radius: 12px;
+      border: 1px solid var(--border); background: rgba(9, 15, 25, .55);
+      color: var(--muted); font-size: .92rem; font-weight: 600;
+    }
+    .ir-stepper .ir-dot {
+      flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: rgba(139, 148, 158, .15); font-size: .85rem;
+    }
+    .ir-stepper small { display: block; font-weight: 400; font-size: .75rem; color: var(--muted); }
+    .ir-stepper li.is-current { border-color: var(--brand); color: #fff; box-shadow: 0 0 0 2px rgba(88, 166, 255, .2); }
+    .ir-stepper li.is-current .ir-dot { background: rgba(88, 166, 255, .25); color: var(--brand); }
+    .ir-stepper li.is-done { border-color: rgba(9, 255, 136, .4); color: #fff; }
+    .ir-stepper li.is-done .ir-dot { background: rgba(9, 255, 136, .2); color: var(--accent); }
+
+    /* Live leak status */
+    .ir-leak {
+      display: flex; align-items: center; gap: .85rem; flex-wrap: wrap;
+      padding: .85rem 1.1rem; border-radius: 12px;
+      border: 1px solid rgba(255, 85, 85, .5); background: rgba(255, 85, 85, .09);
+      color: #ffd0d0; font-size: .98rem;
+    }
+    .ir-leak__light { width: 12px; height: 12px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 10px var(--danger); animation: irBlink 1s steps(2, start) infinite; flex-shrink: 0; }
+    .ir-leak__count { font-family: "JetBrains Mono", Consolas, monospace; font-size: 1.15rem; font-weight: 700; color: #fff; }
+    .ir-leak[data-state="stopped"] { border-color: rgba(9, 255, 136, .45); background: rgba(9, 255, 136, .07); color: #c8ffe3; }
+    .ir-leak[data-state="stopped"] .ir-leak__light { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: none; }
+    @keyframes irBlink { to { visibility: hidden; } }
+
+    /* Step panels */
+    .ir-step {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+      padding: clamp(1rem, 2.5vw, 1.6rem); box-shadow: var(--shadow);
+      display: grid; gap: 1.1rem; animation: irIn .35s ease;
+    }
+    @keyframes irIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    .ir-kicker { font-size: .78rem; text-transform: uppercase; letter-spacing: .12em; color: var(--brand); font-weight: 700; }
+    .ir-step h2 { font-size: 1.45rem; color: #fff; margin-top: .15rem; }
+    .ir-task {
+      background: rgba(88, 166, 255, .08); border-left: 4px solid var(--brand);
+      border-radius: 0 10px 10px 0; padding: .75rem 1rem; font-size: 1rem; line-height: 1.5; color: var(--ink);
+    }
+    .ir-task strong { color: #fff; }
+
+    .ir-clues { display: grid; gap: 1rem; }
+    @media (min-width: 860px) { .ir-clues.two { grid-template-columns: 1fr 1fr; } }
+    .ir-clue-label {
+      display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+      color: #0d1117; background: var(--warn); border-radius: 6px; padding: .15rem .5rem; margin-bottom: .45rem;
+    }
+
+    /* Artefact: phone alarm */
+    .ir-alarm {
+      border-radius: 18px; padding: 1rem 1.1rem; background: #1c1f26; border: 1px solid #3a3f4a;
+      box-shadow: 0 10px 24px rgba(0,0,0,.4); display: grid; gap: .45rem; color: #e6e6e6;
+    }
+    .ir-alarm__top { display: flex; justify-content: space-between; font-size: .8rem; color: #9aa4b2; }
+    .ir-alarm__title { font-weight: 700; color: #ff7b7b; font-size: 1.02rem; }
+    .ir-alarm p { line-height: 1.5; font-size: .98rem; }
+    .ir-alarm dl { display: grid; grid-template-columns: auto 1fr; gap: .2rem .8rem; font-size: .95rem; }
+    .ir-alarm dt { color: #9aa4b2; }
+    .ir-alarm dd { margin: 0; color: #fff; font-weight: 600; }
+
+    /* Artefact: paper (calendar, cards, notes) */
+    .ir-paper {
+      background: #f6f1e3; color: #23272e; border-radius: 6px; padding: 1rem 1.15rem;
+      box-shadow: 0 10px 24px rgba(0,0,0,.45); position: relative; line-height: 1.5; font-size: .97rem;
+    }
+    .ir-paper h3 { font-size: 1rem; color: #111; margin-bottom: .5rem; letter-spacing: .02em; }
+    .ir-paper ul { margin: 0; padding-left: 1.15rem; display: grid; gap: .45rem; }
+    .ir-paper li strong { color: #000; }
+    .ir-paper .ir-pin { position: absolute; top: -8px; left: 50%; width: 16px; height: 16px; border-radius: 50%; background: #d64545; box-shadow: 0 2px 3px rgba(0,0,0,.4); transform: translateX(-50%); }
+    .ir-paper--yellow { background: #fff3b0; }
+    .ir-paper--card { background: #fdfdfd; border-top: 8px solid #d64545; }
+    .ir-paper .ir-do, .ir-paper .ir-dont { font-weight: 700; margin: .6rem 0 .35rem; font-size: .85rem; letter-spacing: .08em; text-transform: uppercase; }
+    .ir-paper .ir-do { color: #137a3c; }
+    .ir-paper .ir-dont { color: #b42323; }
+    .ir-paper ul.ir-ticks { list-style: none; padding-left: 0; }
+    .ir-paper ul.ir-ticks li { padding-left: 1.6rem; position: relative; }
+    .ir-paper ul.ir-ticks li::before { position: absolute; left: 0; font-weight: 700; }
+    .ir-paper ul.ir-ticks.yes li::before { content: "\2714"; color: #137a3c; }
+    .ir-paper ul.ir-ticks.no li::before { content: "\2718"; color: #b42323; }
+
+    /* Artefact: email */
+    .ir-email { background: #fdfdfd; color: #23272e; border-radius: 8px; overflow: hidden; box-shadow: 0 10px 24px rgba(0,0,0,.45); font-size: .96rem; line-height: 1.5; }
+    .ir-email__head { background: #e9edf3; padding: .6rem 1rem; font-size: .85rem; color: #4a5361; display: grid; gap: .1rem; }
+    .ir-email__head strong { color: #111; }
+    .ir-email__body { padding: .85rem 1rem; display: grid; gap: .5rem; }
+    .ir-email mark { background: #ffe58a; padding: 0 .2rem; border-radius: 3px; }
+
+    /* Selectable rows / options */
+    .ir-log { display: grid; gap: .5rem; }
+    .ir-log__head, .ir-row {
+      display: grid; grid-template-columns: 5.5rem 1.4fr 1.2fr 1.3fr; gap: .75rem; align-items: center;
+    }
+    .ir-log__head { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); padding: 0 1rem; }
+    .ir-row, .ir-opt {
+      appearance: none; width: 100%; text-align: left; font: inherit; color: var(--ink); cursor: pointer;
+      padding: .8rem 1rem; border-radius: 12px; border: 2px solid var(--border); background: rgba(9, 15, 25, .65);
+      transition: border-color .15s ease, background .15s ease, transform .15s ease;
+    }
+    .ir-row:hover:not(:disabled), .ir-opt:hover:not(:disabled) { border-color: rgba(88, 166, 255, .6); }
+    .ir-row:focus-visible, .ir-opt:focus-visible, .ir-card:focus-visible, .ir-slot:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .ir-row[aria-pressed="true"], .ir-opt[aria-pressed="true"] { border-color: var(--brand); background: rgba(88, 166, 255, .12); }
+    .ir-row.is-right, .ir-opt.is-right { border-color: var(--accent); background: rgba(9, 255, 136, .09); }
+    .ir-row:disabled, .ir-opt:disabled { cursor: default; }
+    .ir-row .ir-time { font-family: "JetBrains Mono", Consolas, monospace; color: #fff; font-weight: 600; }
+    .ir-row .ir-name { color: #fff; font-weight: 600; }
+    .ir-row .ir-sub { display: block; color: var(--muted); font-size: .85rem; font-weight: 400; }
+    .ir-row .ir-lbl { display: none; color: var(--muted); font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; }
+    .ir-check-yes { color: #6fffb3; }
+    .ir-check-no { color: var(--warn); font-weight: 600; }
+    .ir-note { font-size: .9rem; color: var(--muted); }
+
+    .ir-options { display: grid; gap: .6rem; }
+    @media (min-width: 760px) { .ir-options.cols { grid-template-columns: 1fr 1fr; } }
+    .ir-opt { display: grid; grid-template-columns: auto 1fr; gap: .8rem; align-items: center; font-size: 1rem; }
+    .ir-opt .ir-box {
+      width: 26px; height: 26px; border-radius: 7px; border: 2px solid var(--muted);
+      display: inline-flex; align-items: center; justify-content: center; font-weight: 700; color: transparent;
+    }
+    .ir-opt[aria-pressed="true"] .ir-box { border-color: var(--brand); background: var(--brand); color: #0d1117; }
+    .ir-opt[aria-pressed="true"] .ir-box::after { content: "\2714"; }
+    .ir-opt.is-right .ir-box { border-color: var(--accent); background: var(--accent); color: #0d1117; }
+    .ir-opt .ir-opt-title { color: #fff; font-weight: 600; display: block; }
+    .ir-opt .ir-opt-sub { color: var(--muted); font-size: .88rem; }
+
+    /* Contacts (phone) */
+    .ir-phone { border-radius: 22px; background: #0b0e13; border: 1px solid #333a46; padding: .9rem; display: grid; gap: .5rem; max-width: 560px; }
+    .ir-phone__bar { text-align: center; color: #9aa4b2; font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; }
+    .ir-avatar { width: 38px; height: 38px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; color: #0d1117; }
+
+    /* Story ordering */
+    .ir-slots { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+    .ir-slot {
+      appearance: none; font: inherit; width: 100%; text-align: left; cursor: pointer;
+      display: grid; grid-template-columns: auto 1fr; gap: .8rem; align-items: center;
+      padding: .7rem 1rem; min-height: 56px; border-radius: 12px; border: 2px dashed var(--border);
+      background: rgba(9, 15, 25, .4); color: var(--muted);
+    }
+    .ir-slot.is-filled { border-style: solid; border-color: var(--brand); color: #fff; background: rgba(88, 166, 255, .08); }
+    .ir-slot.is-right { border-color: var(--accent); background: rgba(9, 255, 136, .08); cursor: default; }
+    .ir-slot:disabled { cursor: default; }
+    .ir-num { width: 30px; height: 30px; border-radius: 50%; background: rgba(88, 166, 255, .18); color: var(--brand); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; }
+    .ir-cards { display: grid; gap: .5rem; }
+    @media (min-width: 760px) { .ir-cards { grid-template-columns: 1fr 1fr; } }
+    .ir-card {
+      appearance: none; font: inherit; text-align: left; cursor: pointer; color: #23272e; line-height: 1.45;
+      background: #f6f1e3; border: none; border-radius: 6px; padding: .8rem 1rem; box-shadow: 0 6px 14px rgba(0,0,0,.35);
+      transition: transform .15s ease;
+    }
+    .ir-card:hover { transform: translateY(-2px) rotate(-.4deg); }
+
+    /* Actions / feedback / hints */
+    .ir-actions { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+    .ir-actions .ir-count { color: var(--muted); font-size: .92rem; }
+    .ir-hint {
+      background: rgba(255, 166, 87, .08); border: 1px solid rgba(255, 166, 87, .4); border-radius: 10px;
+      padding: .7rem 1rem; color: #ffd9b3; line-height: 1.5;
+    }
+    .ir-hint strong { color: var(--warn); }
+    .ir-success {
+      background: rgba(9, 255, 136, .07); border: 1px solid rgba(9, 255, 136, .4); border-radius: 12px;
+      padding: .9rem 1.1rem; display: grid; gap: .6rem; line-height: 1.55;
+    }
+    .ir-success h3 { color: var(--accent); font-size: 1.05rem; }
+    .ir-success .btn { justify-self: start; }
+
+    /* Case notes */
+    .ir-notes { background: rgba(9, 15, 25, .6); border: 1px solid var(--border); border-radius: 14px; padding: 1rem 1.15rem; }
+    .ir-notes h2 { font-size: .85rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: .6rem; }
+    .ir-notes ol { margin: 0; padding-left: 1.2rem; display: grid; gap: .4rem; color: var(--ink); line-height: 1.5; }
+    .ir-notes li::marker { color: var(--accent); font-weight: 700; }
+
+    /* Completion */
+    .ir-done {
+      background: linear-gradient(135deg, rgba(9, 255, 136, .13), rgba(88, 166, 255, .08));
+      border: 2px solid rgba(9, 255, 136, .5); border-radius: 16px; padding: clamp(1rem, 3vw, 1.75rem);
+      display: grid; gap: 1rem; text-align: center;
+    }
+    .ir-done h2 { color: var(--accent); font-size: 1.6rem; }
+    .ir-word { font-family: "JetBrains Mono", Consolas, monospace; font-size: clamp(2.2rem, 8vw, 3.2rem); font-weight: 700; color: #fff; letter-spacing: .12em; text-shadow: 0 0 12px var(--accent), 0 0 24px var(--accent); }
+    .ir-lessons { list-style: none; margin: 0 auto; padding: 0; display: grid; gap: .5rem; text-align: left; max-width: 720px; }
+    .ir-lessons li { background: rgba(9, 15, 25, .55); border: 1px solid var(--border); border-radius: 10px; padding: .6rem .85rem; line-height: 1.45; }
+    .ir-lessons strong { color: var(--accent); }
+    .ir-done .btn { justify-self: center; }
+
+    @media (max-width: 720px) {
+      .ir-stepper { grid-template-columns: 1fr 1fr; }
+      .ir-log__head { display: none; }
+      .ir-row { grid-template-columns: 1fr 1fr; gap: .35rem .75rem; }
+      .ir-row .ir-lbl { display: block; }
+    }
+  </style>
+</head>
+
+<body data-session="team">
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <!-- Global Header -->
+  <header class="site-header site-header--bar" aria-label="Global">
+    <div class="site-header__inner">
+      <div class="header-left">
+        <button class="nav-btn ghost nav-btn--back" type="button" data-back="osint.html" data-tooltip="Back to previous page">
+          <span aria-hidden="true">&larr;</span>
+          <span>Back</span>
+        </button>
+        <a class="brand" href="game.html">
+          <img src="assets/logo.png" alt="" class="logo" />
+          <span class="brand-copy">
+            <span class="brand-name">Cyber Escape Rooms</span>
+            <span class="brand-tagline">Team-based security missions</span>
+          </span>
+        </a>
+      </div>
+
+      <div class="header-actions">
+        <nav class="main-nav" aria-label="Primary">
+          <a class="nav-link" href="game.html">Mission Hub</a>
+        </nav>
+        <a class="nav-btn nav-btn--next" href="mfa.html" aria-label="Next challenge: MFA / Authentication">
+          Next<span aria-hidden="true">&rarr;</span>
+        </a>
+        <div class="vault-status" id="vaultStatus" role="status" aria-live="polite" data-visible="team">
+          <span class="vault-status__label">Vault</span>
+          <ol class="vault-status__digits">
+            <li data-vault-key="phishing">&bull;</li>
+            <li data-vault-key="osint">&bull;</li>
+            <li data-vault-key="incident">&bull;</li>
+            <li data-vault-key="mfa">&bull;</li>
+            <li data-vault-key="supply">&bull;</li>
+            <li data-vault-key="forensics">&bull;</li>
+          </ol>
+          <span class="vault-status__count">0/6</span>
+        </div>
+        <button class="nav-btn alert nav-btn--logout" type="button" data-action="logout">Logout</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container" id="main" role="main" tabindex="-1">
+    <header class="game-header">
+      <h1 class="glow">The Midnight Alert</h1>
+      <p class="mt-1" style="color:var(--muted)">
+        It's 2:13 AM. A security alarm has just gone off at Meridian and your team is on call. Find out what's happening &mdash; and deal with it.
+      </p>
+    </header>
+
+    <!-- Status HUD -->
+    <section class="status-hud" aria-label="Team status">
+      <div class="points-box">
+        <p class="points-box__label">Team points</p>
+        <p class="points-box__value" id="incidentPointsTotal">000</p>
+        <p class="points-box__delta" id="incidentPointsDelta" aria-live="polite"></p>
+      </div>
+      <div class="progress-mini">
+        <p class="progress-mini__label">Incident progress</p>
+        <div class="progress-mini__track">
+          <div class="progress-mini__fill" id="incidentProgressFill"></div>
+        </div>
+        <p class="progress-mini__text" id="incidentProgressText">0% complete</p>
+      </div>
+    </section>
+
+    <!-- Briefing -->
+    <section class="intro-banner mt-2" aria-labelledby="incidentBriefHeading">
+      <h2 id="incidentBriefHeading">Your mission</h2>
+      <p>When something bad happens, good teams do four things. You'll do them in order, one step at a time. Every step has clues on screen &mdash; no technical knowledge needed.</p>
+      <ol>
+        <li><strong>Spot it</strong> &mdash; work out who is really behind the alarm.</li>
+        <li><strong>Stop it</strong> &mdash; stop the damage from getting worse.</li>
+        <li><strong>Tell</strong> &mdash; call the right people.</li>
+        <li><strong>Fix it</strong> &mdash; find how they got in and close that door.</li>
+      </ol>
+      <p style="color:var(--muted)">Wrong guesses cost 2 points. Stuck? Each step has a hint for 5 points.</p>
+      <div class="vault-callout" role="status">
+        <span class="tag">Code word</span>
+        <p>Finish all four steps to reveal your code word.</p>
+      </div>
+    </section>
+
+    <div class="ir-wrap mt-2" id="incidentDashboard">
+
+      <!-- Step tracker -->
+      <ol class="ir-stepper" id="irStepper" aria-label="Steps">
+        <li data-step="1"><span class="ir-dot">1</span><span>Spot it<small>Who is it?</small></span></li>
+        <li data-step="2"><span class="ir-dot">2</span><span>Stop it<small>Stop the leak</small></span></li>
+        <li data-step="3"><span class="ir-dot">3</span><span>Tell<small>Who to call</small></span></li>
+        <li data-step="4"><span class="ir-dot">4</span><span>Fix it<small>Close the door</small></span></li>
+      </ol>
+
+      <!-- Live leak status -->
+      <div class="ir-leak" id="irLeak" data-state="active" role="status">
+        <span class="ir-leak__light" aria-hidden="true"></span>
+        <span id="irLeakText">LIVE &mdash; customer records being copied out of the company:</span>
+        <span class="ir-leak__count" id="irLeakCount">0</span>
+      </div>
+
+      <!-- Case notes (filled by JS as steps are solved) -->
+      <section class="ir-notes" id="irNotes" aria-labelledby="irNotesHeading" hidden>
+        <h2 id="irNotesHeading">Case notes &mdash; what you've found so far</h2>
+        <ol id="irNotesList"></ol>
+      </section>
+
+      <!-- ===================== STEP 1: SPOT IT ===================== -->
+      <section class="ir-step" id="irStep1" aria-labelledby="irStep1Heading" hidden>
+        <div>
+          <p class="ir-kicker">Step 1 of 4 &middot; Spot it</p>
+          <h2 id="irStep1Heading">Who is behind this?</h2>
+        </div>
+        <p class="ir-task"><strong>Your task:</strong> Read the alarm and the staff calendar. Then look at tonight's log-in record and <strong>click the one log-in that can't be genuine</strong>.</p>
+
+        <div class="ir-clues two">
+          <div>
+            <span class="ir-clue-label">Clue 1 &middot; The alarm</span>
+            <div class="ir-alarm">
+              <div class="ir-alarm__top"><span>Meridian Security Alarm</span><span>2:13 AM</span></div>
+              <p class="ir-alarm__title">Customer data is leaving the company</p>
+              <p>Customer names, addresses and payment details are being copied from our customer database to an unknown computer overseas.</p>
+              <dl>
+                <dt>Started</dt><dd>11:47 PM</dd>
+                <dt>Status</dt><dd style="color:#ff7b7b">Still happening</dd>
+              </dl>
+            </div>
+          </div>
+          <div>
+            <span class="ir-clue-label">Clue 2 &middot; Staff calendar</span>
+            <div class="ir-paper">
+              <span class="ir-pin" aria-hidden="true"></span>
+              <h3>This week &mdash; who's where</h3>
+              <ul>
+                <li><strong>Jordan Thompson (Finance)</strong> &mdash; on holiday all week, hiking in Tasmania. <em>No phone or internet signal until Monday.</em></li>
+                <li><strong>Ben Carter (Sales)</strong> &mdash; at a sales conference in Singapore.</li>
+                <li><strong>Sam Lee (IT)</strong> &mdash; on call tonight, working from home in Sydney.</li>
+                <li><strong>Priya Shah (Finance)</strong> &mdash; working late from home on month-end reports.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <span class="ir-clue-label">Clue 3 &middot; Tonight's log-in record</span>
+          <p class="ir-note" style="margin-bottom:.6rem">Everyone who logged in to work from outside the office tonight. &ldquo;Phone code&rdquo; means they also typed a code sent to their phone.</p>
+          <div class="ir-log" id="irLog" role="group" aria-label="Tonight's log-ins">
+            <div class="ir-log__head" aria-hidden="true"><span>Time</span><span>Who</span><span>Logged in from</span><span>How they signed in</span></div>
+            <!-- rows rendered by JS -->
+          </div>
+        </div>
+
+        <div class="ir-actions">
+          <button class="btn primary" id="irS1Submit" type="button">Flag this log-in</button>
+          <button class="btn ghost" id="irS1Hint" type="button" data-hint="s1">Hint (-5 pts)</button>
+        </div>
+        <div class="ir-hint" id="irS1HintBox" hidden></div>
+        <p class="status-message" id="irS1Feedback" aria-live="polite"></p>
+        <div class="ir-success" id="irS1Done" hidden>
+          <h3>Intruder spotted</h3>
+          <p>Jordan is hiking in Tasmania with no signal, so the 11:42 PM log-in from Romania is <strong>not Jordan</strong>. A criminal is using Jordan's account &mdash; and five minutes later the data started leaving. This is a real security incident.</p>
+          <button class="btn primary" type="button" data-next="2">Next: Stop the leak &rarr;</button>
+        </div>
+      </section>
+
+      <!-- ===================== STEP 2: STOP IT ===================== -->
+      <section class="ir-step" id="irStep2" aria-labelledby="irStep2Heading" hidden>
+        <div>
+          <p class="ir-kicker">Step 2 of 4 &middot; Stop it</p>
+          <h2 id="irStep2Heading">Stop the leak &mdash; fast</h2>
+        </div>
+        <p class="ir-task"><strong>Your task:</strong> Customer records are still being copied out. Use the emergency card on the wall to <strong>pick the TWO actions to take right now</strong>, then press &ldquo;Take action&rdquo;.</p>
+
+        <div class="ir-clues two">
+          <div>
+            <span class="ir-clue-label">Clue &middot; On the wall</span>
+            <div class="ir-paper ir-paper--card">
+              <h3>EMERGENCY CARD &mdash; If data is leaking</h3>
+              <p class="ir-do">Do this straight away</p>
+              <ul class="ir-ticks yes">
+                <li>Cut the <strong>affected system</strong> off from the internet &mdash; only that one system.</li>
+                <li>Lock the <strong>account the intruder is using</strong>, so it can't be used again.</li>
+              </ul>
+              <p class="ir-dont">Never</p>
+              <ul class="ir-ticks no">
+                <li>Delete or wipe anything &mdash; investigators need the evidence.</li>
+                <li>Shut down the whole company &mdash; it stops everyone working and doesn't help.</li>
+                <li>Send messages to the hacked account &mdash; the intruder will read them.</li>
+              </ul>
+            </div>
+          </div>
+          <div>
+            <span class="ir-clue-label">Your options</span>
+            <div class="ir-options" id="irS2Options" role="group" aria-label="Actions you can take">
+              <!-- rendered by JS -->
+            </div>
+          </div>
+        </div>
+
+        <div class="ir-actions">
+          <button class="btn primary" id="irS2Submit" type="button">Take action</button>
+          <button class="btn ghost" id="irS2Hint" type="button" data-hint="s2">Hint (-5 pts)</button>
+          <span class="ir-count" id="irS2Count">0 of 2 chosen</span>
+        </div>
+        <div class="ir-hint" id="irS2HintBox" hidden></div>
+        <p class="status-message" id="irS2Feedback" aria-live="polite"></p>
+        <div class="ir-success" id="irS2Done" hidden>
+          <h3>Leak stopped</h3>
+          <p>The customer database is cut off from the internet and Jordan's account is locked. The intruder is out &mdash; and because nothing was wiped, the evidence is safe for the investigators.</p>
+          <button class="btn primary" type="button" data-next="3">Next: Tell the right people &rarr;</button>
+        </div>
+      </section>
+
+      <!-- ===================== STEP 3: TELL ===================== -->
+      <section class="ir-step" id="irStep3" aria-labelledby="irStep3Heading" hidden>
+        <div>
+          <p class="ir-kicker">Step 3 of 4 &middot; Tell</p>
+          <h2 id="irStep3Heading">Who needs to know tonight?</h2>
+        </div>
+        <p class="ir-task"><strong>Your task:</strong> The contact sheet lists three roles to call. <strong>Tap the THREE matching people</strong> in the phone, then press &ldquo;Make the calls&rdquo;.</p>
+
+        <div class="ir-clues two">
+          <div>
+            <span class="ir-clue-label">Clue &middot; Pinned by the phone</span>
+            <div class="ir-paper ir-paper--yellow">
+              <span class="ir-pin" aria-hidden="true"></span>
+              <h3>SECURITY INCIDENT? CALL THESE 3 &mdash; even at night</h3>
+              <ul>
+                <li><strong>The Head of Security</strong> &mdash; they take charge.</li>
+                <li><strong>The Privacy Officer</strong> &mdash; whenever customers' personal details are involved. They decide how and when customers are told.</li>
+                <li><strong>The manager</strong> of the staff member whose account was used.</li>
+              </ul>
+              <p style="margin-top:.6rem"><strong style="color:#b42323">Never</strong> post about it publicly, talk to reporters, or contact customers yourself.</p>
+            </div>
+          </div>
+          <div>
+            <span class="ir-clue-label">Your phone</span>
+            <div class="ir-phone">
+              <div class="ir-phone__bar">Contacts</div>
+              <div class="ir-options" id="irS3Options" role="group" aria-label="Contacts">
+                <!-- rendered by JS -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ir-actions">
+          <button class="btn primary" id="irS3Submit" type="button">Make the calls</button>
+          <button class="btn ghost" id="irS3Hint" type="button" data-hint="s3">Hint (-5 pts)</button>
+          <span class="ir-count" id="irS3Count">0 of 3 chosen</span>
+        </div>
+        <div class="ir-hint" id="irS3HintBox" hidden></div>
+        <p class="status-message" id="irS3Feedback" aria-live="polite"></p>
+        <div class="ir-success" id="irS3Done" hidden>
+          <h3>The right people are on it</h3>
+          <p>Dana (Head of Security) is taking charge. Marcus (Privacy Officer) will decide how customers are told. Helen, Jordan's manager in Finance, knows what happened. Nobody went public before the facts were known.</p>
+          <button class="btn primary" type="button" data-next="4">Next: Find how they got in &rarr;</button>
+        </div>
+      </section>
+
+      <!-- ===================== STEP 4: FIX IT ===================== -->
+      <section class="ir-step" id="irStep4" aria-labelledby="irStep4Heading" hidden>
+        <div>
+          <p class="ir-kicker">Step 4 of 4 &middot; Fix it</p>
+          <h2 id="irStep4Heading">How did they get in?</h2>
+        </div>
+        <p class="ir-task" id="irS4Task"><strong>Part A:</strong> Read the two new clues. Then <strong>tap the story cards in the order they happened</strong> (tap a filled box to take a card back out).</p>
+
+        <div class="ir-clues two">
+          <div>
+            <span class="ir-clue-label">Clue 1 &middot; In the IT inbox (unread since yesterday)</span>
+            <div class="ir-email">
+              <div class="ir-email__head">
+                <span><strong>From:</strong> PassWatch leak-alert service</span>
+                <span><strong>To:</strong> Meridian IT</span>
+                <span><strong>Subject:</strong> One of your staff was in a password leak</span>
+              </div>
+              <div class="ir-email__body">
+                <p>Two months ago a fitness app called <strong>FitTracker</strong> was hacked. Its members' emails and passwords were posted online for anyone to see.</p>
+                <p>One of them looks like your staff member:<br><mark>jordan.t.runs@gmail.com &mdash; password: Meridian2024!</mark></p>
+                <p>If this person uses the same password at work, change it now.</p>
+              </div>
+            </div>
+          </div>
+          <div>
+            <span class="ir-clue-label">Clue 2 &middot; IT account notes</span>
+            <div class="ir-paper">
+              <span class="ir-pin" aria-hidden="true"></span>
+              <h3>Account: Jordan Thompson</h3>
+              <ul>
+                <li><strong>Work password:</strong> Meridian2024!</li>
+                <li><strong>Phone code at log-in:</strong> OFF &mdash; missed when it was switched on for everyone else last year.</li>
+                <li><strong>Note:</strong> anyone with the password alone can log in.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Part A: story order -->
+        <div id="irS4A">
+          <ol class="ir-slots" id="irS4Slots" aria-label="The story, in order"></ol>
+          <p class="ir-note" style="margin:.8rem 0 .5rem">Story cards &mdash; tap one to put it in the next empty box:</p>
+          <div class="ir-cards" id="irS4Cards"></div>
+          <div class="ir-actions" style="margin-top:.9rem">
+            <button class="btn primary" id="irS4ASubmit" type="button">Check the story</button>
+            <button class="btn ghost" id="irS4AHint" type="button" data-hint="s4a">Hint (-5 pts)</button>
+          </div>
+          <div class="ir-hint mt-1" id="irS4AHintBox" hidden></div>
+          <p class="status-message" id="irS4AFeedback" aria-live="polite"></p>
+        </div>
+
+        <!-- Part B: the fix -->
+        <div id="irS4B" hidden>
+          <p class="ir-task"><strong>Part B:</strong> Jordan's password has already been changed. But passwords leak all the time. <strong>Which fix would stop this happening again &mdash; even if a password leaks?</strong></p>
+          <div class="ir-options" id="irS4BOptions" role="group" aria-label="Possible fixes" style="margin-top:.8rem"></div>
+          <div class="ir-actions" style="margin-top:.9rem">
+            <button class="btn primary" id="irS4BSubmit" type="button">Apply this fix</button>
+            <button class="btn ghost" id="irS4BHint" type="button" data-hint="s4b">Hint (-5 pts)</button>
+          </div>
+          <div class="ir-hint mt-1" id="irS4BHintBox" hidden></div>
+          <p class="status-message" id="irS4BFeedback" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <!-- ===================== COMPLETE (content filled by JS) ===================== -->
+      <section class="ir-done" id="irComplete" aria-labelledby="irCompleteHeading" hidden>
+        <h2 id="irCompleteHeading">Case closed</h2>
+        <p>You spotted it, stopped it, told the right people and fixed the cause. That's incident response.</p>
+        <ul class="ir-lessons">
+          <li><strong>Spot it:</strong> something that doesn't add up &mdash; like a log-in from somewhere impossible &mdash; is worth reporting straight away.</li>
+          <li><strong>Stop it:</strong> act fast to limit the damage: cut off the affected system and lock the account, but keep the evidence.</li>
+          <li><strong>Tell:</strong> tell the right people quickly &mdash; not everyone, and never publicly first.</li>
+          <li><strong>Fix it:</strong> find how they got in and close that door. A different password for every site, plus a phone code at log-in, stops most attacks like this one.</li>
+        </ul>
+        <p>If you ever notice something odd at work, <strong>report it to IT or security straight away</strong> &mdash; you could be the one who spots it.</p>
+        <div id="irWordSlot"></div>
+        <a class="btn primary" href="game.html">Return to Mission Hub</a>
+      </section>
+
+    </div>
+
+    <!-- Navigation -->
+    <nav class="challenge-nav" aria-label="Puzzle navigation">
+      <a class="btn ghost" href="osint.html">&larr; OSINT Investigation</a>
+      <a class="btn" href="mfa.html">Next: MFA / Authentication &rarr;</a>
+    </nav>
+
+  </main>
+
+  <!-- Global Footer -->
+  <footer class="site-footer header-bleed">
+    <div class="footer-inner">
+      <nav class="footer-nav" aria-label="Footer">
+        <a href="index.html">Home</a>
+        <span aria-hidden="true">&bull;</span>
+        <a href="game.html">Mission Hub</a>
+      </nav>
+      <p class="footer-note">Handle the incident to earn the third code word.</p>
+      <p class="footer-copy"><small>&copy; 2026 Cyber Escape Rooms</small></p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -73,10 +73,11 @@
   function readProgress(u = getUser()) {
     return getJSON(progressKey(u), {
       phishing: false,
-      password: false,
-      encryption: false,
-      essential: false,
-      binary: false
+      osint: false,
+      incident: false,
+      mfa: false,
+      supply: false,
+      forensics: false
     });
   }
   function setProgressFlag(flag, value = true, u = getUser()) {
@@ -521,7 +522,7 @@
   function clearTeamState(user) {
     const team = (user?.role === 'team' && user?.username) ? String(user.username).toLowerCase() : null;
     if (!team) {
-      ['lock_digit_phishing_total','lock_digit_caesar_shift','lock_digit_pw_minutes','lock_digit_pw_clues','lock_digit_essential','lock_digit_binary'].forEach(key => {
+      ['lock_digit_phishing_total','lock_digit_osint','lock_digit_incident','lock_digit_mfa','lock_digit_supply','lock_digit_forensics'].forEach(key => {
         try { localStorage.removeItem(key); } catch (_) {}
       });
       try { window.vault?.refresh?.(); } catch (_) {}
@@ -540,7 +541,7 @@
     teamKeys.forEach(key => {
       try { localStorage.removeItem(key); } catch (_) {}
     });
-    ['lock_digit_phishing_total','lock_digit_caesar_shift','lock_digit_pw_minutes','lock_digit_pw_clues','lock_digit_essential','lock_digit_binary'].forEach(key => {
+    ['lock_digit_phishing_total','lock_digit_osint','lock_digit_incident','lock_digit_mfa','lock_digit_supply','lock_digit_forensics'].forEach(key => {
       try { localStorage.removeItem(key); } catch (_) {}
     });
     try { window.vault?.refresh?.(); } catch (_) {}
