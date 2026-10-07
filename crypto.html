@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Search a captured courier's briefcase, find the hidden keys and crack a criminal crew's codes before tonight's handover." />
+  <link rel="icon" href="assets/favicon.png" type="image/png" />
+
+  <!-- Tight CSP (local assets only) -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 img-src 'self' data:;
+                 style-src 'self' 'unsafe-inline';
+                 script-src 'self';
+                 connect-src 'self';
+                 object-src 'none';
+                 base-uri 'self'">
+
+  <title>Cyber Escape Rooms — Encryption</title>
+
+  <!-- External files only -->
+  <link rel="stylesheet" href="css/styles.css" />
+  <script src="js/accessibility.js" defer></script>
+  <script src="js/utils.js" defer></script>
+  <script src="js/state-sync.js" defer></script>
+  <script src="js/session.js" defer></script>
+  <script src="js/vault.js" defer></script>
+  <script src="js/crypto.js" defer></script>
+
+  <style>
+    /* =====================================================================
+       Encryption room: "The Courier's Case". All classes start with cc-.
+       ===================================================================== */
+    :root {
+      --cc-brass: #d4a82c; --cc-brass-2: #9c7414; --cc-brass-3: #5f4509;
+      --cc-uv: #b47cff; --cc-uv-glow: rgba(180, 124, 255, .65);
+      --cc-paper: #f4eedc; --cc-paper-ink: #2b241a;
+      --cc-lamp: rgba(255, 196, 110, .16);
+    }
+    [hidden] { display: none !important; }
+
+    .cc-room { padding: 1.25rem; }
+    .cc-topbar { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; margin-bottom: .9rem; }
+    .cc-pill {
+      display: inline-flex; align-items: center; gap: .5rem; font-size: .78rem; font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase; color: #ffd27a; background: rgba(212, 168, 44, .1); border: 1px solid rgba(212, 168, 44, .4);
+      padding: .35rem .75rem; border-radius: 999px;
+    }
+    .cc-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cc-brass); box-shadow: 0 0 8px var(--cc-brass); }
+    .cc-pill.is-done { color: var(--accent); background: rgba(9, 255, 136, .08); border-color: rgba(9, 255, 136, .35); }
+    .cc-pill.is-done .dot { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+    .cc-tools { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+    .cc-uvbtn { border-color: rgba(180, 124, 255, .55) !important; color: #dcc4ff !important; }
+    .cc-uvbtn[aria-pressed="true"] { background: rgba(180, 124, 255, .22) !important; color: #fff !important; box-shadow: 0 0 14px var(--cc-uv-glow); }
+    .cc-hint-text {
+      margin: 0 0 .9rem; padding: .6rem .85rem; border-radius: 8px; font-size: .9rem; line-height: 1.45;
+      background: rgba(255, 166, 87, .08); border: 1px solid rgba(255, 166, 87, .3); color: var(--warn);
+    }
+    .cc-hint-text div + div { margin-top: .3rem; }
+    @keyframes ccBlink { 50% { opacity: .25; } }
+    @keyframes ccIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    @keyframes ccShake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+    @keyframes ccBuzz { 0%, 100% { transform: rotate(0); } 15% { transform: rotate(-5deg) translateX(-1px); } 30% { transform: rotate(5deg) translateX(1px); } 45% { transform: rotate(-4deg); } 60% { transform: rotate(3deg); } 75% { transform: rotate(0); } }
+
+    /* ---- Radio feed ---- */
+    .cc-radio { background: #0d1117; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 1rem; overflow: hidden; }
+    .cc-radio__head {
+      display: flex; align-items: center; gap: .6rem; padding: .55rem .9rem; border-bottom: 1px solid var(--border);
+      background: rgba(212, 168, 44, .05); font-size: .78rem; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; font-weight: 700;
+    }
+    .cc-avatar { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: .72rem; letter-spacing: 0; text-transform: none; color: #0b0f14; }
+    .cc-avatar--kemi { background: linear-gradient(135deg, #58a6ff, #3ad1c4); }
+    .cc-avatar--courier { background: linear-gradient(135deg, #5d636d, #2c3038); color: #d6dbe2; }
+    .cc-radio__live { margin-left: auto; color: #ff8080; display: inline-flex; align-items: center; gap: .35rem; }
+    .cc-radio__live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #ff5555; animation: ccBlink 1.6s infinite; }
+    .cc-feed { max-height: 200px; overflow-y: auto; padding: .7rem .9rem; display: grid; gap: .5rem; }
+    .cc-msg { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px 12px 12px 12px; padding: .55rem .8rem; font-size: .92rem; line-height: 1.5; color: var(--ink); max-width: 62rem; }
+    .cc-msg strong { color: #fff; }
+    .cc-msg.is-new { border-color: rgba(212, 168, 44, .6); box-shadow: 0 0 0 3px rgba(212, 168, 44, .08); animation: ccIn .35s ease; }
+    .cc-msg.is-good { border-color: rgba(9, 255, 136, .4); }
+    .cc-msg.is-warn { border-color: rgba(255, 128, 128, .45); }
+    .cc-msg--courier { background: #161a20; font-style: italic; }
+    .cc-who { display: block; font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; margin-bottom: .15rem; font-style: normal; }
+    .cc-who--kemi { color: #7fd8ff; }
+    .cc-who--courier { color: #b9bec6; }
+
+    /* ---- Main layout ---- */
+    .cc-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+    .cc-help { font-size: .88rem; color: var(--muted); margin: 0 0 .5rem; }
+    .cc-side { display: grid; gap: 1rem; }
+
+    /* ---- The scene: an open briefcase seen from above ---- */
+    .cc-scene {
+      position: relative; width: 100%; aspect-ratio: 16 / 10.5; border-radius: 14px; overflow: hidden; user-select: none;
+      border: 1px solid var(--border);
+      background:
+        radial-gradient(ellipse at 18% 8%, rgba(255, 200, 120, .22), transparent 55%),
+        repeating-linear-gradient(92deg, rgba(255, 255, 255, .025) 0 3px, transparent 3px 22px),
+        linear-gradient(180deg, #2a1f18 0%, #1d1611 100%);
+    }
+    .cc-case { position: absolute; border-radius: 12px; background: #24170f; box-shadow: 0 10px 30px rgba(0, 0, 0, .6), inset 0 0 0 2px #3a281b; }
+    .cc-case--lid { left: 5%; right: 5%; top: 3%; height: 43.5%; }
+    .cc-case--base { left: 5%; right: 5%; top: 50.5%; bottom: 3%; }
+    .cc-lining {
+      position: absolute; inset: 4.5% 2%; border-radius: 8px;
+      background:
+        radial-gradient(circle at 30% 20%, rgba(255, 255, 255, .05), transparent 50%),
+        repeating-linear-gradient(45deg, rgba(0, 0, 0, .12) 0 2px, transparent 2px 7px),
+        linear-gradient(180deg, #5a1d26, #3f121a);
+      box-shadow: inset 0 4px 14px rgba(0, 0, 0, .55);
+    }
+    .cc-hinge { position: absolute; left: 7%; right: 7%; top: 46.6%; height: 3.6%; border-radius: 4px; background: linear-gradient(180deg, #3a281b, #20150d); }
+    .cc-hinge::before, .cc-hinge::after { content: ''; position: absolute; top: 15%; height: 70%; width: 9%; border-radius: 3px; background: linear-gradient(180deg, #f0c95a, #8a6512); }
+    .cc-hinge::before { left: 14%; } .cc-hinge::after { right: 14%; }
+    .cc-pocket {
+      position: absolute; left: 44%; right: 7%; top: 29%; height: 15%; border-radius: 0 0 6px 6px; z-index: 3; pointer-events: none;
+      background: linear-gradient(180deg, #3d1219, #2c0c12); border-top: 3px dashed rgba(255, 210, 140, .25); box-shadow: 0 -4px 10px rgba(0, 0, 0, .35);
+    }
+    .cc-latch { position: absolute; bottom: 1%; width: 7%; height: 3.5%; border-radius: 3px; background: linear-gradient(180deg, #f0c95a, #8a6512); }
+    .cc-latch--l { left: 24%; } .cc-latch--r { right: 24%; }
+
+    .cc-hs {
+      position: absolute; z-index: 2; padding: 0; margin: 0; border: 0; background: transparent; cursor: pointer;
+      color: inherit; font: inherit; line-height: 0; border-radius: 8px; transition: transform .18s ease, filter .18s ease;
+    }
+    .cc-hs svg { width: 100%; height: 100%; display: block; overflow: visible; }
+    .cc-hs:hover, .cc-hs:focus-visible { transform: translateY(-2px) scale(1.04); filter: drop-shadow(0 0 10px rgba(255, 210, 120, .55)); }
+    .cc-hs:focus-visible { outline: 2px solid var(--cc-brass); outline-offset: 3px; }
+    .cc-hs.is-active { filter: drop-shadow(0 0 12px rgba(9, 255, 136, .7)); }
+    .cc-hs.is-buzzing svg { animation: ccBuzz .7s ease-in-out infinite; }
+    .cc-hs.is-buzzing .cc-glow { opacity: 1; }
+    .cc-glow { opacity: 0; transition: opacity .3s; }
+    .cc-hs.is-held { opacity: .35; }
+    .cc-hs__label {
+      position: absolute; left: 50%; bottom: -4px; transform: translate(-50%, 100%); white-space: nowrap; line-height: 1.2;
+      font-size: clamp(9px, .9vw, 11.5px); font-weight: 700; color: #f1e6d2; background: rgba(10, 8, 6, .85);
+      border: 1px solid rgba(255, 220, 160, .18); padding: 2px 7px; border-radius: 999px; pointer-events: none; z-index: 4;
+    }
+    .cc-hs--top .cc-hs__label { bottom: auto; top: -4px; transform: translate(-50%, -100%); }
+    .cc-hs.is-seen .cc-hs__label { color: var(--accent); border-color: rgba(9, 255, 136, .35); }
+    .cc-hs.is-seen .cc-hs__label::before { content: '\2713\00a0'; }
+
+    .hs-paper   { left: 9%;  top: 7%;  width: 30%; height: 36%; transform: rotate(-3deg); }
+    .hs-ticket  { left: 47%; top: 15%; width: 20%; height: 17%; }
+    .hs-receipt { left: 72%; top: 6%;  width: 10%; height: 27%; }
+    .hs-book    { left: 9%;  top: 55%; width: 14%; height: 33%; }
+    .hs-phone   { left: 26%; top: 57%; width: 8.5%; height: 29%; }
+    .hs-card    { left: 38%; top: 57%; width: 13.5%; height: 14%; }
+    .hs-disk    { left: 39%; top: 74.5%; width: 12%; height: 18.3%; }
+    .hs-pen     { left: 55%; top: 54%; width: 4%;  height: 37%; }
+    .hs-keys    { left: 62%; top: 58%; width: 12%; height: 25%; }
+    .hs-mints   { left: 79%; top: 56%; width: 11%; height: 14%; }
+    .hs-glasses { left: 77%; top: 75%; width: 15%; height: 13%; }
+    .hs-ticket .cc-hs__label, .hs-receipt .cc-hs__label, .hs-card .cc-hs__label { bottom: auto; top: -4px; transform: translate(-50%, -100%); }
+
+    /* UV torch over the scene: a purple spotlight that follows the pointer */
+    .cc-uvlayer {
+      position: absolute; inset: 0; z-index: 5; pointer-events: none; opacity: 0; transition: opacity .35s;
+      background: radial-gradient(circle at var(--uvx, 50%) var(--uvy, 50%), rgba(190, 130, 255, .28) 0, rgba(150, 90, 255, .14) 70px, rgba(16, 4, 34, .62) 150px);
+    }
+    .cc-uv-on .cc-uvlayer { opacity: 1; }
+
+    /* ---- Close-up panel ---- */
+    .cc-closeup { background: var(--panel-2); border: 1px solid var(--border); border-radius: 14px; padding: 1rem 1.1rem; min-height: 220px; }
+    .cc-eyebrow { font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #ffd27a; margin: 0 0 .25rem; }
+    .cc-closeup h3 { margin: 0 0 .5rem; font-size: 1.1rem; color: #fff; }
+    .cc-closeup p { margin: 0 0 .6rem; line-height: 1.5; font-size: .93rem; }
+    .cc-closeup .btn { margin: .25rem .35rem .25rem 0; }
+    .cc-empty { color: var(--muted); font-size: .92rem; line-height: 1.5; }
+    .cc-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .3rem; }
+    .cc-feedback { min-height: 1.4em; font-size: .9rem; margin: .5rem 0 0; line-height: 1.45; }
+    .cc-feedback.is-bad { color: #ff8a8a; }
+    .cc-feedback.is-good { color: var(--accent); }
+    .cc-feedback.is-info { color: var(--warn); }
+
+    /* Flippable props */
+    .cc-flip { perspective: 900px; margin: .4rem 0 .8rem; }
+    .cc-flip__inner { display: grid; transition: transform .6s ease; transform-style: preserve-3d; }
+    .cc-flip.is-flipped .cc-flip__inner { transform: rotateY(180deg); }
+    .cc-face { grid-area: 1 / 1; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+    .cc-face--back { transform: rotateY(180deg); }
+
+    /* Invisible ink: only shows under the UV torch */
+    .cc-uvzone { position: relative; }
+    .cc-ink {
+      color: #d9b8ff; text-shadow: 0 0 6px var(--cc-uv), 0 0 14px var(--cc-uv-glow); font-family: 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive;
+      opacity: 0; transition: opacity .25s; pointer-events: none;
+    }
+    .cc-uv-on .cc-uvzone .cc-ink {
+      opacity: 1;
+      -webkit-mask-image: radial-gradient(circle 64px at var(--mx, -999px) var(--my, -999px), #000 55%, transparent 100%);
+      mask-image: radial-gradient(circle 64px at var(--mx, -999px) var(--my, -999px), #000 55%, transparent 100%);
+    }
+    .cc-uv-on .cc-uvzone .cc-ink.is-found { -webkit-mask-image: none; mask-image: none; }
+    /* Under UV, paper turns a dim purple; the ink sits above the tint so it glows. */
+    .cc-uvpaper { position: relative; }
+    .cc-uvpaper::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 1; background: rgba(60, 12, 120, .5); mix-blend-mode: multiply; opacity: 0; transition: opacity .35s; }
+    .cc-uv-on .cc-uvpaper::after { opacity: 1; }
+    .cc-uvpaper .cc-ink { position: relative; z-index: 2; }
+    .cc-uvpaper .cc-gridink { position: absolute; }
+    .cc-uv-on .cc-closeup { background: radial-gradient(circle at 50% 25%, #2b1852, #140b24 70%); border-color: rgba(180, 124, 255, .5); }
+    .cc-uv-on .cc-closeup .cc-ticket, .cc-uv-on .cc-closeup .cc-paper, .cc-uv-on .cc-closeup .cc-receipt, .cc-uv-on .cc-closeup .cc-tag { filter: brightness(.72) saturate(.7); }
+    .cc-uv-on .cc-closeup .cc-face--back .cc-ticket { filter: none; background: linear-gradient(90deg, #8c7a9e 0 74%, #7d6b90 74%); }
+    #cryptoComplete, .cc-bench, .cc-closeup, #ccHands { scroll-margin-top: 110px; }
+    .cc-sweep { display: none; }
+    .cc-uv-on .cc-sweep { display: inline-flex; }
+
+    .cc-paper {
+      background: var(--cc-paper); color: var(--cc-paper-ink); border-radius: 4px; padding: .8rem .9rem; box-shadow: 0 6px 14px rgba(0, 0, 0, .35);
+      font-family: Georgia, 'Times New Roman', serif; line-height: 1.4;
+    }
+    .cc-news__mast { font-weight: 900; font-size: 1.25rem; letter-spacing: .04em; border-bottom: 3px double #4b4030; text-align: center; padding-bottom: .2rem; margin-bottom: .4rem; }
+    .cc-news__head { font-weight: 800; font-size: 1rem; margin-bottom: .3rem; }
+    .cc-news__lines { height: 48px; background: repeating-linear-gradient(180deg, rgba(43, 36, 26, .35) 0 2px, transparent 2px 8px); margin-bottom: .5rem; }
+    .cc-ticket {
+      background: linear-gradient(90deg, #ffe9c4 0 74%, #f7d9a8 74%); color: #3b2508; border-radius: 6px; padding: .8rem .9rem;
+      font-family: 'Courier New', monospace; font-size: .86rem; line-height: 1.5; box-shadow: 0 6px 14px rgba(0, 0, 0, .35); border-left: 8px solid #d9622b;
+    }
+    .cc-ticket b { font-size: 1rem; }
+    .cc-receipt {
+      background: #fbfbf7; color: #222; font-family: 'Courier New', monospace; font-size: .82rem; line-height: 1.45; padding: .8rem .9rem 1.1rem;
+      box-shadow: 0 6px 14px rgba(0, 0, 0, .35); max-width: 300px; transform: rotate(-1deg);
+      clip-path: polygon(0 0, 100% 0, 100% 96%, 95% 100%, 90% 96%, 85% 100%, 80% 96%, 75% 100%, 70% 96%, 65% 100%, 60% 96%, 55% 100%, 50% 96%, 45% 100%, 40% 96%, 35% 100%, 30% 96%, 25% 100%, 20% 96%, 15% 100%, 10% 96%, 5% 100%, 0 96%);
+    }
+    .cc-receipt .r { display: flex; justify-content: space-between; gap: 1rem; }
+    .cc-cover {
+      width: 150px; aspect-ratio: 2 / 3; border-radius: 3px 8px 8px 3px; padding: .8rem .7rem; margin: .4rem 0 .8rem;
+      background: linear-gradient(160deg, #1f3b63, #0f2038); color: #f4e9c8; box-shadow: 6px 8px 16px rgba(0, 0, 0, .45), inset 6px 0 0 rgba(0, 0, 0, .25);
+      font-family: Georgia, serif; display: flex; flex-direction: column; justify-content: space-between; text-align: center;
+    }
+    .cc-cover__t { font-weight: 800; font-size: .95rem; letter-spacing: .06em; line-height: 1.2; }
+    .cc-cover__a { font-size: .8rem; font-style: italic; }
+    .cc-tag {
+      display: grid; place-items: center; width: 220px; height: 92px; margin: .4rem 0 .8rem; border-radius: 46px; position: relative;
+      background: linear-gradient(180deg, #e8ecf1, #aab4c0); color: #1b2230; box-shadow: 0 6px 14px rgba(0, 0, 0, .35);
+      font-family: Georgia, serif; text-align: center; font-size: .82rem; line-height: 1.35; padding: 0 1.4rem;
+    }
+    .cc-tag::before, .cc-tag::after { content: ''; position: absolute; top: 50%; width: 46px; height: 46px; border-radius: 50%; background: linear-gradient(180deg, #e8ecf1, #aab4c0); transform: translateY(-50%); z-index: -1; }
+    .cc-tag::before { left: -14px; } .cc-tag::after { right: -14px; }
+    .cc-tag__name { font-size: 1.7rem; font-weight: 900; letter-spacing: .12em; }
+.cc-cardprop { max-width: 300px; filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .4)); }
+    .cc-cardprop svg, .cc-engrave svg { width: 100%; height: auto; display: block; }
+    .cc-engrave {
+      width: 210px; height: 210px; border-radius: 50%; margin: .4rem auto .8rem; display: grid; place-items: center; text-align: center; padding: 2rem;
+      background: radial-gradient(circle at 35% 30%, #f6d677, #b8891c 60%, #6d4f0c); color: #3a2a04; box-shadow: 0 8px 18px rgba(0, 0, 0, .45), inset 0 0 0 6px rgba(0, 0, 0, .12);
+      font-family: Georgia, serif; font-weight: 700; font-size: .78rem; line-height: 1.35; text-shadow: 0 1px 0 rgba(255, 240, 190, .55);
+    }
+
+    /* ---- Burner phone ---- */
+    .cc-phone {
+      width: 100%; max-width: 236px; margin: 0 auto; aspect-ratio: 9 / 16; border-radius: 28px; padding: 9px; position: relative;
+      background: linear-gradient(160deg, #3a3f47, #121418); box-shadow: 0 18px 40px rgba(0, 0, 0, .55), inset 0 0 0 1px rgba(255, 255, 255, .08);
+    }
+    .cc-phone.is-buzzing { animation: ccBuzz .7s ease-in-out 3; }
+    .cc-phone__screen { position: relative; height: 100%; border-radius: 21px; overflow: hidden; display: flex; flex-direction: column; background: #0b0d12; color: #fff; }
+    .cc-phone__status { display: flex; justify-content: space-between; padding: 8px 16px 0; font-size: .7rem; font-weight: 700; opacity: .9; position: relative; z-index: 2; }
+    .cc-phone__body { flex: 1; display: flex; flex-direction: column; padding: 10px 12px 14px; gap: .55rem; overflow-y: auto; position: relative; z-index: 1; }
+    .cc-wall { position: absolute; inset: 0; z-index: 0; }
+    .cc-wall svg { width: 100%; height: 100%; display: block; }
+    .cc-lock__clock { text-align: center; font-size: 2.6rem; font-weight: 300; margin-top: .4rem; line-height: 1; text-shadow: 0 2px 8px rgba(0, 0, 0, .6); }
+    .cc-lock__date { text-align: center; font-size: .78rem; opacity: .9; text-shadow: 0 1px 4px rgba(0, 0, 0, .7); }
+    .cc-notif {
+      margin-top: auto; background: rgba(245, 248, 252, .95); color: #111827; border-radius: 14px; padding: .6rem .75rem; text-align: left; border: 0; cursor: pointer;
+      font: inherit; box-shadow: 0 6px 18px rgba(0, 0, 0, .35); animation: ccIn .3s ease;
+    }
+    .cc-notif:hover, .cc-notif:focus-visible { outline: 2px solid var(--cc-brass); outline-offset: 2px; }
+    .cc-notif__app { font-size: .68rem; color: #4b5563; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+    .cc-notif__text { font-size: .85rem; font-weight: 700; margin-top: .15rem; }
+    .cc-pbtn { border: 0; border-radius: 10px; padding: .5rem .6rem; font-weight: 800; font-size: .82rem; cursor: pointer; background: rgba(255, 255, 255, .14); color: #fff; }
+    .cc-pbtn:hover, .cc-pbtn:focus-visible { background: rgba(255, 255, 255, .24); outline: 2px solid var(--cc-brass); outline-offset: 1px; }
+    .cc-thread__head { display: flex; align-items: center; gap: .5rem; padding-bottom: .45rem; border-bottom: 1px solid rgba(255, 255, 255, .12); font-size: .8rem; }
+    .cc-thread__head b { font-size: 1.3rem; line-height: 1; }
+    .cc-thread__who { display: inline-flex; align-items: center; gap: .3rem; }
+    .cc-snake { vertical-align: -.2em; display: inline-block; }
+    .cc-bubble { background: #262c38; border-radius: 14px 14px 14px 4px; padding: .55rem .7rem; font-size: .84rem; line-height: 1.45; max-width: 94%; animation: ccIn .3s ease; }
+    .cc-bubble__time { display: block; font-size: .66rem; opacity: .6; margin-top: .25rem; }
+    .cc-codes { display: block; margin-top: .35rem; font-family: 'Courier New', monospace; font-weight: 800; font-size: .98rem; letter-spacing: .04em; color: #ffe08a; word-spacing: .25em; }
+    .cc-scramble { font-family: 'Courier New', monospace; font-weight: 800; letter-spacing: .12em; color: #ffe08a; }
+    .cc-scramble.is-solved { color: var(--accent); text-shadow: 0 0 10px rgba(9, 255, 136, .6); }
+
+    /* ---- Workbench ---- */
+    .cc-bench { margin-top: 1rem; background: #14110d; border: 1px solid #3b2f1f; border-radius: 14px; padding: 1rem; box-shadow: inset 0 0 40px rgba(0, 0, 0, .4); }
+    .cc-bench__head { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; margin-bottom: .8rem; }
+    .cc-bench__head h3 { margin: 0; font-size: 1rem; color: #ffd27a; letter-spacing: .04em; }
+    .cc-tabs { display: flex; gap: .35rem; flex-wrap: wrap; }
+    .cc-tab { border: 1px solid #4a3b26; background: transparent; color: #e8d9bd; border-radius: 999px; padding: .3rem .75rem; font-size: .8rem; font-weight: 700; cursor: pointer; }
+    .cc-tab[aria-selected="true"] { background: rgba(212, 168, 44, .2); border-color: var(--cc-brass); color: #fff; }
+    .cc-tab:focus-visible { outline: 2px solid var(--cc-brass); outline-offset: 2px; }
+    .cc-lesson { margin: 0 0 1rem; padding: .85rem 1rem; border-radius: 12px; background: rgba(9, 255, 136, .07); border: 1px solid rgba(9, 255, 136, .4); animation: ccIn .35s ease; }
+    .cc-lesson__title { font-weight: 800; color: var(--accent); margin: 0 0 .3rem; }
+    .cc-lesson p { margin: 0 0 .6rem; line-height: 1.5; font-size: .93rem; }
+
+    /* Book reader */
+    .cc-bookwrap { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 300px); gap: 1rem; align-items: start; }
+    .cc-book { position: relative; perspective: 1600px; }
+    .cc-spread { display: grid; grid-template-columns: 1fr 1fr; border-radius: 6px; box-shadow: 0 14px 30px rgba(0, 0, 0, .55); position: relative; }
+    .cc-spread::after { content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 26px; transform: translateX(-50%); background: linear-gradient(90deg, transparent, rgba(0, 0, 0, .18), transparent); pointer-events: none; }
+    .cc-page {
+      container-type: inline-size; position: relative; background: linear-gradient(90deg, #efe6cc, #f7f0dc 12%, #f7f0dc); color: #2b241a; min-height: 330px;
+      padding: 1.1rem 1rem 2rem; font-family: Georgia, 'Times New Roman', serif;
+    }
+    .cc-page:first-child { border-radius: 6px 0 0 6px; background: linear-gradient(270deg, #e9dfc3, #f7f0dc 12%, #f7f0dc); }
+    .cc-page:last-child { border-radius: 0 6px 6px 0; }
+    .cc-line { white-space: nowrap; font-size: clamp(9px, 4.15cqw, 16px); line-height: 1.85; }
+    .cc-w { cursor: pointer; border-radius: 3px; padding: 0 1px; }
+    .cc-w:hover { background: rgba(212, 168, 44, .3); }
+    .cc-w.is-picked { background: rgba(9, 160, 90, .28); box-shadow: 0 0 0 1px rgba(9, 160, 90, .5); }
+    .cc-pageno { position: absolute; bottom: .6rem; left: 0; right: 0; text-align: center; font-size: .8rem; color: #6b5c44; }
+    .cc-titlepage { text-align: center; display: flex; flex-direction: column; justify-content: center; gap: .6rem; height: 100%; min-height: 290px; }
+    .cc-titlepage b { font-size: 1.15rem; letter-spacing: .08em; }
+    .cc-inside { min-height: 290px; display: flex; flex-direction: column; justify-content: space-between; color: #6b5c44; font-size: .85rem; }
+    .cc-inside .cc-ink { font-size: clamp(14px, 7cqw, 22px); text-align: center; letter-spacing: .05em; }
+    .cc-leaf {
+      position: absolute; top: 0; bottom: 0; right: 0; width: 50%; transform-origin: left center; z-index: 3; pointer-events: none;
+      background: linear-gradient(90deg, #e6dcc0, #f7f0dc); border-radius: 0 6px 6px 0; box-shadow: -6px 0 18px rgba(0, 0, 0, .25);
+      animation: ccLeafNext .5s ease-in forwards;
+    }
+    .cc-leaf.is-prev { left: 0; right: auto; transform-origin: right center; border-radius: 6px 0 0 6px; animation-name: ccLeafPrev; }
+    @keyframes ccLeafNext { from { transform: rotateY(0); } to { transform: rotateY(-180deg); opacity: .4; } }
+    @keyframes ccLeafPrev { from { transform: rotateY(0); } to { transform: rotateY(180deg); opacity: .4; } }
+    .cc-booknav { display: flex; align-items: center; justify-content: center; gap: .6rem; margin-top: .7rem; flex-wrap: wrap; }
+    .cc-booknav span { font-size: .85rem; color: var(--muted); min-width: 7rem; text-align: center; }
+    .cc-notepad {
+      background: #fffbe8; color: #2b2410; border-radius: 4px; padding: .9rem .9rem 1rem; box-shadow: 0 8px 18px rgba(0, 0, 0, .45);
+      background-image: repeating-linear-gradient(180deg, transparent 0 27px, rgba(80, 120, 200, .25) 27px 28px); border-top: 14px solid #c84b3b;
+    }
+    .cc-notepad h4 { margin: 0 0 .45rem; font-size: .95rem; color: #2b2410; }
+    .cc-notepad p { margin: 0 0 .5rem; font-size: .82rem; line-height: 1.4; color: #4a3f22; }
+    .cc-slot { display: grid; grid-template-columns: 4.6rem 1fr; gap: .45rem; align-items: center; margin-bottom: .4rem; }
+    .cc-slot code { font-family: 'Courier New', monospace; font-weight: 800; font-size: .95rem; color: #6b2d10; background: transparent; }
+    .cc-slot input, .cc-ws input {
+      min-width: 0; width: 100%; border: 1px solid #b9ab7c; border-radius: 6px; padding: .35rem .5rem; background: #fffdf3; color: #1d1708;
+      font-family: 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive; font-size: .95rem; font-weight: 700;
+    }
+    .cc-slot input:focus, .cc-ws input:focus { outline: 2px solid #c88f17; outline-offset: 1px; }
+    .cc-slot.is-active input { border-color: #c88f17; box-shadow: 0 0 0 2px rgba(200, 143, 23, .35); }
+    .cc-slot.is-right input { border-color: #2f9a5b; background: #eefbe9; }
+    .cc-notepad .btn { margin-top: .3rem; }
+    .cc-decoded { font-family: 'Courier New', monospace; font-weight: 800; color: #1d6b3c; letter-spacing: .06em; }
+
+    /* Stencil */
+    .cc-stencil { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(210px, 1fr); gap: 1rem; align-items: start; }
+    .cc-newspage { background: var(--cc-paper); color: var(--cc-paper-ink); border-radius: 4px; padding: .9rem; box-shadow: 0 10px 24px rgba(0, 0, 0, .5); font-family: Georgia, serif; }
+    .cc-newspage h4 { margin: 0; font-size: 1.05rem; letter-spacing: .05em; text-transform: uppercase; }
+    .cc-newspage p { margin: .15rem 0 .6rem; font-size: .82rem; color: #5b4f3a; }
+    .cc-gridwrap { position: relative; width: 100%; max-width: 450px; aspect-ratio: 3 / 2; margin: 0 auto; }
+    .cc-grid { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(9, 1fr); grid-template-rows: repeat(6, 1fr); border: 2px solid #3d3324; background: #fbf6e6; }
+    .cc-cell { display: grid; place-items: center; font-family: 'Courier New', monospace; font-weight: 800; font-size: clamp(13px, 3.4vw, 22px); color: #2b241a; border: 1px solid rgba(61, 51, 36, .12); }
+    .cc-cell.is-lit { color: #000; background: #ffe680; }
+    .cc-gridink { position: absolute; inset: -12px; border: 3px dashed; border-color: inherit; border-radius: 16px; line-height: 1; }
+    .cc-cupink { position: absolute; top: -30px; right: -18px; color: #e3c8ff; filter: drop-shadow(0 0 6px var(--cc-uv)); }
+    .cc-wordlist { font-size: .82rem; color: #4b4030; margin-top: .9rem; text-align: center; letter-spacing: .06em; }
+    .cc-tray { background: #1d1913; border: 1px dashed #5a4a30; border-radius: 12px; padding: .8rem; display: grid; gap: .6rem; justify-items: center; text-align: center; }
+    .cc-tray h4 { margin: 0; font-size: .85rem; color: #e8d9bd; letter-spacing: .06em; text-transform: uppercase; }
+    .cc-tray__slot { width: 100%; max-width: 240px; aspect-ratio: 3 / 2; display: grid; place-items: center; color: var(--muted); font-size: .85rem; }
+.cc-tray__slot.is-empty { aspect-ratio: auto; padding: .6rem 0; }
+    .cc-tray__slot.is-empty::before { content: 'The card is lying on the puzzle.'; }
+    .cc-card { width: 100%; height: 100%; cursor: grab; touch-action: none; transition: transform .6s ease; filter: drop-shadow(0 8px 12px rgba(0, 0, 0, .45)); }
+    .cc-card svg { width: 100%; height: 100%; display: block; }
+    .cc-card.is-dragging { cursor: grabbing; transition: none; position: fixed; z-index: 1000; pointer-events: none; opacity: .92; }
+    .cc-card.is-placed { position: absolute; inset: 0; cursor: default; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, .35)); }
+    .cc-readout { min-height: 2.6rem; font-family: 'Courier New', monospace; font-weight: 800; letter-spacing: .3em; color: #ffe08a; font-size: 1.15rem; text-align: center; margin-top: .7rem; }
+    .cc-readout small { display: block; font-family: inherit; letter-spacing: .02em; font-weight: 600; font-size: .78rem; color: var(--muted); }
+    .cc-readout.is-good { color: var(--accent); }
+    .cc-dropglow { box-shadow: 0 0 0 4px rgba(212, 168, 44, .55), 0 0 24px rgba(212, 168, 44, .45); }
+
+    /* Cipher disk */
+    .cc-diskwrap { display: grid; grid-template-columns: minmax(260px, 400px) minmax(0, 1fr); gap: 1.2rem; align-items: start; }
+    .cc-disk { width: 100%; max-width: 400px; margin: 0 auto; touch-action: none; }
+    .cc-disk svg { width: 100%; height: auto; display: block; }
+    .cc-disk__inner { cursor: grab; outline: none; }
+    .cc-disk__inner:focus-visible .cc-ringhalo { stroke: #fff; stroke-width: 3; }
+    .cc-disk.is-dragging .cc-disk__inner { cursor: grabbing; }
+    .cc-ringrot { transition: transform .35s cubic-bezier(.3, 1.4, .5, 1); transform-origin: 200px 200px; }
+    .cc-disk.is-dragging .cc-ringrot { transition: none; }
+    .cc-dl { font-family: Georgia, serif; font-weight: 800; font-size: 19px; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+    .cc-dl--out { fill: #2e2104; }
+    .cc-dl--in { fill: #f7e3a6; }
+    .cc-dl.is-spot { fill: #0bff8c; }
+    .cc-hit { fill: transparent; cursor: pointer; }
+    .cc-diskctl { display: flex; align-items: center; justify-content: center; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
+    .cc-diskread { text-align: center; font-size: .92rem; color: #e8d9bd; margin-top: .4rem; min-height: 2.6em; line-height: 1.4; }
+    .cc-diskread b { color: #ffe08a; font-family: 'Courier New', monospace; font-size: 1.1rem; }
+    .cc-spot { display: inline-flex; align-items: center; gap: .4rem; font-size: .85rem; color: var(--muted); }
+    .cc-spot input { width: 2.6rem; text-align: center; text-transform: uppercase; padding: .3rem; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: #fff; font-weight: 800; }
+    .cc-ws { background: #fffbe8; color: #2b2410; border-radius: 6px; padding: .9rem 1rem; box-shadow: 0 8px 18px rgba(0, 0, 0, .45); border-top: 14px solid #2f5d8a; }
+    .cc-ws h4 { margin: 0 0 .5rem; font-size: .98rem; }
+    .cc-ws p { margin: 0 0 .5rem; font-size: .84rem; line-height: 1.45; color: #4a3f22; }
+    .cc-wsgrid { display: grid; grid-template-columns: 5.5rem repeat(5, minmax(0, 2.6rem)); gap: .35rem; align-items: center; margin: .5rem 0 .7rem; }
+    .cc-wsgrid .lab { font-size: .76rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: #6b5c3a; }
+    .cc-wsgrid .box { height: 2.4rem; display: grid; place-items: center; border-radius: 6px; font-family: 'Courier New', monospace; font-weight: 900; font-size: 1.2rem; }
+    .cc-wsgrid .box--code { background: #2b2410; color: #ffe08a; }
+    .cc-wsgrid .box--key { background: #e9e1c6; color: #2f5d8a; }
+    .cc-wsgrid input { text-align: center; text-transform: uppercase; padding: .3rem 0; height: 2.4rem; font-family: 'Courier New', monospace; font-weight: 900; font-size: 1.2rem; }
+    .cc-keyrow { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-bottom: .2rem; }
+    .cc-keyrow label { font-size: .84rem; font-weight: 800; }
+    .cc-keyrow input { max-width: 11rem; text-transform: uppercase; letter-spacing: .15em; }
+    .cc-laptop { margin-top: 1rem; background: #07090c; border: 6px solid #2a2f37; border-bottom-width: 12px; border-radius: 10px; padding: .7rem .8rem; font-family: 'Courier New', monospace; color: #8fe3b0; font-size: .78rem; }
+    .cc-laptop__bar { color: var(--muted); font-size: .72rem; margin-bottom: .4rem; font-family: system-ui, sans-serif; }
+    .cc-laptop__list { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.8rem, 1fr)); gap: .1rem .6rem; max-height: 130px; overflow: hidden; }
+    .cc-laptop__list span { animation: ccIn .2s ease; }
+    .cc-laptop__list i { color: #ff7a7a; font-style: normal; }
+    .cc-laptop__sum { margin-top: .5rem; color: #ffd27a; }
+
+    /* ---- Kit: codes cracked + notebook ---- */
+    .cc-kit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 1rem; margin-top: 1rem; }
+    .cc-kit__panel { background: var(--panel-2); border: 1px solid var(--border); border-radius: 14px; padding: 1rem; }
+    .cc-kit__panel h3 { margin: 0 0 .6rem; font-size: 1rem; display: flex; align-items: baseline; gap: .5rem; justify-content: space-between; }
+    .cc-kit__panel h3 small { color: var(--muted); font-weight: 600; font-size: .78rem; }
+    .cc-codesgrid { display: grid; gap: .5rem; }
+    .cc-codetile { display: flex; gap: .7rem; align-items: center; padding: .55rem .7rem; border-radius: 10px; border: 2px dashed var(--border); color: var(--muted); font-size: .86rem; line-height: 1.35; }
+    .cc-codetile .n { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: rgba(139, 148, 158, .12); font-weight: 800; flex: none; }
+    .cc-codetile b { display: block; color: var(--ink); }
+    .cc-codetile.is-done { border-style: solid; border-color: rgba(9, 255, 136, .45); background: rgba(9, 255, 136, .05); color: var(--ink); animation: ccIn .4s ease; }
+    .cc-codetile.is-done .n { background: rgba(9, 255, 136, .15); color: var(--accent); }
+    .cc-clues { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+    .cc-clues li { font-size: .86rem; line-height: 1.4; padding: .45rem .6rem; border-radius: 8px; background: rgba(255, 210, 122, .06); border-left: 3px solid #ffd27a; }
+    .cc-clues li b { color: #ffe9a0; }
+    .cc-clues li.is-uv { border-left-color: var(--cc-uv); background: rgba(180, 124, 255, .08); }
+
+    /* ---- Completion (near the top of the page) ---- */
+    .cc-complete { border: 1px solid rgba(9, 255, 136, .55); background: radial-gradient(circle at top left, rgba(9, 255, 136, .18), transparent 60%), var(--panel); text-align: center; display: grid; gap: .6rem; justify-items: center; }
+    .cc-complete h2 { color: var(--accent); margin: 0; }
+    .cc-codeword { font: 800 clamp(1.8rem, 6vw, 2.8rem)/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .25em; color: #fff; padding: .5rem 1.25rem; border-radius: 12px; border: 2px dashed var(--accent); background: rgba(9, 255, 136, .08); }
+    .cc-row { display: flex; gap: .6rem; flex-wrap: wrap; justify-content: center; }
+    .cc-debrief { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .8rem; text-align: left; margin-top: .6rem; width: 100%; }
+    .cc-debrief__card { background: rgba(0, 0, 0, .25); border: 1px solid var(--border); border-radius: 12px; padding: .85rem 1rem; }
+    .cc-debrief__card h3 { font-size: .95rem; margin: 0 0 .4rem; color: #fff; }
+    .cc-debrief__card ul { margin: 0; padding-left: 1.1rem; font-size: .88rem; line-height: 1.5; color: var(--ink); }
+    .cc-lockword { display: inline-flex; align-items: center; gap: .4rem; font-weight: 700; color: #fff; }
+
+    @media (max-width: 960px) {
+      .cc-layout, .cc-kit, .cc-diskwrap { grid-template-columns: 1fr; }
+      .cc-bookwrap, .cc-stencil { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 700px) {
+      .cc-spread { grid-template-columns: 1fr; }
+      .cc-spread::after { display: none; }
+      .cc-page, .cc-page:first-child, .cc-page:last-child { border-radius: 6px; }
+      .cc-leaf, .cc-leaf.is-prev { width: 100%; }
+      .cc-page { min-height: 0; padding-bottom: 2.4rem; }
+      .cc-booknav span { min-width: 4.6rem; }
+    }
+    @media (max-width: 560px) {
+      .cc-room { padding: .85rem; }
+      .cc-scene { aspect-ratio: 4 / 3.4; }
+      .cc-hs__label { font-size: 8px; padding: 1px 4px; }
+      .cc-wsgrid { grid-template-columns: 3.6rem repeat(5, minmax(0, 1fr)); }
+      .cc-phone { max-width: 230px; aspect-ratio: auto; min-height: 400px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .cc-hs, .cc-msg, .cc-flip__inner, .cc-card, .cc-ringrot, .cc-leaf, .cc-codetile, .cc-lesson { animation: none !important; transition: none !important; }
+      .cc-hs.is-buzzing svg, .cc-phone.is-buzzing { animation: none !important; }
+    }
+  </style>
+</head>
+
+<body data-session="team">
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <!-- Global Header -->
+  <header class="site-header site-header--bar" aria-label="Global">
+    <div class="site-header__inner">
+      <div class="header-left">
+        <button class="nav-btn ghost nav-btn--back" type="button" data-back="game.html" data-tooltip="Back to previous page">
+          <span aria-hidden="true">&larr;</span>
+          <span>Back</span>
+        </button>
+        <a class="brand" href="game.html">
+          <img src="assets/logo.png" alt="" class="logo" />
+          <span class="brand-copy">
+            <span class="brand-name">Cyber Escape Rooms</span>
+            <span class="brand-tagline">Team-based security missions</span>
+          </span>
+        </a>
+      </div>
+
+      <div class="header-actions">
+        <nav class="main-nav" aria-label="Primary">
+          <a class="nav-link" href="game.html">Mission Hub</a>
+        </nav>
+        <a class="nav-btn nav-btn--next" href="forensics.html" aria-label="Next challenge: Network Forensics">
+          Next<span aria-hidden="true">&rarr;</span>
+        </a>
+        <div class="vault-status" id="vaultStatus" role="status" aria-live="polite" data-visible="team">
+          <span class="vault-status__label">Vault</span>
+          <ol class="vault-status__digits">
+            <li data-vault-key="phishing">&bull;</li>
+            <li data-vault-key="osint">&bull;</li>
+            <li data-vault-key="incident">&bull;</li>
+            <li data-vault-key="mfa">&bull;</li>
+            <li data-vault-key="crypto">&bull;</li>
+            <li data-vault-key="forensics">&bull;</li>
+          </ol>
+          <span class="vault-status__count">0/6</span>
+        </div>
+        <button class="nav-btn alert nav-btn--logout" type="button" data-action="logout">Logout</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container" id="main" role="main" tabindex="-1">
+    <header class="game-header">
+      <h1 class="glow">Encryption</h1>
+      <p class="mt-1" style="color:var(--muted)">
+        A captured courier. A briefcase full of codes. A handover tonight.
+      </p>
+    </header>
+
+    <section class="intro-banner mt-2" aria-labelledby="ccBriefHeading">
+      <h2 id="ccBriefHeading">Mission briefing: the courier's case</h2>
+      <p>Last night a criminal crew stole <strong>Harbourline Insurance's</strong> customer records, and tonight they plan to sell them. Police stopped one of the crew's couriers at Central Station. He isn't talking, and everything in his briefcase is written in code.</p>
+      <p>Detective Sergeant Kemi Adeyemi has asked Harbourline's security team (that's you) to help. The courier is in the interview room next door, and the microphone is on.</p>
+      <ol>
+        <li><strong>Search the briefcase.</strong> Click anything to look at it up close, and turn things over. Useful finds go in your notebook.</li>
+        <li><strong>Crack the crew's codes.</strong> Every code has a key, and the keys are hidden somewhere in the case.</li>
+        <li><strong>Find the handover password</strong> before the buyer turns up.</li>
+      </ol>
+      <div class="vault-callout" role="status">
+        <span class="tag">Code word</span>
+        <p id="cryptoVaultValue"><span class="cc-lockword">Locked.</span> Crack the courier's codes to reveal this room's code word.</p>
+      </div>
+    </section>
+
+    <section class="status-hud mt-2" aria-label="Team status">
+      <div class="points-box">
+        <p class="points-box__label">Team points</p>
+        <p class="points-box__value" id="cryptoPointsTotal">000</p>
+        <p class="points-box__delta" id="cryptoPointsDelta" aria-live="polite"></p>
+      </div>
+      <div class="progress-mini">
+        <p class="progress-mini__label">Puzzle progress</p>
+        <div class="progress-mini__track">
+          <div class="progress-mini__fill" id="cryptoProgressFill"></div>
+        </div>
+        <p class="progress-mini__text" id="cryptoProgressText">0% complete</p>
+      </div>
+    </section>
+
+    <section class="card points-card mt-2" aria-labelledby="ccPointsHeading">
+      <details class="points-panel">
+        <summary id="ccPointsHeading">Points intel</summary>
+        <ul>
+          <li>Trying a message that doesn't decode yet: <strong>-2 points</strong>. You'll be told how many words or letters you got right.</li>
+          <li>Each hint: <strong>-5 points</strong>. Hints get more detailed each time you ask.</li>
+          <li>Looking around, picking things up and using the gadgets is always free.</li>
+        </ul>
+      </details>
+    </section>
+
+    <!-- Completion card (filled by js/crypto.js when the room is solved) -->
+    <section class="card cc-complete mt-2" id="cryptoComplete" hidden aria-live="polite" tabindex="-1"></section>
+
+    <!-- ================= The room ================= -->
+    <section class="card cc-room mt-2" id="ccRoom" aria-labelledby="ccStageTitle">
+      <div class="cc-topbar">
+        <span class="cc-pill" id="ccPill"><span class="dot" aria-hidden="true"></span><span id="ccStageTitle">Code 1</span></span>
+        <div class="cc-tools">
+          <button class="btn ghost sm cc-uvbtn" type="button" id="ccUvBtn" aria-pressed="false" hidden>UV torch: off</button>
+          <button class="btn ghost sm" type="button" id="ccHintBtn">Hint (-5 pts)</button>
+        </div>
+      </div>
+      <div class="cc-hint-text" id="ccHintText" role="status" hidden></div>
+
+      <!-- Radio: DS Kemi Adeyemi + the interview room microphone -->
+      <div class="cc-radio" aria-label="Radio with Detective Sergeant Kemi Adeyemi and the interview room microphone">
+        <div class="cc-radio__head">
+          <span class="cc-avatar cc-avatar--kemi" aria-hidden="true">KA</span>
+          <span class="cc-avatar cc-avatar--courier" aria-hidden="true">?</span>
+          <span>Radio: DS Kemi Adeyemi &middot; Interview room mic</span>
+          <span class="cc-radio__live">Rec</span>
+        </div>
+        <div class="cc-feed" id="ccFeed" aria-live="polite"></div>
+      </div>
+
+      <div class="cc-layout">
+        <div>
+          <p class="cc-help">The courier's open briefcase. Click on anything to take a closer look.</p>
+          <div class="cc-scene cc-uvzone" id="ccScene" role="group" aria-label="The courier's open briefcase. Each item is a button you can inspect.">
+            <div class="cc-case cc-case--lid" aria-hidden="true"><div class="cc-lining"></div></div>
+            <div class="cc-hinge" aria-hidden="true"></div>
+            <div class="cc-case cc-case--base" aria-hidden="true"><div class="cc-lining"></div><span class="cc-latch cc-latch--l"></span><span class="cc-latch cc-latch--r"></span></div>
+            <div class="cc-pocket" aria-hidden="true"></div>
+
+            <button class="cc-hs cc-hs--top hs-paper" type="button" data-item="paper" aria-label="Folded newspaper">
+              <svg viewBox="0 0 120 130" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+                <rect x="2" y="2" width="116" height="126" rx="2" fill="#e9e2cc"/>
+                <rect x="10" y="9" width="100" height="12" fill="#2b241a"/>
+                <rect x="10" y="26" width="64" height="5" fill="#5b5040"/><rect x="10" y="34" width="56" height="5" fill="#5b5040"/>
+                <g fill="#a49a85"><rect x="10" y="45" width="44" height="2"/><rect x="10" y="50" width="44" height="2"/><rect x="10" y="55" width="44" height="2"/><rect x="10" y="60" width="44" height="2"/><rect x="10" y="65" width="44" height="2"/><rect x="10" y="70" width="44" height="2"/><rect x="10" y="75" width="40" height="2"/><rect x="10" y="85" width="44" height="2"/><rect x="10" y="90" width="44" height="2"/><rect x="10" y="95" width="44" height="2"/><rect x="10" y="100" width="44" height="2"/><rect x="10" y="105" width="34" height="2"/></g>
+                <rect x="62" y="64" width="48" height="34" fill="#fbf6e6" stroke="#2b241a" stroke-width="1.5"/>
+                <g stroke="#c9bfa6" stroke-width=".8"><path d="M67.3 64v34M72.7 64v34M78 64v34M83.3 64v34M88.7 64v34M94 64v34M99.3 64v34M104.7 64v34M62 69.7h48M62 75.3h48M62 81h48M62 86.7h48M62 92.3h48"/></g>
+                <rect x="62" y="45" width="48" height="14" fill="#7a6e58"/>
+                <path d="M2 128 L118 128" stroke="#cfc6ae" stroke-width="3"/>
+              </svg>
+              <span class="cc-hs__label">Newspaper</span>
+            </button>
+
+            <button class="cc-hs hs-ticket" type="button" data-item="ticket" aria-label="Train ticket tucked in the lid pocket">
+              <svg viewBox="0 0 100 50" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+                <rect x="2" y="4" width="96" height="44" rx="4" fill="#ffe2b3" transform="rotate(-6 50 26)"/>
+                <g transform="rotate(-6 50 26)">
+                  <rect x="2" y="4" width="10" height="44" fill="#d9622b"/>
+                  <rect x="18" y="12" width="50" height="5" fill="#6b3a10"/><rect x="18" y="22" width="62" height="3" fill="#b07a40"/><rect x="18" y="29" width="40" height="3" fill="#b07a40"/>
+                  <rect x="74" y="10" width="18" height="18" fill="none" stroke="#6b3a10" stroke-width="2"/>
+                </g>
+              </svg>
+              <span class="cc-hs__label">Ticket</span>
+            </button>
+
+            <button class="cc-hs hs-receipt" type="button" data-item="receipt" aria-label="Crumpled receipt tucked in the lid pocket">
+              <svg viewBox="0 0 50 110" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+                <path d="M4 2 L46 4 L45 100 L40 104 L35 100 L30 104 L25 100 L20 104 L15 100 L10 104 L5 100 Z" fill="#f7f7f1" transform="rotate(4 25 55)"/>
+                <g fill="#9aa0a6" transform="rotate(4 25 55)"><rect x="12" y="10" width="26" height="4"/><rect x="9" y="22" width="30" height="2"/><rect x="9" y="28" width="22" height="2"/><rect x="9" y="34" width="28" height="2"/><rect x="9" y="40" width="18" height="2"/><rect x="9" y="52" width="32" height="3"/></g>
+              </svg>
+              <span class="cc-hs__label">Receipt</span>
+            </button>
+
+            <button class="cc-hs hs-book" type="button" data-item="book" aria-label="Paperback novel">
+              <svg viewBox="0 0 70 100" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+                <g transform="rotate(5 35 50)">
+                  <rect x="6" y="4" width="58" height="92" rx="3" fill="#e9dfc4"/>
+                  <rect x="4" y="2" width="58" height="92" rx="3" fill="#1f3b63"/>
+                  <rect x="4" y="2" width="6" height="92" fill="#132743"/>
+                  <rect x="16" y="12" width="38" height="4" fill="#f4e9c8"/><rect x="20" y="20" width="30" height="3" fill="#f4e9c8"/>
+                  <path d="M33 40 L37 40 L39 74 L31 74 Z" fill="#f4e9c8"/><rect x="31" y="34" width="8" height="6" fill="#ffd27a"/>
+                  <path d="M39 37 L56 32 L56 42 Z" fill="#ffd27a" opacity=".55"/>
+                  <path d="M10 78 Q24 72 34 78 T62 78 L62 94 L10 94 Z" fill="#163152"/>
+                  <rect x="22" y="84" width="26" height="3" fill="#c9b98c"/>
+                </g>
+              </svg>
+              <span class="cc-hs__label">Paperback</span>
+            </button>
+
+            <button class="cc-hs hs-phone" type="button" data-item="phone" aria-label="Burner phone">
+              <svg viewBox="0 0 50 100" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+                <rect class="cc-glow" x="-4" y="-4" width="58" height="108" rx="12" fill="none" stroke="#ffd27a" stroke-width="3" opacity="0"/>
+                <rect x="3" y="2" width="44" height="96" rx="8" fill="#16181d" stroke="#3a3f47" stroke-width="2"/>
+                <rect x="7" y="10" width="36" height="78" rx="3" fill="#0e1830"/>
+                <circle cx="25" cy="38" r="9" fill="#a37a52"/><circle cx="20" cy="36" r="2" fill="#2b1a0e"/><circle cx="30" cy="36" r="2" fill="#2b1a0e"/><ellipse cx="25" cy="42" rx="3" ry="2" fill="#2b1a0e"/>
+                <path d="M16 31 L13 24 L20 29 Z M34 31 L37 24 L30 29 Z" fill="#7d5a36"/>
+                <rect x="11" y="60" width="28" height="10" rx="3" fill="#f4f6f8" opacity=".9"/>
+                <rect x="20" y="92" width="10" height="2" rx="1" fill="#555"/>
+              </svg>
+              <span class="cc-hs__label">Phone</span>
+            </button>
+
+            <button class="cc-hs hs-card" type="button" data-item="card" aria-label="Coffee loyalty card">
+              <svg viewBox="0 0 90 60" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+                <rect x="2" y="2" width="86" height="56" rx="5" fill="#e3cfa6" stroke="#9c7a45" stroke-width="1.5"/>
+                <text x="8" y="14" font-size="8" font-weight="900" fill="#5b3a1e" font-family="Georgia, serif">THE DAILY GRIND</text>
+                <path d="M70 8 h10 v8 a5 5 0 0 1 -10 0 z" fill="#5b3a1e"/>
+                <g fill="#1d1611"><circle cx="15" cy="7" r="2.6"/><circle cx="65" cy="7" r="2.6"/><circle cx="35" cy="16" r="2.6"/><circle cx="85" cy="16" r="2.6"/><circle cx="5" cy="25" r="2.6"/><circle cx="55" cy="25" r="2.6"/><circle cx="25" cy="35" r="2.6"/><circle cx="75" cy="44" r="2.6"/></g>
+                <g fill="none" stroke="#9c7a45" stroke-width="1"><circle cx="12" cy="50" r="3.5"/><circle cx="21" cy="50" r="3.5"/><circle cx="30" cy="50" r="3.5"/><circle cx="39" cy="50" r="3.5"/><circle cx="48" cy="50" r="3.5"/></g>
+              </svg>
+              <span class="cc-hs__label">Coffee card</span>
+            </button>
+
+            <button class="cc-hs hs-disk" type="button" data-item="disk" aria-label="Brass disk with letters">
+              <svg viewBox="0 0 100 100" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+                <circle cx="50" cy="50" r="47" fill="#c9971f" stroke="#6d4f0c" stroke-width="2"/>
+                <circle cx="50" cy="50" r="35" fill="#8f6a12" stroke="#5f4509" stroke-width="2"/>
+                <circle cx="50" cy="50" r="22" fill="#d9b04a" stroke="#6d4f0c" stroke-width="1.5"/>
+                <g stroke="#5f4509" stroke-width="1.2"><path d="M50 3 v8 M50 89 v8 M3 50 h8 M89 50 h8 M17 17 l6 6 M77 77 l6 6 M83 17 l-6 6 M17 83 l6 -6"/></g>
+                <g stroke="#f2d27a" stroke-width="1" opacity=".8"><path d="M50 15 v6 M50 79 v6 M15 50 h6 M79 50 h6 M25 25 l4 4 M71 71 l4 4 M75 25 l-4 4 M25 75 l4 -4"/></g>
+                <circle cx="50" cy="50" r="5" fill="#6d4f0c"/>
+              </svg>
+              <span class="cc-hs__label">Brass disk</span>
+            </button>
+
+            <button class="cc-hs hs-pen" type="button" data-item="pen" aria-label="Chunky black pen">
+              <svg viewBox="0 0 20 140" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+                <g transform="rotate(12 10 70)">
+                  <circle class="cc-penlight" cx="10" cy="6" r="7" fill="#b47cff" opacity="0"/>
+                  <rect x="4" y="4" width="12" height="38" rx="5" fill="#22252b"/>
+                  <rect x="13" y="10" width="3" height="26" rx="1.5" fill="#b9c0c9"/>
+                  <rect x="5" y="42" width="10" height="80" rx="3" fill="#15171b"/>
+                  <rect x="5" y="44" width="10" height="4" fill="#3a3f47"/>
+                  <path d="M5 122 L15 122 L10 136 Z" fill="#9aa4b2"/>
+                </g>
+              </svg>
+              <span class="cc-hs__label">Pen</span>
+            </button>
+
+            <button class="cc-hs hs-keys" type="button" data-item="keys" aria-label="Keyring with a tag">
+              <svg viewBox="0 0 80 100" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+                <circle cx="30" cy="22" r="14" fill="none" stroke="#b9c0c9" stroke-width="3.5"/>
+                <g fill="#c9a24a"><rect x="38" y="30" width="7" height="36" rx="2" transform="rotate(-20 41 48)"/><circle cx="36" cy="28" r="8" fill="#c9a24a"/></g>
+                <g fill="#aab4c0"><rect x="14" y="34" width="7" height="34" rx="2" transform="rotate(14 17 50)"/><circle cx="20" cy="32" r="7"/></g>
+                <g transform="rotate(-8 50 82)">
+                  <rect x="34" y="74" width="36" height="16" rx="8" fill="#dfe5ec"/>
+                  <circle cx="34" cy="76" r="6" fill="#dfe5ec"/><circle cx="34" cy="88" r="6" fill="#dfe5ec"/><circle cx="70" cy="76" r="6" fill="#dfe5ec"/><circle cx="70" cy="88" r="6" fill="#dfe5ec"/>
+                  <rect x="40" y="80" width="24" height="3" fill="#8a96a5"/>
+                </g>
+              </svg>
+              <span class="cc-hs__label">Keys</span>
+            </button>
+
+            <button class="cc-hs hs-mints" type="button" data-item="mints" aria-label="Tin of mints">
+              <svg viewBox="0 0 70 50" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+                <rect x="3" y="4" width="64" height="42" rx="8" fill="#e8eef0" stroke="#98a4a8" stroke-width="2"/>
+                <rect x="10" y="12" width="50" height="26" rx="4" fill="#2f8f6b"/>
+                <text x="35" y="30" font-size="11" font-weight="900" fill="#f4f6f8" text-anchor="middle" font-family="Arial, sans-serif">MINTS</text>
+              </svg>
+              <span class="cc-hs__label">Mints</span>
+            </button>
+
+            <button class="cc-hs hs-glasses" type="button" data-item="glasses" aria-label="Sunglasses">
+              <svg viewBox="0 0 120 50" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+                <path d="M8 14 Q4 40 28 42 Q50 42 52 20 Q52 12 40 12 L16 12 Q8 12 8 14 Z" fill="#3c4f66" stroke="#111" stroke-width="3"/>
+                <path d="M68 20 Q70 42 92 42 Q116 40 112 14 Q112 12 104 12 L80 12 Q68 12 68 20 Z" fill="#3c4f66" stroke="#111" stroke-width="3"/>
+                <path d="M52 18 Q60 12 68 18" stroke="#111" stroke-width="3" fill="none"/>
+                <path d="M14 18 L26 30 M76 18 L88 30" stroke="#9fc2e8" stroke-width="3" opacity=".6"/>
+              </svg>
+              <span class="cc-hs__label">Sunglasses</span>
+            </button>
+
+            <div class="cc-uvlayer" aria-hidden="true"></div>
+          </div>
+        </div>
+
+        <div class="cc-side">
+          <div class="cc-closeup cc-uvzone" id="ccCloseup" aria-live="polite" tabindex="-1">
+            <p class="cc-empty">Nothing picked up yet. Click something in the briefcase to look at it up close.</p>
+          </div>
+          <div id="ccHands" hidden>
+            <p class="cc-eyebrow" style="margin-bottom:.5rem">In your hands: the courier's phone</p>
+            <div class="cc-phone" id="ccPhone"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Workbench: the book, the puzzle page and the brass disk open here -->
+      <div class="cc-bench" id="ccBench" hidden tabindex="-1" aria-labelledby="ccBenchTitle">
+        <div class="cc-bench__head">
+          <h3 id="ccBenchTitle">Workbench</h3>
+          <div class="cc-tabs" id="ccTabs" role="tablist" aria-label="Things on the workbench"></div>
+        </div>
+        <div id="ccLesson"></div>
+        <div id="ccBenchBody"></div>
+      </div>
+
+      <div class="cc-kit">
+        <div class="cc-kit__panel">
+          <h3>Codes cracked <small id="ccCodesCount">none yet</small></h3>
+          <div class="cc-codesgrid" id="ccCodes"></div>
+        </div>
+        <div class="cc-kit__panel">
+          <h3>Notebook <small>clues you've found</small></h3>
+          <ul class="cc-clues" id="ccClues"></ul>
+        </div>
+      </div>
+    </section>
+
+    <nav class="challenge-nav mt-2" aria-label="Puzzle navigation">
+      <a class="btn ghost" href="mfa.html">&larr; MFA / Authentication</a>
+      <a class="btn ghost" href="game.html">Mission Hub</a>
+      <a class="btn" href="forensics.html">Next: Network Forensics &rarr;</a>
+    </nav>
+  </main>
+
+  <!-- Global Footer -->
+  <footer class="site-footer header-bleed">
+    <div class="footer-inner">
+      <nav class="footer-nav" aria-label="Footer">
+        <a href="index.html">Home</a>
+        <span aria-hidden="true">&bull;</span>
+        <a href="game.html">Mission Hub</a>
+      </nav>
+      <p class="footer-note">Crack the courier's codes to earn your code word.</p>
+      <p class="footer-copy"><small>&copy; 2026 Cyber Escape Rooms</small></p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -40,6 +40,8 @@
   const VALID_PASSWORDS = ['sunflower27', 'sunflowers27'];
 
   const points = window.utils?.points;
+  // Room state lives in one localStorage key shared by every team on this browser.
+  const TEAM_ID = String(window.utils?.getUser?.()?.username || '').toLowerCase();
 
   // ---------- State ----------
   function freshState() {
@@ -65,14 +67,16 @@
       hints: {},             // step -> number of hints revealed
       msgs: [],              // feed message ids shown
       focus: null,           // current close-up item
-      completed: false
+      completed: false,
+      team: TEAM_ID          // whose progress this is (shared browsers)
     };
   }
   function loadState() {
     try {
       const raw = localStorage.getItem(STATE_KEY);
       const s = raw ? JSON.parse(raw) : null;
-      if (s && s.version === STATE_VERSION) return Object.assign(freshState(), s);
+      // Another team's leftover progress on a shared browser does not carry over.
+      if (s && s.version === STATE_VERSION && (!s.team || s.team === TEAM_ID)) return Object.assign(freshState(), s, { team: TEAM_ID });
     } catch (_) {}
     return freshState();
   }
@@ -82,11 +86,20 @@
 
   let state = loadState();
 
+  // Solved according to the shared vault (progress flag + stored word), or marked
+  // complete by the facilitator / another device (flag only; the word gets stored on boot).
   function roomMarkedComplete() {
-    try {
-      const progress = window.utils?.readProgress?.() || {};
-      return !!(progress[ROOM] && localStorage.getItem('vault_word_mfa'));
-    } catch (_) { return false; }
+    try { if (window.vault?.isRoomComplete?.(ROOM)) return true; } catch (_) {}
+    try { return (window.utils?.readProgress?.() || {})[ROOM] === true; } catch (_) { return false; }
+  }
+  function markDone() {
+    state.completed = true;
+    state.stage = 'done';
+    state.factors = { know: true, have: true, are: true };
+    state.breach = null;
+    state.nudge = null;
+    if (!state.msgs.includes('genuine_done')) state.msgs.push('genuine_done'); // the call isn't left empty
+    save();
   }
   // Progress says "not done" (e.g. after an admin reset): start over.
   if (state.completed && !roomMarkedComplete()) {
@@ -96,10 +109,7 @@
   // Completed on another device / state lost: show the finished room.
   if (!state.completed && roomMarkedComplete()) {
     state = freshState();
-    state.completed = true;
-    state.stage = 'done';
-    state.factors = { know: true, have: true, are: true };
-    save();
+    markDone();
   }
 
   // ---------- Content: the live call ----------
@@ -1058,30 +1068,47 @@
   // =====================================================================
   //  COMPLETION
   // =====================================================================
+  // Shared completion contract: sets the progress flag, stores the code word, syncs to the
+  // server and ticks the header tracker. Safe to repeat (returns false after the first time).
+  function secureCodeWord() {
+    try { return !!window.vault?.completeRoom?.(ROOM, CODE_WORD, { message: 'Code word ' + CODE_WORD + ' secured.' }); } catch (_) { return false; }
+  }
+
   function complete() {
-    if (state.completed) { renderDone(); return; }
-    state.completed = true;
-    state.stage = 'done';
-    save();
     stopAttackTick();
-    say('genuine_done');
-
-    // Completion contract (order matters).
-    try { window.utils?.setProgressFlag?.(ROOM, true); } catch (_) {}
-    try { window.utils?.setProgressPercent?.(ROOM, 100, { complete: true }); } catch (_) {}
-    try { localStorage.setItem('vault_word_mfa', CODE_WORD); } catch (_) {}
-    try { window.vault?.unlock?.(ROOM, CODE_WORD, { message: 'Code word ' + CODE_WORD + ' secured.' }); } catch (_) {}
-    try { window.stateSync?.queueSave?.('mfa-complete'); } catch (_) {}
-
+    const first = !state.completed;
+    if (first) {
+      state.completed = true;
+      state.stage = 'done';
+      save();
+      say('genuine_done');
+    }
+    secureCodeWord();
     renderAll();
+    if (!first) return;
     announce('Room complete. Code word ' + CODE_WORD + '. Enter it in the vault on the Mission Hub.');
+    // The finish button has gone: move focus and the view to the code word at the top.
+    try { els.completion.focus({ preventScroll: true }); } catch (_) {}
     try { els.finalBanner.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {}
   }
 
+  // "Code word" callout in the briefing near the top of the page.
+  const LOCKED_CALLOUT = els.vaultValue ? els.vaultValue.innerHTML : '';
+  function renderVaultCallout() {
+    if (!els.vaultValue) return;
+    if (state.stage !== 'done') {
+      if (els.vaultValue.innerHTML !== LOCKED_CALLOUT) els.vaultValue.innerHTML = LOCKED_CALLOUT;
+      return;
+    }
+    els.vaultValue.textContent = '';
+    els.vaultValue.appendChild(document.createTextNode('Code word: '));
+    els.vaultValue.appendChild(h('strong', { text: CODE_WORD }));
+    els.vaultValue.appendChild(document.createTextNode(' — enter it in the vault on the Mission Hub.'));
+  }
+
   function renderDone() {
-    const word = localStorage.getItem('vault_word_mfa') || CODE_WORD;
+    const word = CODE_WORD;
     els.finalBanner.hidden = false;
-    if (els.vaultValue) els.vaultValue.textContent = word;
     const c = els.completion;
     c.innerHTML = '';
     c.appendChild(h('h2', { text: 'Priya\'s account is secure' }));
@@ -1121,8 +1148,48 @@
       renderDone();
     } else {
       els.finalBanner.hidden = true;
+      els.completion.innerHTML = '';
+    }
+    renderVaultCallout();
+  }
+
+  function startIntro() {
+    if (!state.msgs.length && state.stage === 'desk') {
+      state.msgs = ['intro_sam'];
+      save();
+      later(function () { say('intro_priya'); }, 1400);
     }
   }
+
+  // ---------- Team sync ----------
+  // state-sync merges the team's server state in every few seconds. A completion is only
+  // ever taken away by an admin reset (the page reloads) or an admin "reopen" of this room.
+  const bootResetVersion = (function () { try { return localStorage.getItem(TEAM_ID + '_reset_version'); } catch (_) { return null; } })();
+  window.addEventListener('state-sync:applied', function (ev) {
+    const synced = ev?.detail?.state || {};
+    const syncedReset = synced.vault?.resetVersion;
+    if (ev?.detail?.reset || (syncedReset && String(syncedReset) !== String(bootResetVersion))) return; // page reloads
+    const done = synced.progress?.[ROOM] === true;
+
+    if (done && !state.completed) {
+      // Solved on another device, or marked complete by the facilitator.
+      clearTimers();
+      stopAttackTick();
+      markDone();
+      secureCodeWord();
+      renderAll();
+      return;
+    }
+    if (!done && state.completed) {
+      // The facilitator reopened the room: start again.
+      clearTimers();
+      state = freshState();
+      save();
+      startIntro();
+      renderAll();
+      try { window.vault?.refresh?.(); } catch (_) {} // header tracker drops this room's tick
+    }
+  });
 
   function boot() {
     try { points?.ensure?.(); } catch (_) {}
@@ -1135,17 +1202,15 @@
       });
     } catch (_) {}
 
-    if (!state.msgs.length && state.stage === 'desk') {
-      state.msgs = ['intro_sam'];
-      save();
-      later(function () { say('intro_priya'); }, 1400);
-    }
+    startIntro();
     // A timed message that was pending when the page was left.
     if (state.pwOk && !state.msgs.includes('pwOk2')) state.msgs.push('pwOk2');
     if (state.fingerTried && !state.msgs.includes('finger2')) state.msgs.push('finger2');
 
     renderAll();
     if (state.stage === 'desk') setProgress();
+    // Already solved (here or elsewhere): make sure the word is stored and the header ticked.
+    if (state.completed && !window.vault?.isRoomComplete?.(ROOM)) secureCodeWord();
 
     // Phone was mid-unlock when the page was left: finish the unlock.
     if (state.fingerTried && !state.phoneUnlocked) later(unlockPhone, 800);

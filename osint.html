@@ -227,106 +227,6 @@
       margin-top: .15rem;
     }
 
-    /* Photos — CSS-styled placeholder cards */
-    .sm-photo-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-      gap: .75rem;
-    }
-
-    .sm-photo-card {
-      background: rgba(11,15,20,.6);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      overflow: hidden;
-    }
-
-    .sm-photo-placeholder {
-      aspect-ratio: 4/3;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: .35rem;
-      padding: .75rem;
-      text-align: center;
-      font-size: .8rem;
-      color: var(--muted);
-      line-height: 1.35;
-    }
-
-    .sm-photo-placeholder .photo-icon {
-      font-size: 2.2rem;
-      line-height: 1;
-    }
-
-    .sm-photo-placeholder .photo-desc {
-      font-size: .76rem;
-      color: var(--muted);
-      opacity: .85;
-    }
-
-    .photo-scene-park {
-      background: linear-gradient(180deg, rgba(34,139,34,.12) 0%, rgba(139,90,43,.08) 100%);
-    }
-
-    .photo-scene-gym {
-      background: linear-gradient(135deg, rgba(88,166,255,.1) 0%, rgba(200,200,200,.06) 100%);
-    }
-
-    .photo-scene-sunset {
-      background: linear-gradient(180deg, rgba(255,140,50,.15) 0%, rgba(200,100,180,.08) 100%);
-    }
-
-    .photo-scene-stadium {
-      background: linear-gradient(135deg, rgba(0,0,0,.15) 0%, rgba(255,255,255,.04) 100%);
-    }
-
-    .photo-scene-cake {
-      background: linear-gradient(135deg, rgba(255,192,203,.12) 0%, rgba(139,69,19,.06) 100%);
-    }
-
-    .photo-scene-office {
-      background: linear-gradient(135deg, rgba(88,166,255,.08) 0%, rgba(9,255,136,.05) 100%);
-    }
-
-    .photo-scene-couch {
-      background: linear-gradient(135deg, rgba(160,82,45,.1) 0%, rgba(255,228,196,.06) 100%);
-    }
-
-    .photo-scene-street {
-      background: linear-gradient(180deg, rgba(128,128,128,.1) 0%, rgba(34,139,34,.06) 100%);
-    }
-
-    .photo-scene-family {
-      background: linear-gradient(135deg, rgba(255,215,0,.1) 0%, rgba(255,140,0,.06) 100%);
-    }
-
-    .photo-scene-rice {
-      background: linear-gradient(180deg, rgba(34,139,34,.15) 0%, rgba(0,100,0,.06) 100%);
-    }
-
-    .photo-scene-coffee {
-      background: linear-gradient(135deg, rgba(139,90,43,.15) 0%, rgba(255,228,196,.06) 100%);
-    }
-
-    .photo-scene-puppy {
-      background: linear-gradient(135deg, rgba(255,215,0,.12) 0%, rgba(255,182,83,.06) 100%);
-    }
-
-    .sm-photo-caption {
-      padding: .65rem .75rem;
-      font-size: .84rem;
-      color: var(--ink);
-      line-height: 1.4;
-    }
-
-    .sm-photo-date {
-      font-size: .75rem;
-      color: var(--muted);
-      margin-top: .25rem;
-    }
-
     /* About */
     .sm-about-section {
       margin-bottom: 1rem;
@@ -670,6 +570,37 @@
       margin: .5rem 0;
     }
 
+    /* Completion card near the top of the page (same pattern as the Phishing room) */
+    .osint-complete {
+      border: 1px solid rgba(9, 255, 136, .55);
+      background: radial-gradient(circle at top left, rgba(9, 255, 136, .18), transparent 60%), var(--panel);
+      text-align: center;
+      display: grid;
+      gap: .6rem;
+      justify-items: center;
+    }
+    .osint-complete[hidden] { display: none !important; }
+    .osint-complete h2 { color: var(--accent); margin: 0; }
+    .osint-codeword {
+      font: 800 clamp(1.8rem, 6vw, 2.8rem)/1.1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      letter-spacing: .25em;
+      color: #fff;
+      padding: .5rem 1.25rem;
+      border-radius: 12px;
+      border: 2px dashed var(--accent);
+      background: rgba(9, 255, 136, .08);
+    }
+    .osint-complete__actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+      justify-content: center;
+    }
+    .osint-lock {
+      display: inline-flex; align-items: center; gap: .4rem;
+      font-weight: 700; color: #fff;
+    }
+
     /* Mission failed panel */
     .mission-failed {
       margin-top: 1.25rem;
@@ -723,9 +654,6 @@
       .sm-stats {
         justify-content: center;
       }
-      .sm-photo-grid {
-        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      }
       .recovery-input-group {
         flex-direction: column;
       }
@@ -774,7 +702,7 @@
             <li data-vault-key="osint">&bull;</li>
             <li data-vault-key="incident">&bull;</li>
             <li data-vault-key="mfa">&bull;</li>
-            <li data-vault-key="supply">&bull;</li>
+            <li data-vault-key="crypto">&bull;</li>
             <li data-vault-key="forensics">&bull;</li>
           </ol>
           <span class="vault-status__count">0/6</span>
@@ -797,14 +725,14 @@
       <h2 id="osintBriefHeading">Mission briefing</h2>
       <p>An employee at Meridian Solutions has been locked out of their corporate account after a password reset. Your security team has been asked to help recover access. To do this, you will need to use publicly available information from their social media profile to answer security questions, predict their password, and understand how this information could be weaponised.</p>
       <ol>
-        <li><strong>Investigate the profile</strong> — browse all four tabs of Jordan Taylor's social media to gather intelligence.</li>
+        <li><strong>Investigate the profile</strong> — browse all three tabs of Jordan Taylor's social media to gather intelligence.</li>
         <li><strong>Pass the security verification</strong> — answer account recovery questions using what you found.</li>
         <li><strong>Predict the password</strong> — determine what weak password Jordan is likely using.</li>
         <li><strong>Identify the attack vector</strong> — pick the most effective spear-phishing approach.</li>
       </ol>
       <div class="vault-callout" role="status">
         <span class="tag">Code word</span>
-        <p>Complete the mission successfully to earn your code word. You must pass the security verification and predict the password correctly.</p>
+        <p id="osintVaultValue"><span class="osint-lock">Locked.</span> Complete the mission successfully to earn your code word. You must pass the security verification and predict the password correctly.</p>
       </div>
     </section>
 
@@ -840,11 +768,14 @@
       </details>
     </section>
 
+    <!-- Completion banner (filled by JS when the mission is passed) -->
+    <section class="card osint-complete mt-2" id="osintComplete" hidden aria-live="polite"></section>
+
     <!-- ==================== Profile Investigation ==================== -->
     <section class="card mt-2" id="osintPartA" aria-labelledby="partAHeading">
       <span class="narrative-label" id="partALabel">Recon phase</span>
       <h2 id="partAHeading" style="margin-bottom:0">Target profile located</h2>
-      <p class="muted">Browse Jordan's social media profile carefully. All four tabs may contain information you will need to recover the account.</p>
+      <p class="muted">Browse Jordan's social media profile carefully. All three tabs may contain information you will need to recover the account.</p>
 
       <div class="sm-profile mt-1">
         <!-- Profile header -->
@@ -853,7 +784,7 @@
           <div class="sm-identity">
             <p class="sm-name">Jordan Taylor</p>
             <p class="sm-handle">@jordtay_mel</p>
-            <p class="sm-bio">Marketing Coordinator at Meridian Solutions | Melbourne born and raised | Dog parent | Collingwood til I die | Living my best life</p>
+            <p class="sm-bio">Marketing Coordinator at Meridian Solutions | Melbourne based | Dog parent | Collingwood til I die | Living my best life</p>
           </div>
         </div>
 
@@ -868,10 +799,6 @@
             <span>Friends</span>
           </div>
           <div class="sm-stat">
-            <strong>389</strong>
-            <span>Photos</span>
-          </div>
-          <div class="sm-stat">
             <strong>52</strong>
             <span>Check-ins</span>
           </div>
@@ -880,7 +807,6 @@
         <!-- Tab bar -->
         <div class="sm-tabs" role="tablist" aria-label="Profile sections">
           <button class="sm-tab" role="tab" id="tabPosts" aria-selected="true" aria-controls="panelPosts">Posts</button>
-          <button class="sm-tab" role="tab" id="tabPhotos" aria-selected="false" aria-controls="panelPhotos">Photos</button>
           <button class="sm-tab" role="tab" id="tabAbout" aria-selected="false" aria-controls="panelAbout">About</button>
           <button class="sm-tab" role="tab" id="tabCheckins" aria-selected="false" aria-controls="panelCheckins">Check-ins</button>
         </div>
@@ -1044,7 +970,7 @@
               </div>
             </div>
             <div class="sm-post-body">
-              Happy birthday Mum! Love you Margaret Chen-Taylor. The best mum anyone could ask for. Thanks for always believing in me and making the best dumplings on the planet. Here's to many more birthdays together!
+              Happy birthday Mum! Love you heaps. The best mum anyone could ask for. Thanks for always believing in me and making the best dumplings on the planet. Here's to many more birthdays together!
             </div>
             <div class="sm-post-engagement">
               <span>94 likes</span>
@@ -1104,145 +1030,6 @@
             </div>
           </article>
 
-        </div>
-
-        <!-- ===== PHOTOS TAB ===== -->
-        <div class="sm-tab-panel" role="tabpanel" id="panelPhotos" aria-labelledby="tabPhotos">
-          <div class="sm-photo-grid">
-
-            <div class="sm-photo-card">
-              <div class="sm-photo-placeholder photo-scene-sunset">
-                <span class="photo-icon" aria-hidden="true">&#127773;</span>
-                <span class="photo-desc">Golden sunset from a villa balcony, ocean in the background</span>
-              </div>
-              <div class="sm-photo-caption">
-                Bali sunset from our villa balcony. Unreal!
-                <p class="sm-photo-date">29 Aug 2026</p>
-              </div>
-            </div>
-
-            <div class="sm-photo-card">
-              <div class="sm-photo-placeholder photo-scene-park">
-                <span class="photo-icon" aria-hidden="true">&#128054;</span>
-                <span class="photo-desc">Photo of Biscuit the golden retriever running through grass</span>
-              </div>
-              <div class="sm-photo-caption">
-                Biscuit at the dog park! Look at that face. Best boy ever.
-                <p class="sm-photo-date">20 Aug 2026</p>
-              </div>
-            </div>
-
-            <div class="sm-photo-card">
-              <div class="sm-photo-placeholder photo-scene-gym">
-                <span class="photo-icon" aria-hidden="true">&#128170;</span>
-                <span class="photo-desc">Selfie at FitZone Gym, spin bikes visible behind</span>
-              </div>
-              <div class="sm-photo-caption">
-                Post-workout selfie at FitZone. Tuesday spin class survivors club!
-                <p class="sm-photo-date">16 Jul 2026</p>
-              </div>
-            </div>
-
-            <div class="sm-photo-card">
-              <div class="sm-photo-placeholder photo-scene-stadium">
-                <span class="photo-icon" aria-hidden="true">&#127944;</span>
-                <span class="photo-desc">Crowd shot from the stands at the MCG, black and white scarves</span>
-              </div>
-              <div class="sm-photo-caption">
-                PIES WIN! Game day at the MCG with the crew. #GoPies
-                <p class="sm-photo-date">3 Aug 2026</p>
-              </div>
-            </div>
-
-            <div class="sm-photo-card">
-              <div class="sm-photo-placeholder photo-scene-cake">
-                <span class="photo-icon" aria-hidden="true">&#127874;</span>
-                <span class="photo-desc">Chocolate mud cake with "Happy Birthday JT" written in icing</span>
-              </div>
-              <div class="sm-photo-caption">
-                Birthday cake!! Sam outdid themselves this year. Chocolate mud cake with "Happy Birthday JT" on top
-                <p class="sm-photo-date">15 Mar 2026</p>
-              </div>
-            </div>
-
-            <div class="sm-photo-card">
-              <div class="sm-photo-placeholder photo-scene-office">
-                <span class="photo-icon" aria-hidden="true">&#128144;</span>
-                <span class="photo-desc">Desk with flowers and a congratulations card, office background</span>
-              </div>
-              <div class="sm-photo-caption">
-                5 year work anniversary celebration at Meridian! The team surprised me with flowers and a card. Started in 2021 as a grad - look at me now!
-                <p class="sm-photo-date">14 Jul 2026</p>
-              </div>
-            </div>
-
-            <div class="sm-photo-card">
-              <div class="sm-photo-placeholder photo-scene-couch">
-                <span class="photo-icon" aria-hidden="true">&#128054;</span>
-                <span class="photo-desc">Golden retriever sprawled across a couch, looking pleased with himself</span>
-              </div>
-              <div class="sm-photo-caption">
-                Biscuit says good morning! He stole my spot on the couch again.
-                <p class="sm-photo-date">5 Jul 2026</p>
-              </div>
-            </div>
-
-            <div class="sm-photo-card">
-              <div class="sm-photo-placeholder photo-scene-street">
-                <span class="photo-icon" aria-hidden="true">&#127795;</span>
-                <span class="photo-desc">Tree-lined avenue with memorial plaques, wide country road</span>
-              </div>
-              <div class="sm-photo-caption">
-                Throwback: Sturt Street, Ballarat. The avenue of honour. Miss this place sometimes.
-                <p class="sm-photo-date">18 May 2026</p>
-              </div>
-            </div>
-
-            <div class="sm-photo-card">
-              <div class="sm-photo-placeholder photo-scene-family">
-                <span class="photo-icon" aria-hidden="true">&#128106;</span>
-                <span class="photo-desc">Family at a restaurant table, plates of dumplings, birthday candles</span>
-              </div>
-              <div class="sm-photo-caption">
-                Mum's birthday dinner! Love you Margaret Chen-Taylor. Best dumplings as always.
-                <p class="sm-photo-date">8 Jun 2026</p>
-              </div>
-            </div>
-
-            <div class="sm-photo-card">
-              <div class="sm-photo-placeholder photo-scene-rice">
-                <span class="photo-icon" aria-hidden="true">&#127807;</span>
-                <span class="photo-desc">Lush green terraced rice paddies stretching into mist</span>
-              </div>
-              <div class="sm-photo-caption">
-                Ubud rice terraces. Bali is something else. Already planning the next trip!
-                <p class="sm-photo-date">31 Aug 2026</p>
-              </div>
-            </div>
-
-            <div class="sm-photo-card">
-              <div class="sm-photo-placeholder photo-scene-coffee">
-                <span class="photo-icon" aria-hidden="true">&#9749;</span>
-                <span class="photo-desc">Latte art in a ceramic cup, gym bag on the table beside it</span>
-              </div>
-              <div class="sm-photo-caption">
-                Morning coffee at Collins Street before gym. The usual Tuesday ritual.
-                <p class="sm-photo-date">9 Jul 2026</p>
-              </div>
-            </div>
-
-            <div class="sm-photo-card">
-              <div class="sm-photo-placeholder photo-scene-puppy">
-                <span class="photo-icon" aria-hidden="true">&#127881;</span>
-                <span class="photo-desc">Small golden retriever puppy with a tiny dog-shaped cake</span>
-              </div>
-              <div class="sm-photo-caption">
-                Biscuit's first birthday! We got him a doggy cake and he absolutely demolished it.
-                <p class="sm-photo-date">12 Feb 2026</p>
-              </div>
-            </div>
-
-          </div>
         </div>
 
         <!-- ===== ABOUT TAB ===== -->
@@ -1528,8 +1315,8 @@
     <div id="osintVaultReveal" class="osint-vault-reveal mt-2" hidden>
       <h3>Mission Complete</h3>
       <p class="muted">You successfully recovered the account, predicted the password, and identified the attack vector. This is exactly how attackers exploit public information.</p>
-      <p class="osint-vault-word" aria-live="polite">SHADOW</p>
-      <p>Your code word is <strong style="color:var(--accent)">SHADOW</strong>. It has been recorded.</p>
+      <p class="osint-vault-word" id="osintVaultWord"></p>
+      <p>Your code word is <strong style="color:var(--accent)" id="osintVaultWordInline"></strong>. It has been recorded: enter it in the vault on the Mission Hub.</p>
     </div>
 
     <!-- ==================== Mission Failed ==================== -->

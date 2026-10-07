@@ -372,6 +372,11 @@
       display: inline-flex; align-items: center; gap: .4rem;
       font-weight: 700; color: #fff;
     }
+
+    /* Submit feedback: one short idea per line, first line bold */
+    #phishingFeedback .phx-fb-line { display: block; }
+    #phishingFeedback .phx-fb-line + .phx-fb-line { margin-top: .3rem; }
+    #phishingFeedback .phx-fb-lead { display: inline; font-weight: 700; color: #fff; }
   </style>
 </head>
 
@@ -409,7 +414,7 @@
             <li data-vault-key="osint">•</li>
             <li data-vault-key="incident">•</li>
             <li data-vault-key="mfa">•</li>
-            <li data-vault-key="supply">•</li>
+            <li data-vault-key="crypto">•</li>
             <li data-vault-key="forensics">•</li>
           </ol>
           <span class="vault-status__count">0/6</span>
@@ -464,8 +469,8 @@
         <summary id="phishPointsHeading">Points intel</summary>
         <p>Teams begin at 100 points. Careful work keeps that total high.</p>
         <ul>
-          <li>Wrong submission (wrong verdict, or not enough red flags found): <strong>−3 points</strong>, then try again.</li>
-          <li>Hints get more specific each time: <strong>−5</strong>, <strong>−5</strong>, then a red flag spotlight for <strong>−10</strong>.</li>
+          <li>Wrong submission (wrong verdict, or not enough warning signs found): <strong>−3 points</strong>, then try again.</li>
+          <li>Hints get more specific each time: <strong>−5</strong>, <strong>−5</strong>, then a spotlight on one warning sign for <strong>−10</strong>.</li>
           <li>You can drop up to 6 flags per email. Flags on harmless parts of the email count against you, so don't carpet-bomb it.</li>
         </ul>
       </details>
@@ -608,7 +613,7 @@
         <span aria-hidden="true">•</span>
         <a href="game.html">Mission Hub</a>
       </nav>
-      <p class="footer-note">Spot every phishing tell to earn the first code word.</p>
+      <p class="footer-note">Spot every phishing tell to earn this room's code word.</p>
       <p class="footer-copy"><small>&copy; 2026 Cyber Escape Rooms</small></p>
     </div>
   </footer>

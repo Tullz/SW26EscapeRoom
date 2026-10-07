@@ -1,4 +1,5 @@
 import { createClient, ensureTeamStateTable, DEFAULT_PROGRESS, errorResponse } from './_shared/db.js';
+import { mergeStates } from './_shared/merge.js';
 
 function sanitizeRow(row = {}) {
   const progress = { ...DEFAULT_PROGRESS };
@@ -73,24 +74,46 @@ export default async (req) => {
     for (const raw of teams) {
       const team = String(raw?.team || '').trim().toLowerCase();
       if (!team) continue;
-      const sanitized = sanitizeRow(raw);
-      await client.query(
-        `insert into team_state (team, progress, progress_meta, times, score, score_log, activity, endless, bonus, vault, updated_at)
-         values ($1,$2::jsonb,$3::jsonb,$4::jsonb,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb, now())
-         on conflict (team) do update set
-           progress = excluded.progress,
-           progress_meta = excluded.progress_meta,
-           times = excluded.times,
-           score = excluded.score,
-           score_log = excluded.score_log,
-           activity = excluded.activity,
-           endless = excluded.endless,
-           bonus = excluded.bonus,
-           vault = excluded.vault,
-           updated_at = now()`,
-        // pg would send JS arrays as Postgres arrays, not JSON, so serialise jsonb values explicitly.
-        [team, JSON.stringify(sanitized.progress), JSON.stringify(sanitized.progressMeta), JSON.stringify(sanitized.times), sanitized.score, JSON.stringify(sanitized.scoreLog), JSON.stringify(sanitized.activity), JSON.stringify(sanitized.endless), JSON.stringify(sanitized.bonus), JSON.stringify(sanitized.vault)]
-      );
+      let sanitized = sanitizeRow(raw);
+      await client.query('begin');
+      try {
+        // A new resetVersion (admin "Reset all teams", or a single-team reset) replaces the row.
+        // The same resetVersion (admin "Push to Neon" from a possibly stale dashboard copy) is
+        // merged, so it can't undo a room a team completed since the dashboard last pulled.
+        const { rows } = await client.query('select * from team_state where team = $1 limit 1 for update', [team]);
+        const stored = rows[0];
+        const storedReset = Number(stored?.vault?.resetVersion || 0);
+        const incomingReset = Number(sanitized.vault?.resetVersion || 0);
+        if (stored && storedReset === incomingReset) {
+          const current = sanitizeRow({
+            progress: stored.progress, progressMeta: stored.progress_meta, times: stored.times, score: stored.score,
+            scoreLog: stored.score_log, activity: stored.activity, endless: stored.endless, bonus: stored.bonus, vault: stored.vault
+          });
+          const merged = mergeStates(current, sanitized, { score: 'local', endless: 'local' });
+          sanitized = sanitizeRow({ ...merged, bonus: sanitized.bonus });
+        }
+        await client.query(
+          `insert into team_state (team, progress, progress_meta, times, score, score_log, activity, endless, bonus, vault, updated_at)
+           values ($1,$2::jsonb,$3::jsonb,$4::jsonb,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb, now())
+           on conflict (team) do update set
+             progress = excluded.progress,
+             progress_meta = excluded.progress_meta,
+             times = excluded.times,
+             score = excluded.score,
+             score_log = excluded.score_log,
+             activity = excluded.activity,
+             endless = excluded.endless,
+             bonus = excluded.bonus,
+             vault = excluded.vault,
+             updated_at = now()`,
+          // pg would send JS arrays as Postgres arrays, not JSON, so serialise jsonb values explicitly.
+          [team, JSON.stringify(sanitized.progress), JSON.stringify(sanitized.progressMeta), JSON.stringify(sanitized.times), sanitized.score, JSON.stringify(sanitized.scoreLog), JSON.stringify(sanitized.activity), JSON.stringify(sanitized.endless), JSON.stringify(sanitized.bonus), JSON.stringify(sanitized.vault)]
+        );
+        await client.query('commit');
+      } catch (err) {
+        try { await client.query('rollback'); } catch (_) {}
+        throw err;
+      }
     }
 
     return Response.json({ ok: true, updated: teams.length });

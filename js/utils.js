@@ -76,14 +76,17 @@
       osint: false,
       incident: false,
       mfa: false,
-      supply: false,
+      crypto: false,
       forensics: false
     });
   }
   function setProgressFlag(flag, value = true, u = getUser()) {
     const key = progressKey(u);
     const p = getJSON(key, {});
-    p[flag] = !!value;
+    const next = !!value;
+    // Already in that state: nothing to record or sync (rooms may call this on every load).
+    if ((p[flag] === true) === next) return p;
+    p[flag] = next;
     setJSON(key, p);
     try {
       pushActivity({
@@ -519,12 +522,19 @@
     });
   }
 
+  // Code words, "vault opened" and the rooms' saved in-room state are kept under keys that
+  // are not team-specific, so they must go on logout: otherwise the next team to log in on
+  // this computer would inherit them.
+  const ROOM_KEYS = ['phishing', 'osint', 'incident', 'mfa', 'crypto', 'forensics'];
+  const SHARED_PUZZLE_KEYS = ROOM_KEYS.map(k => `vault_word_${k}`).concat('vault_opened');
+  const SHARED_ROOM_STATE = [/^phish_done_/, /^class_Picture/, /^(osint|incident|mfa|crypto|forensics)_/];
+
   function clearTeamState(user) {
     const team = (user?.role === 'team' && user?.username) ? String(user.username).toLowerCase() : null;
+    SHARED_PUZZLE_KEYS.forEach(key => {
+      try { localStorage.removeItem(key); } catch (_) {}
+    });
     if (!team) {
-      ['lock_digit_phishing_total','lock_digit_osint','lock_digit_incident','lock_digit_mfa','lock_digit_supply','lock_digit_forensics'].forEach(key => {
-        try { localStorage.removeItem(key); } catch (_) {}
-      });
       try { window.vault?.refresh?.(); } catch (_) {}
       return;
     }
@@ -536,14 +546,17 @@
       `${team}_score_log`,
       `${team}_activity`,
       `${team}_vault`,
+      `${team}_vault_entries`,
       `${team}_reset_version`
     ];
     teamKeys.forEach(key => {
       try { localStorage.removeItem(key); } catch (_) {}
     });
-    ['lock_digit_phishing_total','lock_digit_osint','lock_digit_incident','lock_digit_mfa','lock_digit_supply','lock_digit_forensics'].forEach(key => {
-      try { localStorage.removeItem(key); } catch (_) {}
-    });
+    try {
+      Object.keys(localStorage).forEach(key => {
+        if (SHARED_ROOM_STATE.some(rx => rx.test(key))) localStorage.removeItem(key);
+      });
+    } catch (_) {}
     try { window.vault?.refresh?.(); } catch (_) {}
   }
 

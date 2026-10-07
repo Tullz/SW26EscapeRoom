@@ -6,7 +6,7 @@
     { key: 'osint', label: 'OSINT', storage: 'vault_word_osint', href: 'osint.html' },
     { key: 'incident', label: 'Incident Mgmt', storage: 'vault_word_incident', href: 'incident.html' },
     { key: 'mfa', label: 'MFA / Auth', storage: 'vault_word_mfa', href: 'mfa.html' },
-    { key: 'supply', label: 'Supply Chain', storage: 'vault_word_supply', href: 'supply-chain.html' },
+    { key: 'crypto', label: 'Encryption', storage: 'vault_word_crypto', href: 'crypto.html' },
     { key: 'forensics', label: 'Forensics', storage: 'vault_word_forensics', href: 'forensics.html' }
   ];
 
@@ -18,21 +18,18 @@
     return null;
   }
 
-  function clearWord(item) {
-    if (!item) return;
-    try { localStorage.removeItem(item.storage); } catch (_) {}
+  function readFlags() {
+    return window.utils?.readProgress?.() || {};
   }
 
+  // Code words for the rooms this team has completed. Read-only: a word whose room is
+  // not (yet) marked complete is just hidden, never deleted, so a sync hiccup can't
+  // destroy a word the team earned. Stray words are cleared on logout / admin reset.
   function readWords() {
     const result = {};
-    const progress = window.utils?.readProgress?.() || {};
+    const progress = readFlags();
     PUZZLES.forEach(item => {
-      let word = readWord(item);
-      if (word && progress[item.key] !== true) {
-        clearWord(item);
-        word = null;
-      }
-      result[item.key] = word;
+      result[item.key] = progress[item.key] === true ? readWord(item) : null;
     });
     return result;
   }
@@ -52,9 +49,14 @@
     return stack;
   }
 
+  // Toasts sit bottom-right (bottom-centre on phones), clear of the header nav. On a phone
+  // only the newest one shows, briefly, so they cover as little of the room as possible.
   function showToast(message) {
     if (!message) return;
     const stack = ensureToastStack();
+    let narrow = false;
+    try { narrow = window.matchMedia('(max-width: 640px)').matches; } catch (_) {}
+    if (narrow) Array.from(stack.children).forEach(old => old.remove());
     const toast = document.createElement('div');
     toast.className = 'toast';
     toast.textContent = message;
@@ -63,9 +65,16 @@
     setTimeout(() => {
       toast.classList.remove('is-visible');
       setTimeout(() => toast.remove(), 350);
-    }, 4300);
+    }, narrow ? 3000 : 4300);
   }
 
+  function announcedKey() {
+    const team = String(window.utils?.getUser?.()?.username || 'team').toLowerCase();
+    return `${team}_all_words_toast`;
+  }
+
+  // Header tracker: a ✓ for every completed room (the same flag the Mission Hub uses),
+  // so it ticks the moment a room completes, on any page, in any order.
   function updateUi() {
     const words = readWords();
     const status = document.getElementById('vaultStatus');
@@ -73,12 +82,12 @@
 
     const list = status.querySelector('.vault-status__digits');
     const countEl = status.querySelector('.vault-status__count');
+    const progress = readFlags();
 
     let found = 0;
     PUZZLES.forEach((item) => {
       const li = list?.querySelector(`[data-vault-key="${item.key}"]`);
-      const word = words[item.key];
-      const hasWord = word != null;
+      const done = progress[item.key] === true;
       if (li) {
         let btn = li.firstElementChild;
         if (!(btn instanceof HTMLButtonElement)) {
@@ -90,16 +99,16 @@
           if (item.href) btn.dataset.href = item.href;
           li.appendChild(btn);
         }
-        btn.textContent = hasWord ? '✓' : '•';
+        btn.textContent = done ? '✓' : '•';
         btn.disabled = !item.href;
-        const label = hasWord
-          ? `${item.label} — code word secured`
-          : `${item.label} — launch puzzle`;
+        const label = done
+          ? `${item.label}: solved, code word found`
+          : `${item.label}: not solved yet, open the room`;
         btn.setAttribute('aria-label', label);
-        li.classList.toggle('is-found', hasWord);
+        li.classList.toggle('is-found', done);
         li.setAttribute('aria-label', label);
       }
-      if (hasWord) found++;
+      if (done) found++;
     });
 
     if (countEl) {
@@ -109,12 +118,26 @@
     const isComplete = found === PUZZLES.length;
     status.classList.toggle('is-complete', isComplete);
     if (isComplete && !vaultCompleteAnnounced) {
-      showToast('All code words collected! The vault is ready to crack.');
       vaultCompleteAnnounced = true;
+      let seen = false;
+      try { seen = sessionStorage.getItem(announcedKey()) === '1' || localStorage.getItem('vault_opened') === '1'; } catch (_) {}
+      if (!seen) {
+        showToast('All six rooms solved! Type the code words into the vault on the Mission Hub.');
+        try { sessionStorage.setItem(announcedKey(), '1'); } catch (_) {}
+      }
     } else if (!isComplete) {
       vaultCompleteAnnounced = false;
     }
     return words;
+  }
+
+  // Coalesce bursts of change events into one repaint after the current task, so a room
+  // that stores its word right after setting its progress still ticks in one go.
+  let uiQueued = false;
+  function scheduleUi() {
+    if (uiQueued) return;
+    uiQueued = true;
+    setTimeout(() => { uiQueued = false; updateUi(); }, 0);
   }
 
   function persistWord(item, word) {
@@ -144,6 +167,39 @@
     showToast(message);
   }
 
+  // The one call a room makes when it is solved. Stores the code word, marks the room
+  // complete, syncs to the server and ticks the header tracker. The word is stored first
+  // so the immediate sync carries both. Safe to call again (e.g. on every page load):
+  // once the room is complete it does not touch progress or the activity log again; it
+  // only makes sure the word is stored. Returns true only the first time, so rooms can
+  // celebrate/scroll once.
+  function completeRoom(key, word, options = {}) {
+    const item = PUZZLES.find(entry => entry.key === key);
+    if (!item || typeof word !== 'string' || !word.trim()) return false;
+    const clean = word.trim().toUpperCase();
+    const flagged = readFlags()[key] === true;
+    const hadWord = readWord(item) === clean;
+    if (flagged && hadWord) {
+      scheduleUi();
+      return false;
+    }
+    persistWord(item, clean);
+    if (!flagged) {
+      // Sets the flag, logs "Puzzle completed" once and pushes to the server right away.
+      try { window.utils?.setProgressPercent?.(key, 100, { complete: true }); } catch (_) {}
+    } else {
+      try { window.stateSync?.queueSave?.(`${key}-complete`); } catch (_) {}
+    }
+    unlock(key, clean, options);
+    return true;
+  }
+
+  function isRoomComplete(key) {
+    const item = PUZZLES.find(entry => entry.key === key);
+    if (!item) return false;
+    return readFlags()[key] === true && readWord(item) != null;
+  }
+
   function refresh() {
     return updateUi();
   }
@@ -163,10 +219,18 @@
     }
   });
 
+  // Keep the tracker right whatever changed progress: this page, a sync pull, another tab,
+  // or coming back to the page from the browser's back/forward cache.
+  window.addEventListener('progress:change', scheduleUi);
+  window.addEventListener('state-sync:applied', scheduleUi);
+  window.addEventListener('pageshow', scheduleUi);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') scheduleUi();
+  });
   window.addEventListener('storage', (event) => {
     if (!event.key) return;
-    const matches = PUZZLES.some(item => item.storage === event.key);
-    if (matches) updateUi();
+    const progressKey = window.utils?.progressKey?.();
+    if (event.key === progressKey || PUZZLES.some(item => item.storage === event.key)) scheduleUi();
   });
 
   window.vault = {
@@ -174,6 +238,8 @@
     getDigits: readWords,
     refresh,
     unlock,
+    completeRoom,
+    isRoomComplete,
     PUZZLES
   };
 })();

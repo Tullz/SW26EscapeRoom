@@ -11,6 +11,48 @@
 
    Red-flag areas are rectangles in the image's natural pixel space, so they
    stay accurate at any rendered size or zoom level.
+
+   ---------------------------------------------------------------------------
+   HOW TO SWAP IN NEW EMAIL EXAMPLES (no other code needs to change)
+   ---------------------------------------------------------------------------
+   1. Images: put each email screenshot (PNG/JPG) in assets/. Reusing the names
+      Picture1.png ... Picture4.png is simplest. If you use new names, also
+      update the starting <img id="phishingImage" src="..."> in phishing.html.
+   2. Data: edit the EMAILS array below, one object per email, in inbox order:
+        img       file name in assets/
+        w, h      the image's real size in pixels (Windows: right-click the
+                  file > Properties > Details; Mac: Get Info). Must be exact,
+                  because every rectangle below is measured in these pixels.
+        from, subject   what the inbox list shows for this email
+        phishing  true for a phishing email, false for a genuine one
+        required  how many DIFFERENT red flags a team must find to pass
+                  (use 0 for a genuine email)
+        flags     the red flags (phishing emails only). Each one is
+                    { key: true?, title, rects: [[left, top, right, bottom]], text }
+                  key: true    = must be found to pass (the biggest giveaway,
+                                 usually the sender address). Optional.
+                  rects        one or more boxes, in image pixels, measured
+                                 from the image's top-left corner. Use two boxes
+                                 when one clue appears in two places.
+                  title, text  shown in the debrief after the email is solved
+        trust     genuine emails only: same shape as flags (title, rects,
+                  text), shown as "Checks out" in the debrief
+        hints     two hint strings (may contain <strong>). The third, priciest
+                  hint is automatic: it spotlights a missed red flag, or for a
+                  genuine email shows finalHint.
+        finalHint genuine emails only: the third hint text
+   3. Measuring a rectangle: open the image in any editor that shows the
+      cursor's pixel position (Paint, GIMP, Photopea, Preview's Inspector).
+      Note the top-left corner (left, top) and bottom-right corner (right,
+      bottom) of the clue. Clicks within HIT_PAD pixels of the box still count.
+      Quick check in the browser: open phishing.html, press F12, paste this
+      into the Console, then click the email to print the image-pixel position:
+        document.getElementById('phishingImage').addEventListener('click', (e) => { const r = e.target.getBoundingClientRect(); console.log(Math.round((e.clientX - r.left) / r.width * e.target.naturalWidth), Math.round((e.clientY - r.top) / r.height * e.target.naturalHeight)); });
+   4. If the number of emails changes, also update the words "four" in
+      phishing.html (intro line, briefing callout, "How to play" dialog).
+      The completion card counts the emails automatically.
+   5. After changing emails, reset the teams from the admin page before the
+      event so nobody keeps old flags. (Saved progress is keyed by img name.)
 */
 (function () {
   'use strict';
@@ -286,6 +328,17 @@
     try { return !!utils?.readProgress?.().phishing; } catch (_) { return false; }
   }
 
+  // Solved = the shared vault says so (progress flag set AND code word stored).
+  function roomSolved() {
+    try {
+      if (window.vault?.isRoomComplete) return window.vault.isRoomComplete(ROOM_KEY);
+    } catch (_) { /* fall back below */ }
+    return roomFlagComplete();
+  }
+
+  const NUM_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+  const numWord = (n) => NUM_WORDS[n] || String(n);
+
   // ---------- Progress broadcast (Mission Hub + HUD) ----------
   function syncProgress() {
     if (!utils?.setProgressPercent) return;
@@ -358,12 +411,17 @@
     if (msg) announce(msg);
   }
 
+  // Messages may hold several short lines separated by "\n": the first line is
+  // shown in bold, each following line on its own row.
   function renderFeedback(fb) {
     if (!feedbackEl) return;
     feedbackEl.classList.remove('ok', 'warn');
     feedbackEl.removeAttribute('data-tone');
-    feedbackEl.textContent = fb?.msg || '';
+    feedbackEl.textContent = '';
     if (!fb?.msg) return;
+    String(fb.msg).split('\n').filter((line) => line.trim()).forEach((line, i) => {
+      feedbackEl.appendChild(el('span', { className: i === 0 ? 'phx-fb-line phx-fb-lead' : 'phx-fb-line' }, line));
+    });
     if (fb.tone === 'success') { feedbackEl.classList.add('ok'); feedbackEl.setAttribute('data-tone', 'success'); }
     else if (fb.tone === 'warn') { feedbackEl.classList.add('warn'); feedbackEl.setAttribute('data-tone', 'warn'); }
     else feedbackEl.setAttribute('data-tone', 'info');
@@ -448,8 +506,8 @@
   }
 
   function pinLabel(pin, n) {
-    if (pin.result === 'hit') return `Flag ${n}: on a real red flag`;
-    if (pin.result === 'miss') return `Flag ${n}: not a red flag`;
+    if (pin.result === 'hit') return `Flag ${n}: on a real warning sign`;
+    if (pin.result === 'miss') return `Flag ${n}: on something harmless`;
     return `Flag ${n}`;
   }
 
@@ -515,7 +573,7 @@
 
   function hintButtonLabel(e, level) {
     if (level >= 3) return 'No more hints for this email';
-    if (level === 2) return e.phishing ? `Spotlight a red flag (−${HINT_COSTS[2]} pts)` : `Analyst verdict (−${HINT_COSTS[2]} pts)`;
+    if (level === 2) return e.phishing ? `Spotlight a warning sign (−${HINT_COSTS[2]} pts)` : `Analyst verdict (−${HINT_COSTS[2]} pts)`;
     if (level === 1) return `Stronger hint (−${HINT_COSTS[1]} pts)`;
     return `Get a hint (−${HINT_COSTS[0]} pts)`;
   }
@@ -523,8 +581,8 @@
   function hintText(e, level, s) {
     if (level < 2) return e.hints[level];
     if (!e.phishing) return e.finalHint;
-    if (Number.isInteger(s.spotlight)) return 'Spotlight: one red flag is outlined in yellow on the email. Drop a flag on it.';
-    return 'Spotlight: every red flag on this email already has one of your flags on it. Check your verdict and submit.';
+    if (Number.isInteger(s.spotlight)) return 'Spotlight: one warning sign is outlined in yellow on the email. Drop a flag on it.';
+    return 'Spotlight: every warning sign on this email already has one of your flags on it. Check your verdict and submit.';
   }
 
   function renderHints() {
@@ -555,7 +613,7 @@
     if (e.phishing) {
       const found = new Set(s.found);
       if (heading) heading.textContent = 'What gave it away';
-      debriefSummary.textContent = `Phishing confirmed. You flagged ${found.size} of ${e.flags.length} red flags${s.attempts > 1 ? ` (in ${s.attempts} attempts)` : ' on the first try'}. Green boxes are ones you found; orange dashed boxes are ones you missed.`;
+      debriefSummary.textContent = `Phishing confirmed. You found ${found.size} of the ${e.flags.length} warning signs${s.attempts > 1 ? ` (in ${s.attempts} attempts)` : ' on the first try'}. Green boxes are the ones you found; orange dashed boxes are the ones you missed.`;
       e.flags.forEach((flag, idx) => {
         const isFound = found.has(idx);
         const li = el('li', { className: isFound ? '' : 'is-missed' });
@@ -632,7 +690,7 @@
 
   function renderVaultCallout() {
     if (!vaultCallout) return;
-    if (allDone() && roomFlagComplete()) {
+    if (allDone() && roomSolved()) {
       vaultCallout.textContent = '';
       vaultCallout.appendChild(document.createTextNode('Code word: '));
       vaultCallout.appendChild(el('strong', {}, WORD));
@@ -642,7 +700,7 @@
 
   function renderComplete() {
     if (!completeEl) return;
-    if (!(allDone() && roomFlagComplete())) {
+    if (!(allDone() && roomSolved())) {
       completeEl.hidden = true;
       completeEl.innerHTML = '';
       return;
@@ -651,7 +709,12 @@
     const hints = EMAILS.reduce((n, e) => n + state.emails[e.img].hints, 0);
     completeEl.innerHTML = '';
     completeEl.appendChild(el('h2', {}, 'Inbox secured'));
-    completeEl.appendChild(el('p', {}, 'All four emails handled: three phishing attempts reported, one genuine email trusted.'));
+    const phishCount = EMAILS.filter((e) => e.phishing).length;
+    const genuineCount = EMAILS.length - phishCount;
+    const handled = [];
+    if (phishCount) handled.push(`${numWord(phishCount)} phishing attempt${phishCount === 1 ? '' : 's'} reported`);
+    if (genuineCount) handled.push(`${numWord(genuineCount)} genuine email${genuineCount === 1 ? '' : 's'} trusted`);
+    completeEl.appendChild(el('p', {}, `All ${numWord(EMAILS.length)} emails handled: ${handled.join(', ')}.`));
     completeEl.appendChild(el('div', { className: 'phx-codeword', 'aria-label': `Code word ${WORD}` }, WORD));
     const p = el('p');
     p.appendChild(document.createTextNode('Code word: '));
@@ -790,11 +853,17 @@
       return;
     }
     if (s.verdict === 'phish' && !s.pins.length) {
-      setFeedback('Drop at least one red flag on the email to show what gave it away.', 'warn', { persistIt: false });
+      setFeedback([
+        'You picked Phishing. Now show your evidence.',
+        'Click or tap the email to flag what gave it away.'
+      ].join('\n'), 'warn', { persistIt: false });
       return;
     }
     if (s.verdict === 'legit' && s.pins.length) {
-      setFeedback('You said this email is legitimate, but it still has flags on it. Clear the flags or change your verdict.', 'warn', { persistIt: false });
+      setFeedback([
+        'You picked Legitimate, but there are still flags on the email.',
+        'Clear your flags, or change your verdict.'
+      ].join('\n'), 'warn', { persistIt: false });
       return;
     }
 
@@ -803,7 +872,11 @@
 
     if (saidPhish !== e.phishing) {
       points?.spend?.(WRONG_COST, 'Phishing: wrong verdict');
-      setFeedback(`Not quite. That verdict doesn't match what our analysts found. Take another careful look at who sent it and what it wants from John. −${WRONG_COST} points.`, 'warn');
+      setFeedback([
+        'Wrong verdict.',
+        'Look again at who sent it and what it wants John to do.',
+        `−${WRONG_COST} points. Try again.`
+      ].join('\n'), 'warn');
       save();
       renderInbox();
       return;
@@ -825,18 +898,30 @@
       return;
     }
 
+    // Right verdict, not enough proof. One short idea per line (see renderFeedback).
     points?.spend?.(WRONG_COST, 'Phishing: not enough red flags');
-    const parts = ['Your verdict is right: this one is phishing. But your evidence isn’t strong enough yet.'];
-    parts.push('Green flags landed on real red flags; grey flags are on harmless parts of the email.');
+    const hits = ev.found.size;
+    const lines = ['Right verdict: this email is phishing.'];
     if (!enough) {
-      parts.push(`You need at least ${e.required} different red flags on this email.`);
-      if (ev.duplicates) parts.push('Two flags on the same clue only count once.');
+      const more = e.required - hits;
+      lines.push(hits === 0
+        ? `But none of your flags are on a warning sign yet. Find ${e.required === 1 ? 'one' : `${e.required} different ones`}.`
+        : `But you’ve found ${hits} of the ${e.required} warning signs needed. Find ${more} more.`);
+      if (ev.duplicates) lines.push('Flags on the same warning sign only count once.');
     } else if (keyMissing) {
-      parts.push('The biggest giveaway on this email still hasn’t been flagged.');
+      lines.push('But you haven’t flagged the biggest giveaway yet. Find it.');
     }
-    if (tooMany) parts.push(`Too many flags are on harmless areas (${ev.misses}). Remove the grey ones.`);
-    parts.push(`−${WRONG_COST} points.`);
-    setFeedback(parts.join(' '), 'warn');
+    if (tooMany) {
+      const remove = ev.misses - MAX_FALSE_FLAGS;
+      lines.push(`${lines.length > 1 ? 'Also, too' : 'But too'} many flags are on harmless parts of the email. Remove at least ${remove} of the grey ✕ ones.`);
+    }
+    // Explain the colours only for the kinds of flag actually on the email
+    // (the "too many" line above already explains the grey ones).
+    if (hits && ev.misses && !tooMany) lines.push('Green ✓ flags are on real warning signs. Grey ✕ flags are on harmless parts.');
+    else if (hits) lines.push('Your green ✓ flags are on real warning signs. Keep them.');
+    else if (ev.misses && !tooMany) lines.push('Grey ✕ flags are on harmless parts of the email.');
+    lines.push(`−${WRONG_COST} points. Try again.`);
+    setFeedback(lines.join('\n'), 'warn');
     save();
     renderPins();
     renderFlagList();
@@ -856,21 +941,20 @@
   }
 
   // ---------- Completion ----------
+  // Shared completion contract: vault.completeRoom() sets the progress flag,
+  // stores the code word, syncs to the server and ticks the header tracker, in
+  // the right order. It returns true only the first time (safe to repeat).
   function completeRoom() {
-    const already = roomFlagComplete() && localStorage.getItem('vault_word_phishing') === WORD;
-    if (!already) {
-      try { utils?.setProgressFlag?.(ROOM_KEY, true); } catch (_) { /* ignore */ }
-      try { utils?.setProgressPercent?.(ROOM_KEY, 100); } catch (_) { /* ignore */ }
-      try { localStorage.setItem('vault_word_phishing', WORD); } catch (_) { /* ignore */ }
-      try { window.vault?.unlock?.(ROOM_KEY, WORD, { message: `Code word ${WORD} secured.` }); } catch (_) { /* ignore */ }
-      try { window.stateSync?.queueSave?.('phishing-complete'); } catch (_) { /* ignore */ }
+    let first = false;
+    try { first = window.vault?.completeRoom?.(ROOM_KEY, WORD, { message: `Code word ${WORD} secured.` }) === true; } catch (_) { /* ignore */ }
+    if (first) {
       state.pctAt = Date.now();
       persist();
     }
     renderVaultCallout();
     renderComplete();
     renderInbox();
-    if (!already) {
+    if (first) {
       announce(`Room complete. Code word ${WORD}. Enter it in the vault on the Mission Hub.`);
       setTimeout(() => completeEl?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 250);
     }
@@ -1017,8 +1101,13 @@
     points?.ensure?.();
 
     render();
-    if (allDone()) completeRoom();
-    else syncProgress();
+    if (allDone()) {
+      // Already solved: render() above restored the code word and card.
+      // Otherwise (e.g. solved on another device) finish completing here.
+      if (!roomSolved()) completeRoom();
+    } else {
+      syncProgress();
+    }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

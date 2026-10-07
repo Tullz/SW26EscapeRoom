@@ -121,13 +121,8 @@
     }
   };
 
-  const DEFAULT_PROGRESS = {
-    phishing: false,
-    password: false,
-    encryption: false,
-    essential: false,
-    binary: false
-  };
+  const ROOM_KEYS = ['phishing', 'osint', 'incident', 'mfa', 'crypto', 'forensics'];
+  const DEFAULT_PROGRESS = Object.fromEntries(ROOM_KEYS.map(k => [k, false]));
 
   async function bootstrapTeamState(username) {
     const team = String(username || '').toLowerCase();
@@ -154,13 +149,18 @@
       }
       localStorage.setItem(scoreLogKey, JSON.stringify(state.scoreLog || []));
       localStorage.setItem(activityKey, JSON.stringify(state.activity || []));
+      // Code words and "vault opened" live under shared keys: start from this team's copy only,
+      // never from whatever another team left on this computer.
+      ROOM_KEYS.forEach(k => localStorage.removeItem(`vault_word_${k}`));
+      localStorage.removeItem('vault_opened');
       if (state.vault) {
-        if (state.vault.phishing) localStorage.setItem('vault_word_phishing', String(state.vault.phishing));
-        if (state.vault.osint) localStorage.setItem('vault_word_osint', String(state.vault.osint));
-        if (state.vault.incident) localStorage.setItem('vault_word_incident', String(state.vault.incident));
-        if (state.vault.mfa) localStorage.setItem('vault_word_mfa', String(state.vault.mfa));
-        if (state.vault.supply) localStorage.setItem('vault_word_supply', String(state.vault.supply));
-        if (state.vault.forensics) localStorage.setItem('vault_word_forensics', String(state.vault.forensics));
+        ROOM_KEYS.forEach(k => {
+          if (state.vault[k]) localStorage.setItem(`vault_word_${k}`, String(state.vault[k]));
+        });
+        if (state.vault.opened) localStorage.setItem('vault_opened', '1');
+        if (state.vault.entries && typeof state.vault.entries === 'object') {
+          localStorage.setItem(`${team}_vault_entries`, JSON.stringify(state.vault.entries));
+        }
         localStorage.setItem(`${team}_vault`, JSON.stringify(state.vault));
         if (state.vault.resetVersion) {
           localStorage.setItem(`${team}_reset_version`, String(state.vault.resetVersion));

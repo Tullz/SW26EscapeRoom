@@ -377,9 +377,12 @@
       background: linear-gradient(145deg, rgba(9,255,136,.12), rgba(88,166,255,.08));
       border: 2px solid var(--accent); border-radius: 16px; padding: 1.5rem; text-align: center;
     }
+    .mfa-complete:focus { outline: none; }
+    #mfaFinalBanner { scroll-margin-top: 140px; }
     .mfa-complete h2 { color: var(--accent); margin: 0 0 .5rem; }
     .mfa-complete__word { font-size: clamp(2rem, 6vw, 3.2rem); font-weight: 900; letter-spacing: .12em; color: var(--accent); text-shadow: 0 0 22px rgba(9,255,136,.6); margin: .4rem 0; }
     .mfa-complete__cta { color: #fff; font-weight: 700; margin-bottom: 1rem; }
+    .mfa-lock { font-weight: 700; color: #fff; }
     .debrief { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .8rem; text-align: left; margin-top: 1rem; }
     .debrief__card { background: rgba(0,0,0,.25); border: 1px solid var(--border); border-radius: 12px; padding: .85rem 1rem; }
     .debrief__card h3 { font-size: .95rem; margin: 0 0 .4rem; color: #fff; }
@@ -390,6 +393,9 @@
     @media (max-width: 960px) {
       .desk-layout, .attack-layout, .kit { grid-template-columns: 1fr; }
       .phone { max-width: 290px; }
+    }
+    @media (max-width: 720px) {
+      #mfaFinalBanner { scroll-margin-top: 4.5rem; } /* clear of the "code word secured" toast */
     }
     @media (max-width: 560px) {
       .mfa-room { padding: .9rem; }
@@ -435,7 +441,7 @@
         <nav class="main-nav" aria-label="Primary">
           <a class="nav-link" href="game.html">Mission Hub</a>
         </nav>
-        <a class="nav-btn nav-btn--next" href="supply-chain.html" aria-label="Next challenge: Supply Chain Attack">
+        <a class="nav-btn nav-btn--next" href="crypto.html" aria-label="Next challenge: Encryption">
           Next<span aria-hidden="true">&rarr;</span>
         </a>
         <div class="vault-status" id="vaultStatus" role="status" aria-live="polite" data-visible="team">
@@ -445,7 +451,7 @@
             <li data-vault-key="osint">&bull;</li>
             <li data-vault-key="incident">&bull;</li>
             <li data-vault-key="mfa">&bull;</li>
-            <li data-vault-key="supply">&bull;</li>
+            <li data-vault-key="crypto">&bull;</li>
             <li data-vault-key="forensics">&bull;</li>
           </ol>
           <span class="vault-status__count">0/6</span>
@@ -474,7 +480,7 @@
       </ol>
       <div class="vault-callout" role="status">
         <span class="tag">Code word</span>
-        <p>Secure Priya's account to reveal the code word: <strong id="mfaVaultValue">&mdash;</strong></p>
+        <p id="mfaVaultValue"><span class="mfa-lock">Locked.</span> Secure Priya's account to reveal this room's code word.</p>
       </div>
     </section>
 
@@ -502,6 +508,11 @@
           <li>Each hint: <strong>-5 points</strong> (hints get more detailed each time you ask)</li>
         </ul>
       </details>
+    </section>
+
+    <!-- ============ Completion (filled by JS once the room is solved) ============ -->
+    <section id="mfaFinalBanner" class="mt-2" hidden>
+      <div class="mfa-complete" id="completionContent" aria-live="polite" tabindex="-1"></div>
     </section>
 
     <!-- ================= The room ================= -->
@@ -722,15 +733,10 @@
       </div>
     </section>
 
-    <!-- ============ Completion ============ -->
-    <section id="mfaFinalBanner" class="mt-2" hidden>
-      <div class="mfa-complete" id="completionContent" aria-live="polite"></div>
-    </section>
-
     <nav class="challenge-nav mt-2" aria-label="Puzzle navigation">
-      <a class="btn ghost" href="incident.html">&larr; Incident Response</a>
+      <a class="btn ghost" href="incident.html">&larr; Incident Management</a>
       <a class="btn ghost" href="game.html">Mission Hub</a>
-      <a class="btn" href="supply-chain.html">Next: Supply Chain &rarr;</a>
+      <a class="btn" href="crypto.html">Next: Encryption &rarr;</a>
     </nav>
   </main>
 

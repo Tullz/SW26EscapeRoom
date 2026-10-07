@@ -5,7 +5,7 @@ export const DEFAULT_PROGRESS = {
   osint: false,
   incident: false,
   mfa: false,
-  supply: false,
+  crypto: false,
   forensics: false
 };
 
@@ -55,7 +55,11 @@ export function createClient() {
   return new Client(config);
 }
 
+// The schema check costs four round trips to Neon; do it once per warm function instance.
+let teamStateTableReady = false;
+
 export async function ensureTeamStateTable(client) {
+  if (teamStateTableReady) return;
   await client.query(`
     create table if not exists team_state (
       team text primary key,
@@ -75,4 +79,5 @@ export async function ensureTeamStateTable(client) {
   await client.query(`alter table team_state add column if not exists endless jsonb not null default '[]'::jsonb`);
   await client.query(`alter table team_state add column if not exists bonus jsonb not null default '{}'::jsonb`);
   await client.query(`alter table team_state add column if not exists vault jsonb not null default '{}'::jsonb`);
+  teamStateTableReady = true;
 }

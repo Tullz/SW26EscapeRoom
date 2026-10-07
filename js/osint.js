@@ -8,8 +8,10 @@
    C – Password Prediction (multiple choice)
    D – Spear Phish Draft (multiple choice)
 
-   Vault code word: SHADOW — awarded only if Part B passed (>=2/3 correct)
-   AND Part C correct AND Part D completed.
+   Vault code word: awarded only if Part B passed (>=2/3 correct)
+   AND Part C correct AND Part D completed. Completion goes through
+   window.vault.completeRoom() so the word, progress flag, server sync and
+   header tracker all update together.
 
    Scoring:
    - Wrong security question answer: -3 pts
@@ -30,7 +32,13 @@
   if (!$('#osintPartA')) return;
 
   // ---------- Constants ----------
-  const STATE_KEY = 'osint_state';
+  const ROOM_KEY = 'osint';
+  // Room state is saved per team (matches the state-sync reset pattern `${team}_osint_*`),
+  // so a second team on the same browser never inherits another team's run.
+  const TEAM = String(window.utils?.getUser?.()?.username || 'team').toLowerCase();
+  const STATE_KEY = `${TEAM}_osint_state`;
+  // Code word is assembled at runtime so it never appears in the page markup.
+  const WORD = [83, 72, 65, 68, 79, 87].map((c) => String.fromCharCode(c)).join('');
   const TOTAL_PARTS = 4;
   const MAX_ATTEMPTS = 2;
   const MIN_CORRECT_B = 2; // must get at least 2/3 security questions right
@@ -53,7 +61,7 @@
       id: 'sq3',
       label: 'What is your mother\'s maiden name?',
       answer: 'chen',
-      hint: 'Find the birthday post for Jordan\'s mum. The maiden name is part of a hyphenated surname.',
+      hint: 'Find Jordan\'s birthday post for their mum, then look at who replied to it. The maiden name is part of a hyphenated surname.',
     }
   ];
 
@@ -101,23 +109,45 @@
     progressLabel: '#osintProgressText'
   });
 
-  // ---------- Check if already complete ----------
-  function isAlreadyComplete() {
-    const progress = window.utils?.readProgress?.() || {};
-    return progress.osint === true;
+  // ---------- Completion check ----------
+  // Complete = progress flag set AND code word stored (see vault.js).
+  function roomComplete() {
+    try { return window.vault?.isRoomComplete?.(ROOM_KEY) === true; } catch (_) { return false; }
+  }
+
+  function progressFlagSet() {
+    try { return (window.utils?.readProgress?.() || {})[ROOM_KEY] === true; } catch (_) { return false; }
   }
 
   // ---------- Progress tracking ----------
-  function updateProgress() {
+  // Intermediate progress only. It never passes `complete`, so it can never mark the
+  // room solved (or un-solve it); completion is handled by completePuzzle().
+  function updateProgress(opts = {}) {
+    if (roomComplete()) return;
     let parts = 0;
     if (state.partADone) parts++;
     if (state.partBDone) parts++;
     if (state.partCDone) parts++;
     if (state.partDDone) parts++;
-    const pct = Math.round((parts / TOTAL_PARTS) * 100);
-    const vaultAwarded = canAwardVault() && parts === TOTAL_PARTS;
-    window.utils?.setProgressPercent?.('osint', pct, { complete: vaultAwarded });
+    // 100% is reserved for a genuine pass; a failed run tops out below it.
+    const pct = Math.min(90, Math.round((parts / TOTAL_PARTS) * 100));
+    const existing = window.utils?.getProgressPercent?.(ROOM_KEY) ?? 0;
+    if (pct === existing) return;
+    // Only move forward, unless this is an explicit restart (Retry), so a fresh
+    // device opening the room never knocks another device's progress back to 0.
+    if (pct < existing && !opts.force) return;
+    window.utils?.setProgressPercent?.(ROOM_KEY, pct);
   }
+
+  // ---------- Locked sections ----------
+  // Locked sections are greyed out AND inert, so keyboard users can't tab into a
+  // later step (e.g. pick a password) before it is unlocked.
+  function setLocked(section, locked) {
+    if (!section) return;
+    section.classList.toggle('is-locked', locked);
+    section.inert = locked;
+  }
+  $$('.osint-section.is-locked').forEach((section) => setLocked(section, true));
 
   // ---------- Tab switching ----------
   const tabs = $$('.sm-tab');
@@ -192,7 +222,7 @@
   const hintTextB = $('#osintHintTextB');
 
   function unlockPartB() {
-    partBEl.classList.remove('is-locked');
+    setLocked(partBEl, false);
     renderSecurityQuestion();
   }
 
@@ -432,6 +462,7 @@
     const q = SECURITY_QUESTIONS[idx];
     const hintKey = 'hintB_' + q.id;
     if (state.hintsUsed[hintKey]) {
+      hintTextB.textContent = q.hint;
       hintTextB.hidden = false;
       return;
     }
@@ -453,12 +484,12 @@
   const explanationC = $('#osintExplanationC');
 
   function unlockPartC() {
-    partCEl.classList.remove('is-locked');
+    setLocked(partCEl, false);
   }
 
   pwChoices.forEach(btn => {
     btn.addEventListener('click', () => {
-      if (state.partCDone) return;
+      if (state.partCDone || !state.partBPassed) return;
 
       const picked = btn.dataset.pw;
       const correct = picked === 'biscuit2021';
@@ -489,7 +520,7 @@
       }
 
       // Show explanation
-      explanationC.innerHTML = '<strong>Why Biscuit2021!?</strong> The most common weak password pattern is combining a pet name with a significant year. "Biscuit" is Jordan\'s dog (mentioned multiple times across posts and photos) and "2021" is the year they started at Meridian Solutions. Studies show that over 60% of people use personal information like pet names, birthdays, or anniversaries in their passwords. This is exactly the kind of information an attacker harvests through OSINT before attempting credential stuffing or targeted password guessing.';
+      explanationC.innerHTML = '<strong>Why Biscuit2021!?</strong> The most common weak password pattern is combining a pet name with a significant year. "Biscuit" is Jordan\'s dog (mentioned in posts, check-ins and the About section) and "2021" is the year they started at Meridian Solutions. Studies show that over 60% of people use personal information like pet names, birthdays, or anniversaries in their passwords. This is exactly the kind of information an attacker harvests through OSINT before attempting credential stuffing or targeted password guessing.';
       explanationC.hidden = false;
 
       state.partCDone = true;
@@ -521,15 +552,17 @@
   });
 
   // Hint button C
+  const HINT_C = 'Think about common password patterns — pet names and significant dates or years are the most frequently used combination.';
   hintBtnC.addEventListener('click', () => {
     if (state.hintsUsed.hintC) {
+      hintTextC.textContent = HINT_C;
       hintTextC.hidden = false;
       return;
     }
     state.hintsUsed.hintC = true;
     window.utils?.points?.spend(5, 'OSINT hint');
     saveState(state);
-    hintTextC.textContent = 'Think about common password patterns — pet names and significant dates or years are the most frequently used combination.';
+    hintTextC.textContent = HINT_C;
     hintTextC.hidden = false;
     announce('Hint: Think about common password patterns.');
   });
@@ -547,12 +580,12 @@
   const retryBtn = $('#osintRetryBtn');
 
   function unlockPartD() {
-    partDEl.classList.remove('is-locked');
+    setLocked(partDEl, false);
   }
 
   phishChoices.forEach(btn => {
     btn.addEventListener('click', () => {
-      if (state.partDDone) return;
+      if (state.partDDone || !state.partCDone) return;
 
       const picked = btn.dataset.phish;
       const correct = picked === 'fitzone';
@@ -590,29 +623,30 @@
       partDLabel.textContent = 'Assessment complete';
       hintBtnD.hidden = true;
       saveState(state);
-      updateProgress();
 
-      // Determine outcome — delay enough for explanation to render and settle
-      setTimeout(() => {
-        if (canAwardVault()) {
-          completePuzzle();
-        } else {
-          showMissionFailed();
-        }
-      }, 1500);
+      if (canAwardVault()) {
+        // Genuine pass: award the code word now (header tick + top-of-page reveal).
+        completePuzzle({ celebrate: true });
+      } else {
+        updateProgress();
+        // Give the explanation a moment to land before the failure panel.
+        setTimeout(showMissionFailed, 1500);
+      }
     });
   });
 
   // Hint button D
+  const HINT_D = 'The most effective spear phishing uses specific personal details about the target. Which option references something only someone who researched Jordan would know?';
   hintBtnD.addEventListener('click', () => {
     if (state.hintsUsed.hintD) {
+      hintTextD.textContent = HINT_D;
       hintTextD.hidden = false;
       return;
     }
     state.hintsUsed.hintD = true;
     window.utils?.points?.spend(5, 'OSINT hint');
     saveState(state);
-    hintTextD.textContent = 'The most effective spear phishing uses specific personal details about the target. Which option references something only someone who researched Jordan would know?';
+    hintTextD.textContent = HINT_D;
     hintTextD.hidden = false;
     announce('Hint: Look for the option that uses specific personal information.');
   });
@@ -625,32 +659,90 @@
   }
 
   // ---------- Puzzle completion ----------
-  const CODE_WORD = 'SHADOW';
+  const vaultCallout = $('#osintVaultValue');
+  const completeEl = $('#osintComplete');
 
-  function completePuzzle() {
-    if (isAlreadyComplete()) return;
+  function el(tag, props = {}, text) {
+    const node = document.createElement(tag);
+    Object.entries(props).forEach(([k, v]) => {
+      if (k === 'className') node.className = v;
+      else node.setAttribute(k, v);
+    });
+    if (text != null) node.textContent = text;
+    return node;
+  }
 
+  // "Code word" callout in the briefing: Locked -> the word.
+  function renderVaultCallout() {
+    if (!vaultCallout || !roomComplete()) return;
+    vaultCallout.textContent = '';
+    vaultCallout.appendChild(document.createTextNode('Code word: '));
+    vaultCallout.appendChild(el('strong', {}, WORD));
+    vaultCallout.appendChild(document.createTextNode(' — enter it in the vault on the Mission Hub.'));
+  }
+
+  // Completion card near the top of the page.
+  function renderComplete() {
+    if (!completeEl) return;
+    if (!roomComplete()) {
+      completeEl.hidden = true;
+      completeEl.innerHTML = '';
+      return;
+    }
+    completeEl.innerHTML = '';
+    completeEl.appendChild(el('h2', {}, 'Account recovered'));
+    completeEl.appendChild(el('p', {}, 'You got into Jordan\'s account, predicted the password and spotted how an attacker would use the same public information.'));
+    completeEl.appendChild(el('div', { className: 'osint-codeword', 'aria-label': `Code word ${WORD}` }, WORD));
+    const p = el('p');
+    p.appendChild(document.createTextNode('Code word: '));
+    p.appendChild(el('strong', {}, WORD));
+    p.appendChild(document.createTextNode(' — enter it in the vault on the Mission Hub.'));
+    completeEl.appendChild(p);
+    if (state.partDAnswer) {
+      const wrongB = SECURITY_QUESTIONS.reduce((n, q) => {
+        const tries = state.questionAttempts[q.id] || 0;
+        return n + Math.max(0, tries - (state.questionResults[q.id] === true ? 1 : 0));
+      }, 0);
+      const wrong = wrongB + (state.partDAnswer !== 'fitzone' ? 1 : 0);
+      const hints = Object.keys(state.hintsUsed || {}).length;
+      completeEl.appendChild(el('p', { className: 'muted' }, `Wrong answers: ${wrong} · Hints used: ${hints}`));
+    }
+    const row = el('div', { className: 'osint-complete__actions' });
+    row.appendChild(el('a', { className: 'btn primary', href: 'game.html' }, 'Go to the Mission Hub'));
+    row.appendChild(el('a', { className: 'btn ghost', href: 'incident.html' }, 'Next room: Incident Management →'));
+    completeEl.appendChild(row);
+    completeEl.hidden = false;
+  }
+
+  // Debrief card under Part D (the word is shown here as well as at the top).
+  function renderVaultReveal() {
+    if (!roomComplete()) return;
+    const big = $('#osintVaultWord');
+    const inline = $('#osintVaultWordInline');
+    if (big) big.textContent = WORD;
+    if (inline) inline.textContent = WORD;
     vaultReveal.hidden = false;
     missionFailed.hidden = true;
+  }
 
-    // Also inject code word banner directly into Part D so user sees it immediately
-    const partDSection = $('#osintPartD');
-    if (partDSection && !partDSection.querySelector('.inline-vault-reveal')) {
-      const banner = document.createElement('div');
-      banner.className = 'inline-vault-reveal';
-      banner.innerHTML = '<strong style="color:var(--accent);font-size:1.4rem;display:block;margin-top:1rem">' +
-        '✅ Code word: ' + CODE_WORD + '</strong>' +
-        '<p style="color:var(--muted);font-size:.85rem;margin-top:.25rem">Recorded to your vault. Scroll down for the full debrief.</p>';
-      partDSection.appendChild(banner);
-      banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  function renderSolvedBanners() {
+    renderVaultCallout();
+    renderComplete();
+    renderVaultReveal();
+  }
+
+  // Only ever called on a genuine pass (or to repair a pass recorded before this fix).
+  function completePuzzle(opts = {}) {
+    let first = false;
+    try {
+      first = window.vault?.completeRoom?.(ROOM_KEY, WORD, { message: `Code word ${WORD} secured.` }) === true;
+    } catch (_) { /* ignore */ }
+    renderSolvedBanners();
+    if (first && opts.celebrate) {
+      announce(`Mission complete. Code word ${WORD}. Enter it in the vault on the Mission Hub.`);
+      // Let the "Correct!" feedback land, then bring the code word card into view once.
+      setTimeout(() => completeEl?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 1500);
     }
-
-    window.utils?.setProgressFlag?.('osint', true);
-    localStorage.setItem('vault_word_osint', CODE_WORD);
-    window.vault?.unlock('osint', CODE_WORD, { message: 'Code word SHADOW secured.' });
-    window.stateSync?.queueSave?.('osint-complete');
-
-    announce('Mission complete! Code word SHADOW secured.');
   }
 
   // ---------- Mission failed ----------
@@ -663,19 +755,24 @@
 
   // ---------- Retry ----------
   retryBtn.addEventListener('click', () => {
-    // Clear room state completely
+    // Clear this room's run. A failed run never set the progress flag or stored the
+    // code word, so those are left alone (another device may have passed meanwhile).
     state = defaultState();
     saveState(state);
-    // Clear progress flag
-    window.utils?.setProgressFlag?.('osint', false);
-    try { localStorage.removeItem('vault_word_osint'); } catch (_) {}
-    // Reload page
+    updateProgress({ force: true });
     location.reload();
   });
 
   // ---------- Restore state on load ----------
   function restoreState() {
-    if (isAlreadyComplete()) {
+    // Repair: a pass recorded on this device, or a room the team already has marked
+    // complete (e.g. by the old progress bug or by the facilitator), but whose code
+    // word was never stored. completeRoom() stores it and ticks the header.
+    if (!roomComplete() && (progressFlagSet() || (state.partDDone && canAwardVault()))) {
+      completePuzzle({ celebrate: false });
+    }
+
+    if (roomComplete()) {
       // Already done — show full completion state
       state.partADone = true;
       state.partBDone = true;
@@ -689,22 +786,25 @@
       partALabel.textContent = 'Recon complete';
       startRecoveryBtn.remove();
 
-      partBEl.classList.remove('is-locked');
+      setLocked(partBEl, false);
       partBEl.classList.add('is-complete');
       partBLabel.classList.add('is-done');
       partBLabel.textContent = 'Verification complete';
       const correctCountB = SECURITY_QUESTIONS.filter(q => state.questionResults[q.id] === true).length;
+      state.currentQuestion = SECURITY_QUESTIONS.length;
       recoveryBody.innerHTML = '';
       recoveryBody.appendChild(buildStepIndicator());
       const summary = document.createElement('div');
       summary.className = 'recovery-summary is-pass';
       summary.innerHTML = '<strong>Account access recovered</strong>' +
-        '<p>Security verification passed. You answered ' + correctCountB + ' of ' +
-        SECURITY_QUESTIONS.length + ' questions correctly.</p>';
+        (correctCountB > 0
+          ? '<p>Security verification passed. You answered ' + correctCountB + ' of ' +
+            SECURITY_QUESTIONS.length + ' questions correctly.</p>'
+          : '<p>Security verification passed.</p>');
       recoveryBody.appendChild(summary);
       hintBtnB.hidden = true;
 
-      partCEl.classList.remove('is-locked');
+      setLocked(partCEl, false);
       partCEl.classList.add('is-complete');
       partCLabel.classList.add('is-done');
       partCLabel.textContent = 'Password cracked';
@@ -717,7 +817,7 @@
       explanationC.hidden = false;
       hintBtnC.hidden = true;
 
-      partDEl.classList.remove('is-locked');
+      setLocked(partDEl, false);
       partDEl.classList.add('is-complete');
       partDLabel.classList.add('is-done');
       partDLabel.textContent = 'Assessment complete';
@@ -730,8 +830,7 @@
       explanationD.hidden = false;
       hintBtnD.hidden = true;
 
-      vaultReveal.hidden = false;
-      updateProgress();
+      renderSolvedBanners();
       return;
     }
 
@@ -740,7 +839,7 @@
       partALabel.classList.add('is-done');
       partALabel.textContent = 'Recon complete';
       startRecoveryBtn.remove();
-      partBEl.classList.remove('is-locked');
+      setLocked(partBEl, false);
     }
 
     if (state.partBDone) {
@@ -751,7 +850,7 @@
     }
 
     if (state.partCDone) {
-      partCEl.classList.remove('is-locked');
+      setLocked(partCEl, false);
       partCEl.classList.add('is-complete');
       partCLabel.classList.add('is-done');
       partCLabel.textContent = 'Password cracked';
@@ -763,10 +862,13 @@
       explanationC.innerHTML = '<strong>Why Biscuit2021!?</strong> The most common weak password pattern is combining a pet name with a significant year. "Biscuit" is Jordan\'s dog and "2021" is the year they started at Meridian Solutions.';
       explanationC.hidden = false;
       hintBtnC.hidden = true;
+      // Part D opens after Part C whatever the answer (a wrong password is a
+      // learning run that ends in "Mission failed"), so reopen it on reload.
+      if (!state.partDDone) unlockPartD();
     }
 
     if (state.partDDone) {
-      partDEl.classList.remove('is-locked');
+      setLocked(partDEl, false);
       partDEl.classList.add('is-complete');
       partDLabel.classList.add('is-done');
       partDLabel.textContent = 'Assessment complete';
@@ -779,11 +881,8 @@
       explanationD.hidden = false;
       hintBtnD.hidden = true;
 
-      if (canAwardVault()) {
-        vaultReveal.hidden = false;
-      } else {
-        showMissionFailed();
-      }
+      // A pass was completed above, so reaching here means the run failed.
+      if (!canAwardVault()) showMissionFailed();
     }
 
     // If mission was failed mid-way (Part B failed), show the failed panel
@@ -833,5 +932,12 @@
 
   // Run restore
   restoreState();
+
+  // The team may be split across devices: when a background sync brings in a
+  // completion (or a pass recorded before the progress fix), show the word here too.
+  window.addEventListener('state-sync:applied', () => {
+    if (!roomComplete() && progressFlagSet()) completePuzzle({ celebrate: false });
+    if (roomComplete() && completeEl?.hidden) renderSolvedBanners();
+  });
 
 })();

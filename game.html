@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Mission Hub: work through six security rooms, collect a code word from each and crack the vault." />
+  <meta name="description" content="Mission Hub: solve six security rooms in any order, collect a code word from each and crack the vault." />
   <link rel="icon" href="assets/favicon.png" type="image/png" />
 
   <!-- Tight CSP (local assets only) -->
@@ -331,6 +331,7 @@
       color: var(--accent);
       text-transform: none;
       font-weight: 600;
+      white-space: nowrap;
     }
     .hub-vault .lock-word {
       width: 100%;
@@ -345,8 +346,16 @@
     .hub-vault .lock-word:focus { transform: none; border-color: var(--brand); border-style: solid; }
     .vault-slot.is-earned .lock-word { border-color: rgba(9, 255, 136, .55); border-style: solid; }
     .vault-slot.is-earned .lock-word::placeholder { color: rgba(9, 255, 136, .6); }
+    /* A typed word is shown neutrally: only "Crack the vault" says whether words are right. */
     .vault-slot.is-filled .lock-word { border-style: solid; border-color: var(--brand); color: #fff; }
-    .vault-slot.is-earned.is-filled .lock-word { border-color: var(--accent); }
+
+    @keyframes hub-vault-shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+    .hub-vault.is-shaking { animation: hub-vault-shake .4s ease; }
+    @media (prefers-reduced-motion: reduce) { .hub-vault.is-shaking { animation: none; } }
 
     .hub-vault .lock-actions { justify-content: stretch; margin-top: 1rem; gap: .6rem; }
     .hub-vault #unlockBtn { flex: 1 1 auto; font-weight: 700; }
@@ -436,7 +445,7 @@
             <li data-vault-key="osint">•</li>
             <li data-vault-key="incident">•</li>
             <li data-vault-key="mfa">•</li>
-            <li data-vault-key="supply">•</li>
+            <li data-vault-key="crypto">•</li>
             <li data-vault-key="forensics">•</li>
           </ol>
           <span class="vault-status__count">0/6</span>
@@ -453,7 +462,7 @@
       <div>
         <p class="hub-eyebrow">Team <strong id="teamName" data-user-name>TEAM</strong></p>
         <h1 class="glow" id="hubTitle">Crack the vault</h1>
-        <p class="hub-lead">Solve <strong>6 security rooms</strong> (about 15 minutes each). Every room you solve reveals a <strong>code word</strong> — type it into the vault below. All 6 words open the vault.</p>
+        <p class="hub-lead">Solve <strong>6 security rooms</strong> in any order (about 15 minutes each). Every room you solve reveals a <strong>code word</strong> — type it into the vault below. All 6 words open the vault.</p>
       </div>
 
       <div class="hub-next" aria-live="polite">
@@ -471,11 +480,11 @@
     </section>
 
     <div class="hub-body">
-      <!-- 2. The rooms, in order -->
+      <!-- 2. The rooms (any order) -->
       <section class="card hub-path mission-tracker" aria-labelledby="pathHeading">
         <div class="hub-section-title">
-          <h2 id="pathHeading">Your route</h2>
-          <p>Go in order, 1 → 6. Tap a room to enter it.</p>
+          <h2 id="pathHeading">The rooms</h2>
+          <p>Play them in any order. Tap a room to enter it.</p>
         </div>
         <!-- Rendered by js/game.js from its ROOMS list -->
         <ol class="mission-tracker__list" id="missionTrackerList"></ol>
@@ -494,11 +503,11 @@
           </span>
           <div>
             <h2 id="vaultHeading">The Vault</h2>
-            <p>When a room gives you its code word, type it into that room's slot. Words save automatically for your whole team.</p>
+            <p>When a room gives you its code word, type it into that room's slot (words save automatically). The vault opens when all six words are right.</p>
           </div>
         </div>
 
-        <!-- Rendered by js/game.js: one .lock-word input per room, in room order -->
+        <!-- Rendered by js/game.js: one .lock-word input per room, in the same order as the room list -->
         <div class="vault-slots" id="vaultSlots"></div>
 
         <div class="lock-actions">
@@ -542,9 +551,9 @@
           <a class="btn ghost" href="firewall.html">Open Firewall Mission</a>
         </article>
         <article class="bonus-mission">
-          <h3>Data Breach Investigation</h3>
-          <p class="muted">Inspect access logs and isolate the account that started the breach.</p>
-          <a class="btn ghost" href="breach.html">Open Breach Lab</a>
+          <h3>Data Leak Investigation</h3>
+          <p class="muted">Inspect access logs and isolate the account that started the leak.</p>
+          <a class="btn ghost" href="breach.html">Open Leak Lab</a>
         </article>
         <article class="bonus-mission">
           <h3>Social Engineering</h3>

@@ -15,13 +15,13 @@
   // Seed list; any team found in the database is added on each Neon pull.
   const TEAMS = ['team1', 'trojan_horsin', 'blackhoodies', 'cipherettes', 'peas', 'sats', 'darkwebaliens', 'crossguild', 'hobarthackers', 'specs', 'gatecrashers', 'rootkitrebels'];
 
-  const PUZZLES = ['phishing', 'osint', 'incident', 'mfa', 'supply', 'forensics'];
+  const PUZZLES = ['phishing', 'osint', 'incident', 'mfa', 'crypto', 'forensics'];
   const PUZZLE_LABELS = {
     phishing: 'Phishing Spotter',
     osint: 'OSINT Investigation',
     incident: 'Incident Management',
     mfa: 'MFA / Authentication',
-    supply: 'Supply Chain Attack',
+    crypto: 'Encryption',
     forensics: 'Network Forensics'
   };
 
@@ -34,7 +34,7 @@
     osint: false,
     incident: false,
     mfa: false,
-    supply: false,
+    crypto: false,
     forensics: false
   };
 
@@ -257,7 +257,9 @@
       const res = await fetch('/.netlify/functions/team-state', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...snapshot, reason })
+        // source 'admin': the server merges progress (so a stale dashboard copy can't undo a
+        // room a team just finished) but takes the dashboard's points as the truth.
+        body: JSON.stringify({ ...snapshot, reason, source: 'admin' })
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch (err) {
@@ -326,7 +328,10 @@
     return persistScore(team, target, delta, reason || 'Set total');
   }
 
-  function resetTeamScore(team, reason = 'Log cleared') {
+  // Points back to 100 with a fresh log. Only a full team reset (resetVault) also bumps the
+  // resetVersion, which makes the team's devices wipe their rooms and code words; clearing
+  // the points log on its own must not take away rooms the team has solved.
+  function resetTeamScore(team, reason = 'Log cleared', { resetVault = false } = {}) {
     const entry = {
       delta: 0,
       reason,
@@ -336,21 +341,24 @@
     localStorage.setItem(scoreKey(team), String(SCORE_BASE));
     localStorage.setItem(scoreLogKey(team), JSON.stringify([entry]));
     logTeamActivity(team, { type: 'points', delta: 0, total: SCORE_BASE, reason });
-    const resetVersion = Date.now();
-    writeVault(team, { resetVersion });
-    [
-      'vault_word_phishing',
-      'vault_word_osint',
-      'vault_word_incident',
-      'vault_word_mfa',
-      'vault_word_supply',
-      'vault_word_forensics'
-    ].forEach(key => localStorage.removeItem(key));
-    queueTeamPush(team, 'vault-reset');
+    if (resetVault) {
+      const resetVersion = Date.now();
+      writeVault(team, { resetVersion });
+      [
+        'vault_word_phishing',
+        'vault_word_osint',
+        'vault_word_incident',
+        'vault_word_mfa',
+        'vault_word_crypto',
+        'vault_word_forensics'
+      ].forEach(key => localStorage.removeItem(key));
+    }
+    queueTeamPush(team, resetVault ? 'vault-reset' : 'points-reset');
     return { total: SCORE_BASE, delta: 0, log: [entry] };
   }
 
   function setTeamPuzzleProgress(team, puzzle, value) {
+    const now = Date.now();
     const key = `${team}_progress`;
     const progress = getJSON(key, { ...DEFAULT_PROGRESS });
     progress[puzzle] = !!value;
@@ -359,9 +367,17 @@
     const meta = getJSON(metaKey, {});
     meta[puzzle] = {
       percent: value ? 100 : 0,
-      updatedAt: Date.now()
+      updatedAt: now
     };
     setJSON(metaKey, meta);
+    if (!value) {
+      // Team devices keep completed rooms through sync hiccups; a "reopened at" time is what
+      // tells them (and the server) that this completion was taken back on purpose.
+      const vault = readVault(team);
+      vault.reopened = { ...(vault.reopened || {}), [puzzle]: now };
+      delete vault[puzzle];
+      writeVault(team, vault);
+    }
     logTeamActivity(team, {
       type: 'progress',
       puzzle,
@@ -1238,13 +1254,13 @@
         setJSON(activityKey(team), []);
         logTeamActivity(team, { type: 'session', status: 'reset', detail: 'Progress reset by admin', at: resetVersion });
         writeVault(team, { resetVersion });
-        resetTeamScore(team, 'Reset via admin');
+        resetTeamScore(team, 'Reset via admin', { resetVault: true });
       });
       ['vault_word_phishing',
        'vault_word_osint',
        'vault_word_incident',
        'vault_word_mfa',
-       'vault_word_supply',
+       'vault_word_crypto',
        'vault_word_forensics'
       ].forEach(key => localStorage.removeItem(key));
       try {

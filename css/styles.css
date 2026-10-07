@@ -134,17 +134,19 @@ main.container-xl {
     color: var(--brand);
 }
 
-.status-message[data-tone="success"]::before {
-    content: "Success";
+/* Same specificity as the rule above (it ends in :not(:empty)), otherwise
+   attr(data-tone) wins and players see the raw "WARN"/"SUCCESS"/"INFO". */
+.status-message[data-tone="success"]:not(:empty)::before {
+    content: "Nice";
     color: var(--accent);
 }
 
-.status-message[data-tone="warn"]::before {
-    content: "Check";
+.status-message[data-tone="warn"]:not(:empty)::before {
+    content: "Not yet";
     color: var(--warn);
 }
 
-.status-message[data-tone="info"]::before {
+.status-message[data-tone="info"]:not(:empty)::before {
     content: "Note";
 }
 
@@ -3613,11 +3615,14 @@ h1.glow {
 }
 
 .toast-stack {
+  /* Bottom-right, clear of the sticky header and its nav buttons. Toasts are
+     announcements only, so clicks/taps pass straight through them. */
   position: fixed;
-  top: 1.5rem;
-  right: 1.5rem;
+  bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  right: 1.25rem;
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: .65rem;
   z-index: 200;
   pointer-events: none;
@@ -3628,14 +3633,14 @@ h1.glow {
   max-width: clamp(220px, 28vw, 320px);
   padding: .65rem .85rem;
   border-radius: .75rem;
-  background: rgba(2, 6, 23, .9);
+  background: rgba(2, 6, 23, .94);
   border: 1px solid rgba(148, 163, 184, .35);
-  color: var(--muted);
+  color: var(--ink, #e6edf3);
   box-shadow: 0 12px 32px rgba(15, 23, 42, .45);
   opacity: 0;
-  transform: translateY(-8px);
+  transform: translateY(8px);
   transition: opacity .25s ease, transform .25s ease;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
 .toast.is-visible {
@@ -3648,12 +3653,21 @@ h1.glow {
         left: 50%;
         right: auto;
         transform: translateX(-50%);
-        top: 1rem;
+        bottom: calc(.75rem + env(safe-area-inset-bottom, 0px));
         width: min(92vw, 320px);
+        align-items: stretch;
     }
     .toast {
         max-width: 100%;
+        min-width: 0;
+        padding: .45rem .75rem;
+        font-size: .86rem;
+        text-align: center;
     }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .toast { transition: opacity .2s ease; transform: none; }
 }
 
 .onboard {

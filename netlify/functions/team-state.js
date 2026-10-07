@@ -1,4 +1,5 @@
 import { createClient, ensureTeamStateTable, DEFAULT_PROGRESS, errorResponse } from './_shared/db.js';
+import { mergeStates } from './_shared/merge.js';
 
 function normalizeProgress(raw) {
   const cleaned = { ...DEFAULT_PROGRESS };
@@ -154,42 +155,70 @@ export default async (req) => {
       }
       const team = String(body.team || '').trim().toLowerCase();
       if (!team) return respond(400, { ok: false, error: 'Missing team' });
-      const sanitized = sanitizePayload(body);
-      // Reject pushes from a client that hasn't applied the latest admin reset yet,
-      // otherwise its stale local progress would overwrite the reset.
-      const { rows: existing } = await client.query('select vault from team_state where team = $1 limit 1', [team]);
-      const storedReset = Number(existing[0]?.vault?.resetVersion || 0);
-      const incomingReset = Number(sanitized.vault?.resetVersion || 0);
-      if (storedReset > incomingReset) {
-        return respond(409, { ok: false, error: 'Team was reset; pull latest state first', resetVersion: storedReset });
+      const incoming = sanitizePayload(body);
+      // Read-merge-write under a row lock so two sessions pushing at once can't drop each other's changes.
+      await client.query('begin');
+      try {
+        const { rows: existing } = await client.query('select * from team_state where team = $1 limit 1 for update', [team]);
+        const storedRow = existing[0] || null;
+        // Reject pushes from a client that hasn't applied the latest admin reset yet,
+        // otherwise its stale local progress would overwrite the reset.
+        const storedReset = Number(storedRow?.vault?.resetVersion || 0);
+        const incomingReset = Number(incoming.vault?.resetVersion || 0);
+        if (storedReset > incomingReset) {
+          await client.query('rollback');
+          return respond(409, { ok: false, error: 'Team was reset; pull latest state first', resetVersion: storedReset });
+        }
+        let next = incoming;
+        if (storedRow && incomingReset === storedReset) {
+          // Same reset epoch: merge, so a session holding an older copy can never undo a
+          // completion, a code word or a points change made elsewhere. A newer resetVersion
+          // (admin reset) replaces the row instead.
+          const merged = mergeStates(normalizeState(storedRow), {
+            progress: incoming.progress,
+            progressMeta: incoming.progress_meta,
+            times: incoming.times,
+            score: incoming.score,
+            scoreLog: incoming.score_log,
+            activity: incoming.activity,
+            endless: incoming.endless,
+            vault: incoming.vault
+          }, { score: body.source === 'admin' ? 'local' : 'merge', endless: 'local' });
+          next = sanitizePayload(merged);
+        }
+        const values = [
+          team,
+          JSON.stringify(next.progress),
+          JSON.stringify(next.progress_meta),
+          JSON.stringify(next.times),
+          next.score,
+          JSON.stringify(next.score_log),
+          JSON.stringify(next.activity),
+          JSON.stringify(next.endless),
+          JSON.stringify(next.vault)
+        ];
+        await client.query(
+          `insert into team_state (team, progress, progress_meta, times, score, score_log, activity, endless, vault, updated_at)
+           values ($1,$2::jsonb,$3::jsonb,$4::jsonb,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb, now())
+           on conflict (team) do update set
+             progress = excluded.progress,
+             progress_meta = excluded.progress_meta,
+             times = excluded.times,
+             score = excluded.score,
+             score_log = excluded.score_log,
+             activity = excluded.activity,
+             endless = excluded.endless,
+             vault = excluded.vault,
+             updated_at = now()`,
+          values
+        );
+        await client.query('commit');
+        // Hand the stored (merged) state back so the pushing session is up to date at once.
+        return respond(200, { ok: true, state: normalizeState({ team, ...next, updated_at: new Date().toISOString() }) });
+      } catch (err) {
+        try { await client.query('rollback'); } catch (_) {}
+        throw err;
       }
-      const values = [
-        team,
-        JSON.stringify(sanitized.progress),
-        JSON.stringify(sanitized.progress_meta),
-        JSON.stringify(sanitized.times),
-        sanitized.score,
-        JSON.stringify(sanitized.score_log),
-        JSON.stringify(sanitized.activity),
-        JSON.stringify(sanitized.endless),
-        JSON.stringify(sanitized.vault)
-      ];
-      await client.query(
-        `insert into team_state (team, progress, progress_meta, times, score, score_log, activity, endless, vault, updated_at)
-         values ($1,$2::jsonb,$3::jsonb,$4::jsonb,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb, now())
-         on conflict (team) do update set
-           progress = excluded.progress,
-           progress_meta = excluded.progress_meta,
-           times = excluded.times,
-           score = excluded.score,
-           score_log = excluded.score_log,
-           activity = excluded.activity,
-           endless = excluded.endless,
-           vault = excluded.vault,
-           updated_at = now()`,
-        values
-      );
-      return respond(200, { ok: true });
     }
 
     return respond(405, { ok: false, error: 'Method Not Allowed' });
