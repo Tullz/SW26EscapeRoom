@@ -170,7 +170,8 @@
     book: [
       'The courier\'s phone has a text full of numbers in groups of three. What in the case has numbered pages?',
       'The numbers point to words in the paperback. The pen in the case has a UV torch in its cap: switch it on and look inside the book\'s front cover.',
-      'Each group is page . line . word: 3.5.9 means page 3, line 5, word 9 (count lines from the top of the page). Open the book and tap each word to drop it into your notepad. The first word is COFFEE.'
+      'Try matching the numbers to the book. In each group, the first number is the page (the number at the bottom of the page), the second is the line on that page, and the third is the word on that line.',
+      'For example, 3.5.9 means turn to page 3, count 5 lines down from the top, then count 9 words along that line. Tap each word you find to drop it into your notepad. The first word is COFFEE.'
     ],
     stencil: [
       'The book code says COFFEE CARD OVER PUZZLE. Is there a coffee card in the case? And a puzzle?',
