@@ -5,7 +5,8 @@
    - Leaderboard by the one scoring formula (js/scoring.js)
    - Team cards: 5 core rooms + the Forensics bonus room (not scored); mark complete / reopen
    - Charts (Chart.js), activity feed, sessions, points-kept adjustments
-   - Neon sync via Netlify Functions
+   - Neon sync via Netlify Functions; every call sends the admin token (401 → "log in again")
+   - Security flags: changes the server refused from a team's browser ("⚠ n" + activity feed)
 */
 
 (function () {
@@ -36,6 +37,45 @@
 
   const GAME_ENDPOINT = '/.netlify/functions/game';
   const LOGIN_EXPIRED_MSG = 'Your admin login has expired. Log out and log in again.';
+
+  // Every call to pull, push, team-state and the game POST carries the admin's sign-in token
+  // (js/utils.js authHeaders; the saved token if that helper isn't there).
+  function authHeaders(extra = {}) {
+    let headers = null;
+    try { headers = window.utils?.authHeaders?.(); } catch (_) { headers = null; }
+    if (!headers || typeof headers !== 'object' || !headers.Authorization) {
+      let token = '';
+      try { token = JSON.parse(localStorage.getItem('user') || 'null')?.token || ''; } catch { token = ''; }
+      headers = token ? { Authorization: `Bearer ${token}` } : {};
+    }
+    return { ...extra, ...headers };
+  }
+
+  const isAuthStatus = (status) => status === 401 || status === 403;
+
+  function loginExpiredError() {
+    const err = new Error(LOGIN_EXPIRED_MSG);
+    err.loginExpired = true;
+    return err;
+  }
+
+  // The server refused the token: show the banner, and announce it once (not on every
+  // 25-second pull). It goes away by itself once a call gets through again.
+  let loginExpired = false;
+  function noteLoginExpired() {
+    const banner = qs('#adminAuthNotice');
+    if (banner) banner.hidden = false;
+    if (loginExpired) return;
+    loginExpired = true;
+    announce(LOGIN_EXPIRED_MSG);
+  }
+
+  function noteLoginOk() {
+    if (!loginExpired) return;
+    loginExpired = false;
+    const banner = qs('#adminAuthNotice');
+    if (banner) banner.hidden = true;
+  }
 
   const SCORE_BASE = 100;
   const SCORE_LOG_LIMIT = 60;
@@ -277,12 +317,17 @@
     try {
       const res = await fetch('/.netlify/functions/team-state', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         // source 'admin': the server merges progress (so a stale dashboard copy can't undo a
         // room a team just finished) but takes the dashboard's points as the truth.
         body: JSON.stringify({ ...snapshot, reason, source: 'admin' })
       });
+      if (isAuthStatus(res.status)) {
+        noteLoginExpired();
+        throw loginExpiredError();
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      noteLoginOk();
     } catch (err) {
       console.warn('Team sync failed', team, err);
       noteSync('Auto push', `${team} sync failed: ${err.message}`, 'warn');
@@ -473,6 +518,8 @@
       const lastActiveTs = Number(lastActiveEvent?.at) || 0;
       const sessionActive = lastActiveTs ? (Date.now() - lastActiveTs < 120000) : false;
       const lastEvent = activity.length ? activity[activity.length - 1] : null;
+      // Changes the server refused from this team's browser (see "Security flags" below).
+      const flags = activity.filter(entry => entry.type === 'security');
 
       const completed = CORE_ROOMS.reduce((acc, p) => acc + (progress[p] ? 1 : 0), 0);
       const bonusDone = progress[BONUS_ROOM] === true;
@@ -506,6 +553,7 @@
         lastMovement,
         stalled: isStalled,
         issues,
+        flags,
         vault,
         result: null,
         rank: null,
@@ -550,6 +598,89 @@
     strong.textContent = value;
     span.appendChild(strong);
     return span;
+  }
+
+  // ---------- Security flags -----------------------------------------------
+  // The server ignores changes a browser isn't allowed to make (e.g. points or rooms edited
+  // in the browser's developer tools) and logs each one on the team's row as
+  // { type: 'security', status: 'rejected', detail }. Teams with flags get a small "⚠ n"
+  // in the leaderboard and on their card; hover for a tooltip, click for the list.
+
+  const FLAGS_SHOWN = 8;
+  const openFlagPanels = new Set(); // panels the facilitator opened, kept across refreshes
+
+  function flagSummary(count) {
+    return `Blocked ${count} attempt${count === 1 ? '' : 's'} to change the game from the browser`;
+  }
+
+  const flagDetail = (entry) => entry?.detail || 'Blocked a change from the browser';
+  const newestFirst = (flags) => flags.slice().sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0));
+  const idSlug = (team) => String(team).replace(/[^a-z0-9_-]/gi, '_');
+
+  // The "⚠ n" button; it shows / hides the element with id targetId.
+  function makeFlagButton(row, key, targetId) {
+    const flags = newestFirst(row.flags || []);
+    const open = openFlagPanels.has(key);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'admin-flag';
+    btn.dataset.flagKey = key;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.setAttribute('aria-controls', targetId);
+    btn.setAttribute('aria-label', `${row.team.toUpperCase()}: ${flagSummary(flags.length)}`);
+    btn.title = [`${flagSummary(flags.length)}:`]
+      .concat(flags.slice(0, FLAGS_SHOWN).map(f => `${fmtClockTime(f.at)}  ${flagDetail(f)}`))
+      .concat(flags.length > FLAGS_SHOWN ? [`…and ${flags.length - FLAGS_SHOWN} earlier`] : [])
+      .join('\n');
+    const icon = document.createElement('span');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '⚠';
+    btn.append(icon, ` ${flags.length}`);
+    const setOpen = (show) => {
+      const target = document.getElementById(targetId);
+      if (target) target.hidden = !show;
+      btn.setAttribute('aria-expanded', show ? 'true' : 'false');
+      if (show) openFlagPanels.add(key); else openFlagPanels.delete(key);
+    };
+    btn.addEventListener('click', () => setOpen(btn.getAttribute('aria-expanded') !== 'true'));
+    btn.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && btn.getAttribute('aria-expanded') === 'true') {
+        ev.stopPropagation();
+        setOpen(false);
+      }
+    });
+    return btn;
+  }
+
+  // The list behind the button, newest first, in the facilitator's words.
+  function makeFlagPanel(row) {
+    const flags = newestFirst(row.flags || []);
+    const panel = document.createElement('div');
+    panel.className = 'admin-flags';
+    const title = document.createElement('p');
+    title.className = 'admin-flags__title';
+    title.textContent = `${row.team.toUpperCase()}: ${flagSummary(flags.length)}`;
+    const list = document.createElement('ul');
+    list.className = 'admin-flags__list';
+    flags.slice(0, FLAGS_SHOWN).forEach(entry => {
+      const li = document.createElement('li');
+      const when = document.createElement('span');
+      when.className = 'admin-flags__time';
+      when.textContent = fmtClockTime(entry.at);
+      li.append(when, document.createTextNode(` ${flagDetail(entry)}`));
+      list.appendChild(li);
+    });
+    if (flags.length > FLAGS_SHOWN) {
+      const more = document.createElement('li');
+      more.className = 'admin-flags__more';
+      more.textContent = `…and ${flags.length - FLAGS_SHOWN} earlier`;
+      list.appendChild(more);
+    }
+    const note = document.createElement('p');
+    note.className = 'admin-flags__note';
+    note.textContent = 'The game ignored these changes, so scores and rooms are not affected.';
+    panel.append(title, list, note);
+    return panel;
   }
 
   // Short vault status for a team card.
@@ -619,13 +750,18 @@
       subtitle.textContent = bits.join(' • ');
 
       titleWrap.append(h3, subtitle);
-      if (row.stalled) {
+      const flagged = row.flags?.length > 0;
+      const flagsId = `cardFlags-${idSlug(team)}`;
+      if (row.stalled || flagged) {
         const badgeWrap = document.createElement('div');
         badgeWrap.className = 'team-card__badges-inline';
-        const stalledTag = document.createElement('span');
-        stalledTag.className = 'team-card__status is-stalled';
-        stalledTag.textContent = 'Needs nudge';
-        badgeWrap.appendChild(stalledTag);
+        if (row.stalled) {
+          const stalledTag = document.createElement('span');
+          stalledTag.className = 'team-card__status is-stalled';
+          stalledTag.textContent = 'Needs nudge';
+          badgeWrap.appendChild(stalledTag);
+        }
+        if (flagged) badgeWrap.appendChild(makeFlagButton(row, `card:${team}`, flagsId));
         titleWrap.appendChild(badgeWrap);
       }
 
@@ -725,6 +861,14 @@
         card.appendChild(warn);
       }
 
+      if (flagged) {
+        const flagsPanel = makeFlagPanel(row);
+        flagsPanel.id = flagsId;
+        flagsPanel.classList.add('team-card__flags');
+        flagsPanel.hidden = !openFlagPanels.has(`card:${team}`);
+        card.appendChild(flagsPanel);
+      }
+
       listEl.appendChild(card);
     });
   }
@@ -741,6 +885,7 @@
       const amount = Math.abs(delta);
       return `${sign}${amount} pts — ${entry.reason || 'Score change'}`;
     }
+    if (entry.type === 'security') return flagDetail(entry);
     return entry.detail || entry.reason || 'Updated';
   }
 
@@ -776,10 +921,15 @@
       const li = document.createElement('li');
       li.className = 'activity-list__item';
       const summary = describeActivity(event);
+      // Security flags (changes the server refused) stand out in a warning style.
+      const flag = event.type === 'security'
+        ? '<span class="activity-list__flag" aria-hidden="true">⚠</span><span class="sr-only">Security flag: </span>'
+        : '';
+      if (flag) li.classList.add('activity-list__item--security');
       li.innerHTML = `
         <span class="activity-list__time">${esc(timeAgo(event.at))}</span>
         <span class="activity-list__team">${esc(event.team.toUpperCase())}</span>
-        <span class="activity-list__summary">${esc(summary)}</span>
+        <span class="activity-list__summary">${flag}${esc(summary)}</span>
       `;
       list.appendChild(li);
     });
@@ -813,7 +963,8 @@
       const typeOptions = [
         { value: 'all', label: 'All events' },
         { value: 'progress', label: 'Progress only' },
-        { value: 'points', label: 'Points only' }
+        { value: 'points', label: 'Points only' },
+        { value: 'security', label: 'Security flags' }
       ];
       typeSelect.innerHTML = typeOptions.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join('');
       typeSelect.value = activityFilter.type;
@@ -968,6 +1119,9 @@
       teamCell.className = 'admin-lb__team';
       const name = document.createElement('span');
       name.textContent = entry.team.toUpperCase();
+      const flagged = entry.row?.flags?.length ? entry.row : null;
+      const flagsId = `lbFlags-${idSlug(entry.team)}`;
+      if (flagged) name.append(' ', makeFlagButton(flagged, `lb:${entry.team}`, flagsId));
       teamCell.appendChild(name);
       (r.notes || []).forEach(text => {
         const note = document.createElement('span');
@@ -1019,6 +1173,19 @@
         bonusRoomCell
       );
       body.appendChild(tr);
+
+      // The team's security flags, in a full-width row under it (opened by the ⚠ button).
+      if (flagged) {
+        const flagRow = document.createElement('tr');
+        flagRow.className = 'admin-lb__flags-row';
+        flagRow.id = flagsId;
+        flagRow.hidden = !openFlagPanels.has(`lb:${entry.team}`);
+        const cell = td(null, 'admin-lb__flags-cell');
+        cell.colSpan = 8;
+        cell.appendChild(makeFlagPanel(flagged));
+        flagRow.appendChild(cell);
+        body.appendChild(flagRow);
+      }
     });
   }
 
@@ -1233,18 +1400,16 @@
 
   // POST an action to the game function with the admin token. Returns the new game or null.
   async function postGame(payload) {
-    let token = '';
-    try { token = JSON.parse(localStorage.getItem('user') || 'null')?.token || ''; } catch { token = ''; }
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers.Authorization = `Bearer ${token}`;
+    const headers = authHeaders({ 'Content-Type': 'application/json' });
     try {
       const res = await fetch(GAME_ENDPOINT, { method: 'POST', headers, body: JSON.stringify(payload) });
       const data = await res.json().catch(() => null);
-      if (res.status === 401) {
+      if (isAuthStatus(res.status)) {
         showGameFeedback(LOGIN_EXPIRED_MSG, 'warn');
-        announce(LOGIN_EXPIRED_MSG);
+        noteLoginExpired();
         return null;
       }
+      noteLoginOk();
       // A refused action (e.g. already started) still sends the current game back.
       if (data && validGame(data.game)) adoptGame(data.game, data.serverNow);
       if (!res.ok || !data?.ok || !validGame(data.game)) {
@@ -1878,10 +2043,15 @@
         const payload = TEAMS.map(getTeamStateSnapshot);
         const res = await fetch('/.netlify/functions/push', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ teams: payload })
         });
+        if (isAuthStatus(res.status)) {
+          noteLoginExpired();
+          throw loginExpiredError();
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        noteLoginOk();
         if (status) {
           status.textContent = 'All teams reset.';
           status.classList.add('status-ok');
@@ -1996,10 +2166,15 @@
         const payload = TEAMS.map(getTeamStateSnapshot);
         const res = await fetch('/.netlify/functions/push', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ teams: payload })
         });
+        if (isAuthStatus(res.status)) {
+          noteLoginExpired();
+          throw loginExpiredError();
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        noteLoginOk();
         const body = await res.json().catch(() => ({ ok: true }));
         if (status) {
           status.textContent = 'Push complete.';
@@ -2051,8 +2226,13 @@
         statusEl.textContent = 'Pulling from Neon…';
         statusEl.classList.remove('status-ok', 'status-warn');
       }
-      const res = await fetch('/.netlify/functions/pull', { method: 'GET' });
+      const res = await fetch('/.netlify/functions/pull', { method: 'GET', headers: authHeaders(), cache: 'no-store' });
+      if (isAuthStatus(res.status)) {
+        noteLoginExpired();
+        throw loginExpiredError();
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      noteLoginOk();
       const data = await res.json();
       if (!data || !Array.isArray(data.teams)) {
         throw new Error('No teams returned');
@@ -2090,7 +2270,8 @@
         statusEl.textContent = `Pull failed: ${e.message}`;
         statusEl.classList.add('status-warn');
       }
-      console.error('Neon sync failed:', e);
+      // An expired login is shown in the banner; don't fill the console every 25 seconds.
+      if (!e?.loginExpired) console.error('Neon sync failed:', e);
       noteSync('Pull', e.message, 'warn');
       throw e;
     }
@@ -2099,6 +2280,8 @@
   // ---------- Boot ---------------------------------------------------------
 
   function refreshAll() {
+    // The lists are rebuilt from scratch: keep keyboard focus on a "⚠ n" button.
+    const focusedFlag = document.activeElement?.dataset?.flagKey || null;
     const rows = loadTeamData();
     teamRows = rows;
     rankedRows = scoreAndRank(rows);
@@ -2113,6 +2296,10 @@
     if (activePointsTeam && modalRefs.wrapper?.classList.contains('is-open')) {
       const row = teamRows.find(r => r.team === activePointsTeam);
       if (row) hydratePointsModal(row);
+    }
+    if (focusedFlag) {
+      const again = qsa('[data-flag-key]').find(btn => btn.dataset.flagKey === focusedFlag);
+      if (again) again.focus({ preventScroll: true });
     }
   }
 

@@ -1,8 +1,10 @@
 /* auth.js — Cyber Escape Rooms login
    - Logs in only through the Netlify Function (Neon-backed users table); no offline accounts
-   - Saves { username (lower-case), role, token? } in localStorage as "user"
-     (token = signed admin token, admins only; the admin page sends it to the game clock)
+   - Saves { username (lower-case), role, token } in localStorage as "user"
+     (token = signed sign-in token for every account; utils.authHeaders() sends it to every
+     protected Netlify Function)
    - Redirects admin -> admin.html, teams -> game.html
+   - Shows "Your sign-in has expired" above the form after index.html?expired=1
    - Global logout()
 */
 
@@ -18,6 +20,7 @@
   const MSG_UNREACHABLE = "Can't reach the game server. Check your connection or ask a facilitator.";
   const MSG_WRONG = "That username or password isn't right. Check them and try again, or ask a facilitator.";
   const MSG_MISSING = 'Please enter your username and password.';
+  const MSG_EXPIRED = 'Your sign-in has expired. Please log in again.';
 
   // ---------- DOM helpers --------------------------------------------------
 
@@ -77,7 +80,7 @@
       // looks the same to a player: the game server can't log them in right now.
       if (!res.ok) return { ok: false, error: MSG_UNREACHABLE };
       const data = await res.json().catch(() => null);
-      // Expected shape: { ok: true, user: { username, role }, token? (admins) }
+      // Expected shape: { ok: true, user: { username, role }, token }
       if (data && data.ok && data.user && data.user.username && data.user.role) {
         return { ok: true, user: { username: data.user.username, role: data.user.role, token: data.token || data.user.token || null } };
       }
@@ -110,7 +113,7 @@
     try {
       const url = new URL('/.netlify/functions/team-state', window.location.origin);
       url.searchParams.set('team', team);
-      const res = await fetch(url.toString(), { method: 'GET' });
+      const res = await fetch(url.toString(), { method: 'GET', cache: 'no-store', headers: window.utils?.authHeaders?.() || {} });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const payload = await res.json();
       const state = payload?.state;
@@ -142,19 +145,49 @@
           localStorage.setItem(`${team}_vault_entries`, JSON.stringify(state.vault.entries));
         }
         localStorage.setItem(`${team}_vault`, JSON.stringify(state.vault));
-        if (state.vault.resetVersion) {
-          localStorage.setItem(`${team}_reset_version`, String(state.vault.resetVersion));
-        }
       }
+      // The reset epoch always comes from the server copy (none -> none).
+      if (state.vault?.resetVersion) localStorage.setItem(`${team}_reset_version`, String(state.vault.resetVersion));
+      else localStorage.removeItem(`${team}_reset_version`);
     } catch (err) {
       console.warn('Unable to hydrate team state', err);
     }
   }
 
+  // ---------- Sign-in expired ---------------------------------------------
+
+  // index.html?expired=1 (or a team page that just found the sign-in refused): one line above
+  // the form, so the player knows why they are here.
+  function showExpired() {
+    let flagged = false;
+    try { flagged = sessionStorage.getItem('signin_expired') === '1'; } catch (_) {}
+    if (!flagged && window.utils?.getQueryParam?.('expired') !== '1') return;
+    try { sessionStorage.removeItem('signin_expired'); } catch (_) {}
+    const form = $('#loginForm');
+    if (!form || $('#expiredMsg')) return;
+    const note = document.createElement('p');
+    note.id = 'expiredMsg';
+    note.className = 'status-warn mt-2';
+    note.setAttribute('role', 'status');
+    note.textContent = MSG_EXPIRED;
+    form.parentNode.insertBefore(note, form);
+    // On a phone the form is below the fold: bring it (and the reason) into view.
+    try { note.scrollIntoView({ block: 'center' }); } catch (_) {}
+    if (window.a11y) window.a11y.announce(MSG_EXPIRED);
+  }
+
   // ---------- Page bootstrap ----------------------------------------------
 
   document.addEventListener('DOMContentLoaded', () => {
-    const user = readUser();
+    let user = readUser();
+
+    // A team signed in before sign-in tokens existed: forget it and ask for a new login here,
+    // instead of bouncing to the hub (which would only send the player straight back).
+    if ($('form#loginForm') && user && user.role === 'team' && !user.token) {
+      window.utils?.clearSessionKeys?.();
+      try { sessionStorage.setItem('signin_expired', '1'); } catch (_) {}
+      user = null;
+    }
 
     // If we land on the login page while already logged in, bounce to destination.
     // (Keeps deep links tidy; still allows manual logout from header.)
@@ -167,6 +200,7 @@
 
     const form = $('#loginForm');
     if (!form) return; // not on index.html
+    showExpired();
 
     const usernameEl = $('#username');
     const passwordEl = $('#password');
@@ -191,6 +225,7 @@
       }
 
       const user = saveUser(result.user);
+      $('#expiredMsg')?.remove();
       if (user.role === 'team') {
         await bootstrapTeamState(user.username);
         try {

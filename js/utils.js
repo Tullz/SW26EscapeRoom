@@ -7,6 +7,7 @@
    - fetchJSON with timeout (Netlify Functions friendly)
    - crypto: sha256Hex
    - querystring: getQueryParam
+   - sign-in: authHeaders (Authorization header for protected functions), sessionExpired
 */
 
 (function () {
@@ -573,6 +574,47 @@
     try { window.vault?.refresh?.(); } catch (_) {}
   }
 
+  // ---------- Sign-in token ------------------------------------------------
+  // login.js hands every account a signed token (saved on the "user" object). Every call to a
+  // protected Netlify Function sends it, keepalive flushes included.
+  function authHeaders() {
+    const token = getUser()?.token;
+    return typeof token === 'string' && token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  // A team's sign-in is missing or the server no longer accepts it (401). Say so, forget the
+  // sign-in and send the player to the login page, once. The login page shows the same line
+  // (auth.js reads ?expired=1). Admin pages handle their own 401s, so this ignores admins.
+  const EXPIRED_MSG = 'Your sign-in has expired. Please log in again.';
+  let expiring = false;
+  function sessionExpired() {
+    const user = getUser();
+    if (expiring || !user || user.role === 'admin') return;
+    expiring = true;
+    try { sessionStorage.setItem('signin_expired', '1'); } catch (_) {}
+    const onLogin = Boolean(document.getElementById('loginForm'))
+      || /(^|\/)(index\.html)?$/i.test(location.pathname);
+    if (onLogin) {
+      // Already on the login page: just forget the sign-in; auth.js shows the message.
+      clearSessionKeys();
+      return;
+    }
+    const show = () => {
+      const bar = createEl('div', { role: 'alert', className: 'signin-expired' }, EXPIRED_MSG);
+      bar.style.cssText = 'position:fixed;top:1rem;left:1rem;right:1rem;margin:0 auto;width:fit-content;z-index:10000;'
+        + 'max-width:28rem;padding:.8rem 1.1rem;border-radius:.75rem;text-align:center;'
+        + 'background:#0f172a;color:#f8fafc;border:1px solid #f59e0b;box-shadow:0 12px 32px rgba(0,0,0,.45);font-weight:600;';
+      document.body.appendChild(bar);
+      announce(EXPIRED_MSG);
+    };
+    if (document.body) show(); else document.addEventListener('DOMContentLoaded', show, { once: true });
+    // Keep the "user" until we leave, so this page's sign-in guard doesn't redirect first.
+    setTimeout(() => {
+      clearSessionKeys();
+      location.replace('index.html?expired=1');
+    }, 1600);
+  }
+
   function logout(redirect = 'index.html', extraKeys = []) {
     const user = getUser();
     try {
@@ -651,6 +693,9 @@
     backOrHome,
     initStatusHud,
     clearSessionKeys,
+    authHeaders,
+    sessionExpired,
+    isSessionExpiring: () => expiring,
     logout,
     activityKey,
     readActivity,

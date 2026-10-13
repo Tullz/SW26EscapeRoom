@@ -1,6 +1,10 @@
+// Admin writes for many teams at once ("Reset all teams", "Push to Neon"). Admin token only
+// (a team token is refused and flagged).
 import { createClient, ensureTeamStateTable, dbNowMs, DEFAULT_PROGRESS, errorResponse } from './_shared/db.js';
 import { mergeStates } from './_shared/merge.js';
 import { stampVault } from './_shared/stamps.js';
+import { authorize, deniedBody } from './_shared/access.js';
+import { FLAGS, flagTeam, keepSecurity } from './_shared/flags.js';
 
 function sanitizeRow(row = {}) {
   const progress = { ...DEFAULT_PROGRESS };
@@ -71,6 +75,11 @@ export default async (req) => {
   try {
     client = createClient();
     await client.connect();
+    const auth = await authorize(req, client, { adminOnly: true });
+    if (!auth.ok) {
+      if (auth.owner) await flagTeam(client, auth.owner, FLAGS.adminOnly);
+      return errorResponse(auth.status, deniedBody(auth));
+    }
     await ensureTeamStateTable(client);
     for (const raw of teams) {
       const team = String(raw?.team || '').trim().toLowerCase();
@@ -92,6 +101,7 @@ export default async (req) => {
             scoreLog: stored.score_log, activity: stored.activity, endless: stored.endless, bonus: stored.bonus, vault: stored.vault
           });
           const merged = mergeStates(current, sanitized, { score: 'local', endless: 'local' });
+          merged.activity = keepSecurity(stored.activity, merged.activity); // tamper flags stay
           sanitized = sanitizeRow({ ...merged, bonus: sanitized.bonus });
           priorVault = stored.vault;
         }

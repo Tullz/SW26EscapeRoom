@@ -1,9 +1,10 @@
 /* game.js — Cyber Escape Rooms (Mission Hub + Vault Lock)
    - Renders the 5 core rooms, the bonus room and the next-step call to action
    - Rooms can be played in any order, on any of the team's devices
-   - The vault opens if and only if every slot holds that room's code word
-     (checked per slot against a salted SHA-256; finished rooms are NOT required,
-     so a team that split up can type in words found on other devices)
+   - The vault opens if and only if every slot holds that room's code word. The SERVER checks
+     the words (POST /.netlify/functions/vault); nothing in this file can tell a right word
+     from a wrong one. Finished rooms are NOT required, so a team that split up can type in
+     words found on other devices.
    - Game clock (window.gameClock, js/game-clock.js): free roam = no clock; waiting / over =
      rooms and vault locked; running = big countdown. Reacts live to game:change / game:tick.
    - Score panel: the total from window.scoring.compute (js/scoring.js) with a plain breakdown
@@ -15,17 +16,14 @@
 
   // -------------------- Config --------------------------------------------
 
-  // One salted SHA-256 per vault slot: sha256(`${VAULT_SALT}|${room key}|${WORD}`), WORD in
-  // capitals. The words themselves never appear in this file. To change a word, recompute:
-  //   node -e 'console.log(require("crypto").createHash("sha256").update("cer-vault-2026|osint|NEWWORD").digest("hex"))'
-  const VAULT_SALT = 'cer-vault-2026';
-  const SLOT_HASHES = {
-    phishing:  '10b2f8bd4bf60485170cd8cec72a37d30081361c2fef4846d40ce1da9a282a20',
-    osint:     'fdb8926d5972a73a5528140090665e3563017c80bb42d30a302ae74522ff8f2d',
-    incident:  'a54cb56e99787a0adfde640f678b28844cd9be15b3c972d7ef7866187ea4e900',
-    mfa:       'ce6e3eb959ebcbc99edc9ec55b01d510298b306eddc98c601e2d6c5e3dbf836b',
-    crypto:    '4a48c4b8f0bec07419e1a50a82f4ea1e5c060931d126cf68dd8559b1c44995b9'
-  };
+  // The vault is checked by the server (the code words live in
+  // netlify/functions/_shared/answers.js). It also logs every attempt to the team's activity.
+  const VAULT_ENDPOINT = '/.netlify/functions/vault';
+  const VAULT_TIMEOUT_MS = 15000;
+  const MSG_VAULT_OFFLINE = 'The vault couldn\'t reach the server. Check your connection and try again.';
+  const MSG_VAULT_ERROR = 'The vault couldn\'t check your words just now. Try again in a moment.';
+  const MSG_VAULT_SLOW = 'Too many tries. Wait a moment and try again.';
+  const MSG_SIGNED_OUT = 'Your sign-in has expired. Please log in again.';
 
   // -------------------- DOM helpers ---------------------------------------
 
@@ -63,7 +61,7 @@
 
   // -------------------- Rooms (single source of truth) --------------------
   // Display order of the room list AND of the vault slots (rooms can be played in any order).
-  // To rename/replace a room, change it here (and its slot hash above).
+  // To rename/replace a room, change it here (and its code word in _shared/answers.js).
   const ROOMS = [
     { key: 'phishing',  label: 'Phishing Spotter',     vaultLabel: 'Phishing',     path: 'phishing.html',
       blurb: 'Inspect suspicious emails and spot the tell-tale signs of phishing.' },
@@ -526,7 +524,7 @@
     const locked = !opened && isPlayLocked(status);
     chest?.classList.toggle('is-locked', locked);
     wordInputs.forEach(input => { input.disabled = locked; });
-    if (unlockBtn) unlockBtn.disabled = opened || locked;
+    if (unlockBtn) unlockBtn.disabled = opened || locked || checkingVault;
     if (clearBtn) clearBtn.disabled = locked;
     const note = $('#vaultLockNote');
     if (note) {
@@ -761,12 +759,12 @@
   const feedback  = $('#lockFeedback');
   const openBtn   = $('#lockOpenBtn');
 
-  function setFeedback(msg, good=false){
+  function setFeedback(msg, good=false, quiet=false){
     if (!feedback) return;
     feedback.textContent = msg || '';
     feedback.classList.toggle('ok', !!good);
     feedback.classList.toggle('warn', !good && !!msg);
-    if (msg) announce(msg);
+    if (msg && !quiet) announce(msg);
   }
 
   function normalizeWord(value){
@@ -826,30 +824,6 @@
     });
   }
 
-  // SHA-256 hex
-  async function sha256Hex(s){
-    const enc = new TextEncoder().encode(s);
-    const buf = await crypto.subtle.digest('SHA-256', enc);
-    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join('');
-  }
-
-  // How many slots hold exactly the right word for THAT slot (a right word in the wrong
-  // slot does not count).
-  async function countCorrectSlots(){
-    const checks = await Promise.all(wordInputs.map(async (input) => {
-      const key = slotKey(input);
-      const expected = SLOT_HASHES[key];
-      const word = normalizeWord(input.value);
-      if (!expected || !word) return null;
-      return (await sha256Hex(`${VAULT_SALT}|${key}|${word}`)) === expected ? key : null;
-    }));
-    return new Set(checks.filter(Boolean)).size;
-  }
-
-  function logVault(status, detail){
-    try { window.utils?.pushActivity?.({ type: 'vault', status, detail }); } catch (_) {}
-  }
-
   // A friendly "not now" while the game is waiting to start or after time's up (else null).
   function vaultClosedMessage(status){
     if (status === 'waiting') return 'Not yet! The vault opens for business when the facilitator starts the game.';
@@ -858,11 +832,121 @@
   }
 
   let checkingVault = false;
+  let signingOut = false;
 
-  // Opens if and only if all five slots hold their room's code word. Whether the rooms are
-  // finished on this device does not matter: a team may have split up across devices.
+  // The team's sign-in token (js/utils.js); before utils.authHeaders exists, the saved token.
+  function authHeaders(){
+    try {
+      const h = window.utils?.authHeaders?.();
+      if (h && typeof h === 'object') return h;
+    } catch (_) {}
+    const token = readUser()?.token;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  // Ask the server whether the words open the vault. Never throws. Resolves to
+  // { kind, data }, kind = 'opened' | 'wrong' | 'waiting' | 'over' | 'slow' | 'expired' |
+  // 'offline' | 'error'. The server logs the attempt in the team's activity itself.
+  async function askVault(words){
+    const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = ctrl ? setTimeout(() => ctrl.abort(), VAULT_TIMEOUT_MS) : null;
+    try {
+      let res;
+      try {
+        res = await fetch(VAULT_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          body: JSON.stringify({ team: String(readUser()?.username || '').toLowerCase(), words }),
+          cache: 'no-store',
+          signal: ctrl?.signal
+        });
+      } catch (_) {
+        return { kind: 'offline', data: null }; // no connection, or no answer in time
+      }
+      const data = await res.json().catch(() => null);
+      if (res.status === 401 || res.status === 403) return { kind: 'expired', data };
+      if (res.status === 429) return { kind: 'slow', data };
+      if (res.status === 409 && (data?.reason === 'waiting' || data?.reason === 'over')) return { kind: data.reason, data };
+      if (!res.ok || !data || data.ok !== true) return { kind: 'error', data };
+      return { kind: data.opened === true ? 'opened' : 'wrong', data };
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  // The button stays disabled (and says so) while the server is checking.
+  function setChecking(on){
+    checkingVault = on;
+    chest?.setAttribute('aria-busy', on ? 'true' : 'false');
+    if (unlockBtn) {
+      if (on) {
+        unlockBtn.dataset.label = unlockBtn.textContent;
+        unlockBtn.textContent = 'Checking…';
+      } else if (unlockBtn.dataset.label) {
+        unlockBtn.textContent = unlockBtn.dataset.label;
+        delete unlockBtn.dataset.label;
+      }
+    }
+    renderVaultLock(gameStatus(), isVaultOpened());
+  }
+
+  // The team's sign-in is no longer valid (401): say so once, then back to the login page
+  // (utils.sessionExpired: the shared notice + index.html?expired=1, which also announces it).
+  function signInExpired(){
+    if (signingOut) return;
+    signingOut = true;
+    const shared = typeof window.utils?.sessionExpired === 'function';
+    setFeedback(MSG_SIGNED_OUT, false, shared);
+    if (shared) {
+      try { window.utils.sessionExpired(); return; } catch (_) { /* fall back below */ }
+    }
+    setTimeout(() => {
+      try { localStorage.removeItem('user'); } catch (_) {}
+      window.location.href = 'index.html?expired=1';
+    }, 1500);
+  }
+
+  // The server opened the vault (or it already was): adopt its copy, then celebrate.
+  function vaultOpened(data){
+    const state = data?.state && typeof data.state === 'object' ? data.state : null;
+    let applied = false;
+    if (state && typeof window.stateSync?.applyServerState === 'function') {
+      try {
+        applied = window.stateSync.applyServerState(state) !== false;
+      } catch (err) {
+        console.warn('[vault] could not apply the server state', err);
+      }
+    }
+    // The server has the vault open, so this flag is true; the next pull fills in the rest.
+    if (!applied || !isVaultOpened()) {
+      try { localStorage.setItem('vault_opened', '1'); } catch (_) {}
+      if (!applied) window.stateSync?.refresh?.();
+    }
+    // The server's openedAt stamp when it came back; otherwise this moment, until it arrives.
+    const stamped = Number(state?.vault?.openedAt);
+    const crackedAt = stamped > 0 ? stamped : serverNow();
+    saveProvisional(crackedAt);
+    setFeedback('Vault cracked! Operation complete.', true);
+    chest?.classList.add('open');
+    openBtn?.setAttribute('aria-label', 'Vault open');
+    announce('Vault cracked');
+    unlockBtn?.setAttribute('disabled', 'true');
+    try {
+      window.dispatchEvent(new CustomEvent('vault:opened', {
+        detail: { team: readUser()?.username || null, openedAt: crackedAt, provisional: !(stamped > 0) }
+      }));
+    } catch (_) {}
+    renderProgress();
+    setTimeout(() => {
+      window.location.href = 'celebration.html';
+    }, 1200);
+  }
+
+  // Opens if and only if all five slots hold their room's code word (the server decides).
+  // Whether the rooms are finished on this device does not matter: a team may have split up
+  // across devices.
   async function tryUnlock(){
-    if (checkingVault || isVaultOpened()) return;
+    if (checkingVault || signingOut || isVaultOpened()) return;
     const closed = vaultClosedMessage(gameStatus());
     if (closed) {
       setFeedback(closed);
@@ -875,54 +959,38 @@
       return;
     }
 
-    checkingVault = true;
-    let correct = 0;
+    const words = {};
+    wordInputs.forEach((input) => { words[slotKey(input)] = normalizeWord(input.value); });
+    setChecking(true);
+    let outcome;
     try {
-      correct = await countCorrectSlots();
-    } catch (err) {
-      console.warn('[vault] could not check words', err);
-      setFeedback('The vault could not check your words in this browser. Please ask a facilitator.');
-      return;
+      outcome = await askVault(words);
     } finally {
-      checkingVault = false;
+      setChecking(false);
     }
+    const { kind, data } = outcome;
 
-    if (correct === total) {
-      const closedNow = vaultClosedMessage(gameStatus()); // the clock may have run out meanwhile
-      if (closedNow) {
-        setFeedback(closedNow);
-        renderProgress();
-        return;
-      }
-      // The server stamps the real openedAt; until it does, the score uses this moment.
-      const crackedAt = serverNow();
-      saveProvisional(crackedAt);
-      setFeedback('Vault cracked! Operation complete.', true);
-      chest?.classList.add('open');
-      openBtn?.setAttribute('aria-label', 'Vault open');
-      announce('Vault cracked');
-      unlockBtn?.setAttribute('disabled', 'true');
-      try {
-        localStorage.setItem('vault_opened', '1');
-      } catch (_) {}
-      logVault('opened', 'Vault cracked');
-      window.stateSync?.saveNow?.('vault-opened');
-      try {
-        window.dispatchEvent(new CustomEvent('vault:opened', {
-          detail: { team: readUser()?.username || null, openedAt: crackedAt, provisional: true }
-        }));
-      } catch (_) {}
-      renderProgress();
-      setTimeout(() => {
-        window.location.href = 'celebration.html';
-      }, 1200);
-    } else {
+    if (kind === 'opened') {
+      vaultOpened(data);
+    } else if (kind === 'wrong') {
+      const correct = Math.max(0, Math.min(total, Math.round(Number(data?.correct)) || 0));
       const noun = correct === 1 ? 'code word is' : 'code words are';
       setFeedback(`The vault stays locked: ${correct} of ${total} ${noun} correct. Check the spelling, and that each word is in the slot for the room it came from.`);
-      logVault('attempt', `Vault attempt: ${correct} of ${total} words correct`);
       chest?.classList.remove('is-shaking');
       void chest?.offsetWidth;
       chest?.classList.add('is-shaking');
+    } else if (kind === 'waiting' || kind === 'over') {
+      // The server's clock says no: show the usual message and let the page catch up.
+      setFeedback(vaultClosedMessage(kind));
+      try { window.gameClock?.refresh?.(); } catch (_) {}
+    } else if (kind === 'slow') {
+      setFeedback(MSG_VAULT_SLOW);
+    } else if (kind === 'expired') {
+      signInExpired();
+    } else if (kind === 'offline') {
+      setFeedback(MSG_VAULT_OFFLINE);
+    } else {
+      setFeedback(MSG_VAULT_ERROR);
     }
   }
 

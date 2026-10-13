@@ -11,7 +11,17 @@
      a completion away.
    - the server's time stamps (vault.solvedAt / vault.openedAt) always come from the server copy.
    Pushes use keepalive and are flushed when the page is hidden, so a completion still
-   reaches the server when the player goes straight back to the Mission Hub. */
+   reaches the server when the player goes straight back to the Mission Hub.
+
+   Security (the server is the referee, see netlify/functions/_shared/referee.js):
+   - every request sends the team's sign-in token (utils.authHeaders()); a 401/403 stops syncing
+     and sends the player to log in again (utils.sessionExpired()), once;
+   - "vault opened" and the reset epoch are only ever taken from the server, never sent as claims;
+   - when the server refuses part of a push (`rejected` in its answer), this browser takes the
+     server's copy of those fields and holds a refused room claim back for a minute, so it never
+     keeps pushing the same refused claim.
+   window.stateSync.applyServerState(state) applies a state the server just returned (e.g. the
+   vault endpoint's answer) at once, like a pull. */
 
 (function () {
   'use strict';
@@ -184,8 +194,15 @@
   const TEAM = String(user.username || '').toLowerCase();
   if (!TEAM) return;
 
+  // Signed in before sign-in tokens existed (an old tab or an old login): log in again, once.
+  if (typeof user.token !== 'string' || !user.token) {
+    try { utils.sessionExpired?.(); } catch (_) {}
+    return;
+  }
+
   const ENDPOINT = '/.netlify/functions/team-state';
   const AUTO_PULL_MS = 10000;
+  const REFUSED_HOLD_MS = 60000; // a room claim the server refused is not re-sent for this long
   const KEEPALIVE_MAX = 50000; // browsers cap keepalive bodies at 64 KB
   const ROOM_KEYS = StateMerge.ROOMS;
   const DEFAULT_PROGRESS = Object.fromEntries(ROOM_KEYS.map(k => [k, false]));
@@ -251,7 +268,8 @@
 
   // The synced vault copy plus the code words this browser holds for rooms it has
   // completed (a stray word for an unfinished room, e.g. left by another team on a
-  // shared computer, is not sent).
+  // shared computer, is not sent). "Opened" is never sent: only the vault endpoint opens
+  // the vault, and this browser learns it from the server like everything else.
   function collectVault(progress) {
     const meta = { ...readTeamVault() };
     ROOM_KEYS.forEach(key => {
@@ -259,9 +277,8 @@
       try { word = localStorage.getItem(wordKey(key)); } catch (_) {}
       if (word && word.trim() && progress?.[key] === true) meta[key] = word.trim().toUpperCase();
     });
-    try {
-      if (localStorage.getItem('vault_opened') === '1') meta.opened = true;
-    } catch (_) { /* ignore */ }
+    delete meta.opened;
+    delete meta.openedAt;
     return meta;
   }
 
@@ -277,8 +294,9 @@
   function readLocalState() {
     const progress = { ...DEFAULT_PROGRESS, ...readJSON(STORAGE_KEYS.progress, DEFAULT_PROGRESS) };
     const vault = collectVault(progress);
+    // The reset epoch this browser last took from the server (never a newer one of its own).
     const appliedReset = localStorage.getItem(RESET_VERSION_KEY);
-    if (appliedReset) vault.resetVersion = Number(appliedReset);
+    if (appliedReset) vault.resetVersion = Number(appliedReset); else delete vault.resetVersion;
     // Typed vault words: send this browser's copy when it has one (even an empty one,
     // so "Clear" sticks); otherwise leave the server's copy alone.
     if (localStorage.getItem(VAULT_ENTRIES_KEY) != null) vault.entries = readJSON(VAULT_ENTRIES_KEY, {});
@@ -334,7 +352,8 @@
     writeJSON(TEAM_VAULT_KEY, vault);
     applyVault(vault);
     if (vault.entries && typeof vault.entries === 'object') writeJSON(VAULT_ENTRIES_KEY, vault.entries);
-    localStorage.setItem(RESET_VERSION_KEY, String(vault.resetVersion));
+    if (vault.resetVersion) localStorage.setItem(RESET_VERSION_KEY, String(vault.resetVersion));
+    else localStorage.removeItem(RESET_VERSION_KEY);
     stateSync.lastRemote = remote;
     dispatch('state-sync:applied', { team: TEAM, state: remote, remote, reset: true });
     setTimeout(() => window.location.reload(), 120);
@@ -343,9 +362,11 @@
   // opts.fromPush: the state came back from our own push (don't push again from here).
   function applyRemoteState(remote = {}, opts = {}) {
     if (resetPending) return;
-    const remoteReset = remote.vault?.resetVersion;
-    const localReset = localStorage.getItem(RESET_VERSION_KEY);
-    if (remoteReset && String(remoteReset) !== localReset) {
+    // Any other epoch than the one this browser holds (newer after an admin reset; none at all
+    // when the server's row was recreated) means: take the server's copy as it is.
+    const remoteReset = remote.vault?.resetVersion ? String(remote.vault.resetVersion) : '';
+    const localReset = localStorage.getItem(RESET_VERSION_KEY) || '';
+    if (remoteReset !== localReset) {
       applyReset(remote);
       return;
     }
@@ -411,14 +432,115 @@
     busy: false
   };
   let resetPending = false;
+  let stopped = false;
+  let pollTimer = null;
+  const refusedRooms = {}; // room -> when the server last refused this browser's claim
 
+  // ---------- Sign-in ----------
+  function hasToken() {
+    const u = utils.getUser();
+    return Boolean(u && u.role === 'team' && String(u.username || '').toLowerCase() === TEAM && u.token);
+  }
+
+  function headers(extra = {}) {
+    return { ...extra, ...(utils.authHeaders ? utils.authHeaders() : {}) };
+  }
+
+  // The server hands out a fresh token when ours is past half its life: keep it.
+  function keepToken(data) {
+    const token = data && typeof data.token === 'string' ? data.token : null;
+    if (!token) return;
+    const u = utils.getUser();
+    if (!u || u.role !== 'team' || String(u.username || '').toLowerCase() !== TEAM || u.token === token) return;
+    u.token = token;
+    try { utils.saveUser(u); } catch (_) {}
+  }
+
+  // 401/403: the server no longer accepts this sign-in. Stop syncing and ask for a new login
+  // (once). Without a token at all we are logging out: just stop.
+  function signInRefused() {
+    if (stopped) return;
+    stopped = true;
+    clearTimeout(stateSync.timer);
+    clearInterval(pollTimer);
+    if (hasToken()) {
+      try { utils.sessionExpired?.(); } catch (_) {}
+    }
+  }
+
+  function canSync() {
+    return !stopped && !resetPending && hasToken();
+  }
+
+  // ---------- Refused claims ----------
+  // The server refused part of our push (a room "solved" without its code word, the vault, raised
+  // points, forged activity; see netlify/functions/_shared/referee.js). Take the server's copy of
+  // exactly those fields, so the refused claim is not merged back in and pushed again.
+  function realign(remote, rejected) {
+    const rooms = Array.isArray(rejected.rooms) ? rejected.rooms.filter(r => ROOM_KEYS.includes(r)) : [];
+    if (rooms.length) {
+      const progress = { ...DEFAULT_PROGRESS, ...readJSON(STORAGE_KEYS.progress, DEFAULT_PROGRESS) };
+      const meta = readJSON(STORAGE_KEYS.progressMeta, {});
+      const teamVault = readTeamVault();
+      const now = Date.now();
+      rooms.forEach(room => {
+        progress[room] = remote.progress?.[room] === true;
+        const rm = remote.progressMeta?.[room];
+        if (rm) meta[room] = rm; else delete meta[room];
+        const w = remote.vault?.[room];
+        try {
+          if (w) { teamVault[room] = w; localStorage.setItem(wordKey(room), String(w)); }
+          else { delete teamVault[room]; localStorage.removeItem(wordKey(room)); }
+        } catch (_) {}
+        refusedRooms[room] = now;
+      });
+      writeJSON(STORAGE_KEYS.progress, progress);
+      writeJSON(STORAGE_KEYS.progressMeta, meta);
+      writeJSON(TEAM_VAULT_KEY, teamVault);
+    }
+    if (rejected.opened && remote.vault?.opened !== true) {
+      try { localStorage.removeItem('vault_opened'); } catch (_) {}
+      const teamVault = readTeamVault();
+      delete teamVault.opened;
+      delete teamVault.openedAt;
+      writeJSON(TEAM_VAULT_KEY, teamVault);
+    }
+    if (rejected.score && Number.isFinite(remote.score)) {
+      writeScore(remote.score, Array.isArray(remote.scoreLog) ? remote.scoreLog : []);
+    }
+    if (rejected.activity && Array.isArray(remote.activity)) writeJSON(STORAGE_KEYS.activity, remote.activity);
+  }
+
+  // A room's own page may claim it again at once (e.g. "put my completion back"): for a minute,
+  // send the server's copy of a refused room instead, so we don't bounce the same claim.
+  function holdBackRefused(payload) {
+    const remote = stateSync.lastRemote;
+    const now = Date.now();
+    Object.keys(refusedRooms).forEach(room => {
+      if (now - refusedRooms[room] > REFUSED_HOLD_MS || remote?.progress?.[room] === true) {
+        delete refusedRooms[room];
+        return;
+      }
+      payload.progress[room] = remote?.progress?.[room] === true;
+      const rm = remote?.progressMeta?.[room];
+      if (rm) payload.progressMeta[room] = rm; else delete payload.progressMeta[room];
+      const w = remote?.vault?.[room];
+      if (w) payload.vault[room] = w; else delete payload.vault[room];
+    });
+    return payload;
+  }
+
+  // ---------- Network ----------
   async function pull(initial = false) {
+    if (!canSync()) return;
     try {
       const url = new URL(ENDPOINT, window.location.origin);
       url.searchParams.set('team', TEAM);
-      const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+      const res = await fetch(url, { method: 'GET', cache: 'no-store', headers: headers() });
+      if (res.status === 401 || res.status === 403) { signInRefused(); return; }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      keepToken(data);
       if (data && data.state) {
         applyRemoteState(data.state);
         stateSync.lastPull = Date.now();
@@ -436,23 +558,24 @@
   }
 
   async function push(reason = 'auto') {
-    if (resetPending) return;
+    if (!canSync()) return;
     if (stateSync.busy) {
       stateSync.pending = reason;
       return;
     }
     stateSync.busy = true;
     try {
-      const payload = captureState();
+      const payload = holdBackRefused(captureState());
       stateSync.lastPayload = payload;
       const body = bodyFor(payload, reason);
       // keepalive lets the request finish even if the player navigates away right now.
       const res = await fetch(ENDPOINT, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers({ 'Content-Type': 'application/json' }),
         body,
         keepalive: body.length < KEEPALIVE_MAX
       });
+      if (res.status === 401 || res.status === 403) { signInRefused(); return; }
       if (res.status === 409) {
         // Admin reset this team since our last pull; apply it instead of overwriting it.
         await pull(false);
@@ -468,7 +591,14 @@
       stateSync.lastPush = Date.now();
       stateSync.lastPushedBody = JSON.stringify(payload);
       const data = await res.json().catch(() => null);
-      if (data?.state) applyRemoteState(data.state, { fromPush: true });
+      keepToken(data);
+      if (data?.state) {
+        if (data.rejected && typeof data.rejected === 'object') {
+          console.warn('[state-sync] the server refused part of this update', data.rejected);
+          realign(data.state, data.rejected);
+        }
+        applyRemoteState(data.state, { fromPush: true });
+      }
     } catch (err) {
       console.warn('[state-sync] push failed', err);
     } finally {
@@ -482,7 +612,7 @@
   }
 
   function queueSave(reason = 'auto') {
-    if (resetPending) return;
+    if (!canSync()) return;
     clearTimeout(stateSync.timer);
     stateSync.queued = reason;
     stateSync.timer = setTimeout(() => { stateSync.queued = null; push(reason); }, 1200);
@@ -497,12 +627,12 @@
   // Page is going away (navigation, tab hidden, app switch): send whatever is newer than the
   // last successful push, without waiting for a debounce timer or an in-flight push.
   function flush(reason) {
-    if (resetPending) return;
+    if (!canSync()) return;
     const outstanding = Boolean(stateSync.queued || stateSync.pending || stateSync.busy);
     clearTimeout(stateSync.timer);
     stateSync.queued = null;
     try {
-      const payload = captureState();
+      const payload = holdBackRefused(captureState());
       const snapshot = JSON.stringify(payload);
       if (!outstanding) {
         if (snapshot === stateSync.lastPushedBody) return;
@@ -512,10 +642,19 @@
       const body = bodyFor(payload, reason);
       if (body.length >= KEEPALIVE_MAX) { push(reason); return; }
       stateSync.pending = null;
-      fetch(ENDPOINT, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body, keepalive: true })
+      fetch(ENDPOINT, { method: 'PUT', headers: headers({ 'Content-Type': 'application/json' }), body, keepalive: true })
         .then((res) => { if (res.ok) stateSync.lastPushedBody = snapshot; })
         .catch(() => {});
     } catch (_) { /* ignore */ }
+  }
+
+  // A state the server just returned (e.g. the vault endpoint's answer): apply it now, exactly
+  // like a pull (progress, points, vault incl. "opened" and the server's time stamps), with the
+  // same 'state-sync:applied' event. Returns true when it was applied.
+  function applyServerState(state) {
+    if (!state || typeof state !== 'object' || resetPending) return false;
+    applyRemoteState(state);
+    return true;
   }
 
   window.stateSync = {
@@ -523,6 +662,7 @@
     saveNow,
     refresh: () => pull(false),
     capture: captureState,
+    applyServerState,
     get lastRemote() { return stateSync.lastRemote; }
   };
 
@@ -530,7 +670,7 @@
 
   pull(true);
 
-  setInterval(() => {
+  pollTimer = setInterval(() => {
     pull(false);
   }, AUTO_PULL_MS);
 

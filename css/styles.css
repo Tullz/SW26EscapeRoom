@@ -331,8 +331,13 @@ input:focus {
 
 form .row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    /* Two columns when there's room; stacked on phones (inputs have a wide built-in minimum). */
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
     gap: 1rem
+}
+
+form .row > .field {
+    min-width: 0
 }
 
 /* ==== Layouts ============================================================= */
@@ -4240,6 +4245,122 @@ h1.glow { font-size: clamp(1.9rem, 4.5vw, 3.2rem); }
   background: rgba(255,166,87,.12);
   color: var(--warn);
   font-size: .85rem;
+}
+
+/* Expired admin login (the server refused the token) */
+.admin-auth-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem 1rem;
+  padding: .7rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(248, 113, 113, .55);
+  background: rgba(248, 113, 113, .12);
+  color: #fca5a5;
+  font-weight: 600;
+}
+
+.admin-auth-notice[hidden] { display: none; }
+
+/* Security flags: changes the server refused from a team's browser */
+.admin-flag {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  padding: .05rem .5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,166,87,.6);
+  background: rgba(255,166,87,.16);
+  color: var(--warn);
+  font: inherit;
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  line-height: 1.5;
+  vertical-align: middle;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.admin-flag:hover,
+.admin-flag[aria-expanded="true"] {
+  background: rgba(255,166,87,.3);
+  color: #ffd2a8;
+}
+
+.admin-flags {
+  padding: .55rem .8rem;
+  border-left: 3px solid var(--warn);
+  border-radius: 0 8px 8px 0;
+  background: rgba(255,166,87,.08);
+  font-size: .88rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.admin-flags[hidden] { display: none; }
+
+.admin-flags__title {
+  margin: 0 0 .35rem;
+  color: var(--warn);
+  font-weight: 700;
+}
+
+.admin-flags__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: .2rem;
+  color: var(--ink);
+  font-weight: 400;
+}
+
+.admin-flags__time {
+  display: inline-block;
+  min-width: 5.5rem;
+  color: var(--muted);
+  font-family: "JetBrains Mono", Consolas, monospace;
+  font-size: .8rem;
+}
+
+.admin-flags__more { color: var(--muted); }
+
+.admin-flags__note {
+  margin: .4rem 0 0;
+  color: var(--muted);
+  font-size: .8rem;
+  font-weight: 400;
+}
+
+.admin-lb .admin-lb__flags-row > td { padding-top: 0; }
+.admin-lb tbody tr.admin-lb__flags-row:hover { background: transparent; }
+
+/* On narrow screens the table scrolls sideways: keep the details in view while it does */
+.admin-lb__flags-cell .admin-flags {
+  position: sticky;
+  left: .5rem;
+  max-width: calc(100vw - 8rem);
+}
+
+.team-card__flags { margin-top: -.25rem; }
+
+.activity-list__item--security {
+  border-color: rgba(255,166,87,.55);
+  background: rgba(255,166,87,.1);
+}
+
+.activity-list__item--security .activity-list__summary {
+  color: #ffd2a8;
+  font-weight: 600;
+}
+
+.activity-list__flag {
+  margin-right: .35rem;
+  color: var(--warn);
 }
 
 /* Celebration screen */

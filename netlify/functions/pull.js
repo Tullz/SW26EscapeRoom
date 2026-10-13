@@ -1,4 +1,7 @@
+// Every team's row, for the admin dashboard. Admin token only (a team token is refused and flagged).
 import { createClient, ensureTeamStateTable, DEFAULT_PROGRESS, errorResponse } from './_shared/db.js';
+import { authorize, deniedBody } from './_shared/access.js';
+import { FLAGS, flagTeam } from './_shared/flags.js';
 
 function normalizeRow(row) {
   return {
@@ -45,10 +48,15 @@ export default async (req) => {
   try {
     client = createClient();
     await client.connect();
+    const auth = await authorize(req, client, { adminOnly: true });
+    if (!auth.ok) {
+      if (auth.owner) await flagTeam(client, auth.owner, FLAGS.adminOnly);
+      return errorResponse(auth.status, deniedBody(auth));
+    }
     await ensureTeamStateTable(client);
     const { rows } = await client.query('select team, progress, progress_meta, times, score, score_log, activity, endless, bonus, vault, updated_at from team_state order by team asc');
     const teams = rows.length ? rows.map(normalizeRow) : await legacySnapshot(client);
-    return Response.json({ ok: true, teams });
+    return new Response(JSON.stringify({ ok: true, teams }), { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
   } catch (e) {
     console.error('[pull] failed to fetch team states', e);
     return errorResponse(500, { ok: false, error: e.message || 'Pull failed' });

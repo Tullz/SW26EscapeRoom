@@ -26,3 +26,17 @@ export function gameFromRow(row, serverNow) {
   }
   return { mode, status, startedAt, endedAt, endsAt, durationMin };
 }
+
+// The game row and the database clock in one round trip -> { game, serverNow, changedAt }.
+// changedAt = when the facilitator last changed the clock (ms). lock = true takes the row lock
+// (game.js POST changes it inside a transaction).
+export const SELECT_GAME = `select mode, started_at, ended_at, duration_min,
+  (extract(epoch from updated_at) * 1000)::float8 as changed_ms,
+  (extract(epoch from now()) * 1000)::float8 as now_ms
+  from game_state where id = 1`;
+
+export async function readGame(client, lock = false) {
+  const { rows } = await client.query(lock ? `${SELECT_GAME} for update` : SELECT_GAME);
+  const serverNow = Math.floor(Number(rows[0].now_ms));
+  return { game: gameFromRow(rows[0], serverNow), serverNow, changedAt: Math.floor(Number(rows[0].changed_ms)) || 0 };
+}

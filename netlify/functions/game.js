@@ -9,24 +9,22 @@
 
 import { createClient, ensureGameStateTable } from './_shared/db.js';
 import { adminTokenSecret, bearerToken, parseAdminToken, verifyAdminToken } from './_shared/admin-token.js';
-import { gameFromRow } from './_shared/game-state.js';
+import { readGame } from './_shared/game-state.js';
+import { parseToken, tokenMatches } from './_shared/tokens.js';
+import { FLAGS, flagTeam } from './_shared/flags.js';
 
 const ACTIONS = ['setMode', 'start', 'end', 'resetClock'];
-const SELECT_GAME = `select mode, started_at, ended_at, duration_min,
-  (extract(epoch from now()) * 1000)::float8 as now_ms
-  from game_state where id = 1`;
+
+// The public shape (contract section 3): { game, serverNow }.
+const gameBody = async (client) => {
+  const { game, serverNow } = await readGame(client);
+  return { game, serverNow };
+};
 
 const respond = (status, body) => new Response(JSON.stringify(body), {
   status,
   headers: { 'content-type': 'application/json', 'cache-control': 'no-store' }
 });
-
-// -> { game, serverNow }
-async function readGame(client, lock = false) {
-  const { rows } = await client.query(lock ? `${SELECT_GAME} for update` : SELECT_GAME);
-  const serverNow = Math.floor(Number(rows[0].now_ms));
-  return { game: gameFromRow(rows[0], serverNow), serverNow };
-}
 
 export default async (req) => {
   if (req.method !== 'GET' && req.method !== 'POST') {
@@ -42,7 +40,8 @@ export default async (req) => {
     }
     token = bearerToken(req);
     const parsed = parseAdminToken(token);
-    if (!parsed.ok) return respond(401, { ok: false, error: parsed.error });
+    // (A team token lives longer than an admin one; let it through to be identified below.)
+    if (!parsed.ok && !parseToken(token, 'team').ok) return respond(401, { ok: false, error: parsed.error });
     body = await req.json().catch(() => null);
   }
 
@@ -53,12 +52,21 @@ export default async (req) => {
     await ensureGameStateTable(client);
 
     if (req.method === 'GET') {
-      return respond(200, { ok: true, ...(await readGame(client)) });
+      return respond(200, { ok: true, ...(await gameBody(client)) });
     }
 
-    const { rows: admins } = await client.query(`select username from users where role = 'admin'`);
-    const auth = verifyAdminToken(token, admins.map((r) => r.username));
-    if (!auth.ok) return respond(401, { ok: false, error: auth.error });
+    const { rows: accounts } = await client.query(`select username, role from users`);
+    const auth = verifyAdminToken(token, accounts.filter((r) => r.role === 'admin').map((r) => r.username));
+    if (!auth.ok) {
+      // A team's own sign-in token used here: refuse it and note it for the facilitator.
+      const asTeam = parseToken(token, 'team');
+      const owner = asTeam.ok ? accounts.find((r) => r.role !== 'admin' && tokenMatches(asTeam, 'team', r.username)) : null;
+      if (owner) {
+        await flagTeam(client, owner.username, FLAGS.adminOnly);
+        return respond(403, { ok: false, error: 'Only the facilitator (admin) can change the game clock.' });
+      }
+      return respond(401, { ok: false, error: auth.error });
+    }
 
     const action = body && typeof body === 'object' ? body.action : null;
     if (!ACTIONS.includes(action)) {
@@ -89,7 +97,7 @@ export default async (req) => {
       }
       if (error) {
         await client.query('rollback');
-        return respond(400, { ok: false, error, ...(await readGame(client)) });
+        return respond(400, { ok: false, error, ...(await gameBody(client)) });
       }
       await client.query('commit');
     } catch (err) {
@@ -97,7 +105,7 @@ export default async (req) => {
       throw err;
     }
     console.log(`[game] ${auth.username}: ${action}${action === 'setMode' ? ` ${body.mode}` : ''}`);
-    return respond(200, { ok: true, ...(await readGame(client)) });
+    return respond(200, { ok: true, ...(await gameBody(client)) });
   } catch (e) {
     console.error('[game] request failed', e);
     return respond(500, { ok: false, error: e.message || 'Game clock failure' });
