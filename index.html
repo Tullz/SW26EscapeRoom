@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Log in to Cyber Escape Rooms to play phishing, password, encryption, and ASD Essentials puzzles and unlock the vault." />
+  <meta name="description" content="Log in to Cyber Escape Rooms: solve five security escape rooms as a team, collect a code word from each and crack the vault." />
   <link rel="icon" href="assets/favicon.png" type="image/png" />
 
   <!-- Tight CSP (local assets only) -->
@@ -56,10 +56,10 @@
           <span class="vault-status__label">Vault</span>
           <ol class="vault-status__digits">
             <li data-vault-key="phishing">•</li>
-            <li data-vault-key="encryption">•</li>
-            <li data-vault-key="password">•</li>
-            <li data-vault-key="essential">•</li>
-            <li data-vault-key="binary">•</li>
+            <li data-vault-key="osint">•</li>
+            <li data-vault-key="incident">•</li>
+            <li data-vault-key="mfa">•</li>
+            <li data-vault-key="crypto">•</li>
           </ol>
           <span class="vault-status__count">0/5</span>
         </div>
@@ -75,12 +75,13 @@
     </header>
 
     <section class="intro-banner mt-2" aria-labelledby="loginBriefHeading">
-      <h2 id="loginBriefHeading">How the challenge works</h2>
-      <p>Your team plays five cyber puzzles. Each success awards a digit for the vault and protects your score. Mistakes or heavy hint use subtract points, so accuracy and speed matter.</p>
+      <h2 id="loginBriefHeading">How the game works</h2>
+      <p>Your team works through five security escape rooms: Phishing, OSINT, Incident Management, MFA and Encryption. Every room you solve gives you a code word. Put all five words into the vault on the Mission Hub to crack it.</p>
       <ul>
-        <li>Log in with your team credentials to load progress and points.</li>
-        <li>Open the Mission Hub after signing in to see which puzzle comes next.</li>
-        <li>Fill the vault code as you go—once all five digits glow, crack the chest.</li>
+        <li>Log in with your team name and password. Your progress is shared, so you can split up across laptops.</li>
+        <li>Play the rooms in any order. The Mission Hub shows your next step and your score.</li>
+        <li>You start with 100 points. Hints and wrong answers cost a few; solving rooms and cracking the vault earn more. The sooner you crack the vault, the bigger your time bonus.</li>
+        <li>Finished early? Cracking the vault unlocks a bonus room, just for fun.</li>
       </ul>
       <a class="btn mt-1" href="#loginHeading">Get started</a>
     </section>
@@ -121,9 +122,8 @@
         <a href="index.html" aria-current="page">Home</a>
         <span aria-hidden="true">•</span>
         <a href="game.html">Mission Hub</a>
-        <span aria-hidden="true">•</span>
       </nav>
-      <p class="footer-note">Stay ahead of phishing, passwords, encryption, and essential cyber controls.</p>
+      <p class="footer-note">Spot the phish, protect your accounts and stay one step ahead of attackers.</p>
       <p class="footer-copy"><small>&copy; 2026 Cyber Escape Rooms</small></p>
     </div>
   </footer>

@@ -1,5 +1,6 @@
-import { createClient, ensureTeamStateTable, DEFAULT_PROGRESS, errorResponse } from './_shared/db.js';
+import { createClient, ensureTeamStateTable, dbNowMs, DEFAULT_PROGRESS, errorResponse } from './_shared/db.js';
 import { mergeStates } from './_shared/merge.js';
+import { stampVault } from './_shared/stamps.js';
 
 function normalizeProgress(raw) {
   const cleaned = { ...DEFAULT_PROGRESS };
@@ -170,6 +171,7 @@ export default async (req) => {
           return respond(409, { ok: false, error: 'Team was reset; pull latest state first', resetVersion: storedReset });
         }
         let next = incoming;
+        let priorVault = {};
         if (storedRow && incomingReset === storedReset) {
           // Same reset epoch: merge, so a session holding an older copy can never undo a
           // completion, a code word or a points change made elsewhere. A newer resetVersion
@@ -185,7 +187,10 @@ export default async (req) => {
             vault: incoming.vault
           }, { score: body.source === 'admin' ? 'local' : 'merge', endless: 'local' });
           next = sanitizePayload(merged);
+          priorVault = storedRow.vault;
         }
+        // solvedAt / openedAt: the server's own clock, never the client's (see _shared/stamps.js).
+        next.vault = stampVault(next.vault, next.progress, priorVault, await dbNowMs(client));
         const values = [
           team,
           JSON.stringify(next.progress),

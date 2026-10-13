@@ -1,5 +1,6 @@
-import { createClient, ensureTeamStateTable, DEFAULT_PROGRESS, errorResponse } from './_shared/db.js';
+import { createClient, ensureTeamStateTable, dbNowMs, DEFAULT_PROGRESS, errorResponse } from './_shared/db.js';
 import { mergeStates } from './_shared/merge.js';
+import { stampVault } from './_shared/stamps.js';
 
 function sanitizeRow(row = {}) {
   const progress = { ...DEFAULT_PROGRESS };
@@ -84,6 +85,7 @@ export default async (req) => {
         const stored = rows[0];
         const storedReset = Number(stored?.vault?.resetVersion || 0);
         const incomingReset = Number(sanitized.vault?.resetVersion || 0);
+        let priorVault = {};
         if (stored && storedReset === incomingReset) {
           const current = sanitizeRow({
             progress: stored.progress, progressMeta: stored.progress_meta, times: stored.times, score: stored.score,
@@ -91,7 +93,11 @@ export default async (req) => {
           });
           const merged = mergeStates(current, sanitized, { score: 'local', endless: 'local' });
           sanitized = sanitizeRow({ ...merged, bonus: sanitized.bonus });
+          priorVault = stored.vault;
         }
+        // solvedAt / openedAt: the server's own clock (admin "mark complete" stamps now, a reopen
+        // or reset removes the stamp); stamps sent by the dashboard are ignored.
+        sanitized.vault = stampVault(sanitized.vault, sanitized.progress, priorVault, await dbNowMs(client));
         await client.query(
           `insert into team_state (team, progress, progress_meta, times, score, score_log, activity, endless, bonus, vault, updated_at)
            values ($1,$2::jsonb,$3::jsonb,$4::jsonb,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb, now())

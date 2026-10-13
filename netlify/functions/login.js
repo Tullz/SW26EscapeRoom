@@ -1,5 +1,6 @@
 import { createClient, errorResponse } from './_shared/db.js';
 import bcrypt from 'bcryptjs';
+import { signAdminToken } from './_shared/admin-token.js';
 
 export default async (req, context) => {
   if (req.method !== 'POST') {
@@ -26,7 +27,12 @@ export default async (req, context) => {
     if (!ok) {
       return Response.json({ ok: false, error: 'Invalid credentials' }, { status: 401 });
     }
-    return Response.json({ ok: true, user: { username: u.username, role: u.role } });
+    const user = { username: String(u.username).toLowerCase(), role: u.role };
+    if (u.role !== 'admin') return Response.json({ ok: true, user });
+    // Admins also get a signed token; the game clock (game.js POST) requires it.
+    const token = signAdminToken(u.username);
+    if (!token) console.warn('[login] ADMIN_TOKEN_SECRET / ADMIN_SEED_TOKEN not set: no admin token issued');
+    return Response.json(token ? { ok: true, user, token } : { ok: true, user });
   } catch (e) {
     console.error('[login] authentication failed', e);
     return errorResponse(500, { ok: false, error: e.message || 'Login failed' });

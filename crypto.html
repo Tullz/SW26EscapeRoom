@@ -20,11 +20,13 @@
 
   <!-- External files only -->
   <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/game-clock.css" />
   <script src="js/accessibility.js" defer></script>
   <script src="js/utils.js" defer></script>
   <script src="js/state-sync.js" defer></script>
   <script src="js/session.js" defer></script>
   <script src="js/vault.js" defer></script>
+  <script src="js/game-clock.js" defer></script>
   <script src="js/crypto.js" defer></script>
 
   <style>
@@ -146,11 +148,10 @@
     .hs-book    { left: 9%;  top: 55%; width: 14%; height: 33%; }
     .hs-phone   { left: 26%; top: 57%; width: 8.5%; height: 29%; }
     .hs-card    { left: 38%; top: 57%; width: 13.5%; height: 14%; }
-    .hs-disk    { left: 39%; top: 74.5%; width: 12%; height: 18.3%; }
+    .hs-mints   { left: 39.5%; top: 76%; width: 11%; height: 14%; }
     .hs-pen     { left: 55%; top: 54%; width: 4%;  height: 37%; }
     .hs-keys    { left: 62%; top: 58%; width: 12%; height: 25%; }
-    .hs-mints   { left: 79%; top: 56%; width: 11%; height: 14%; }
-    .hs-glasses { left: 77%; top: 75%; width: 15%; height: 13%; }
+    .hs-glasses { left: 77%; top: 64%; width: 15%; height: 13%; }
     .hs-ticket .cc-hs__label, .hs-receipt .cc-hs__label, .hs-card .cc-hs__label { bottom: auto; top: -4px; transform: translate(-50%, -100%); }
 
     /* UV torch over the scene: a purple spotlight that follows the pointer */
@@ -172,6 +173,9 @@
     .cc-feedback.is-bad { color: #ff8a8a; }
     .cc-feedback.is-good { color: var(--accent); }
     .cc-feedback.is-info { color: var(--warn); }
+    /* On the cream paper of the notepad and worksheet the dark-theme colours are too faint. */
+    .cc-notepad .cc-feedback.is-bad, .cc-ws .cc-feedback.is-bad { color: #b42318; }
+    .cc-notepad .cc-feedback.is-info, .cc-ws .cc-feedback.is-info { color: #8a5300; }
 
     /* Flippable props */
     .cc-flip { perspective: 900px; margin: .4rem 0 .8rem; }
@@ -199,7 +203,8 @@
     .cc-uvpaper .cc-ink { position: relative; z-index: 2; }
     .cc-uvpaper .cc-gridink { position: absolute; }
     .cc-uv-on .cc-closeup { background: radial-gradient(circle at 50% 25%, #2b1852, #140b24 70%); border-color: rgba(180, 124, 255, .5); }
-    .cc-uv-on .cc-closeup .cc-ticket, .cc-uv-on .cc-closeup .cc-paper, .cc-uv-on .cc-closeup .cc-receipt, .cc-uv-on .cc-closeup .cc-tag { filter: brightness(.72) saturate(.7); }
+    .cc-uv-on .cc-closeup .cc-ticket, .cc-uv-on .cc-closeup .cc-paper, .cc-uv-on .cc-closeup .cc-receipt, .cc-uv-on .cc-closeup .cc-tag,
+    .cc-uv-on .cc-closeup .cc-tin, .cc-uv-on .cc-closeup .cc-keycard { filter: brightness(.72) saturate(.7); }
     .cc-uv-on .cc-closeup .cc-face--back .cc-ticket { filter: none; background: linear-gradient(90deg, #8c7a9e 0 74%, #7d6b90 74%); }
     #cryptoComplete, .cc-bench, .cc-closeup, #ccHands { scroll-margin-top: 110px; }
     .cc-sweep { display: none; }
@@ -238,13 +243,10 @@
     .cc-tag::before, .cc-tag::after { content: ''; position: absolute; top: 50%; width: 46px; height: 46px; border-radius: 50%; background: linear-gradient(180deg, #e8ecf1, #aab4c0); transform: translateY(-50%); z-index: -1; }
     .cc-tag::before { left: -14px; } .cc-tag::after { right: -14px; }
     .cc-tag__name { font-size: 1.7rem; font-weight: 900; letter-spacing: .12em; }
-.cc-cardprop { max-width: 300px; filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .4)); }
-    .cc-cardprop svg, .cc-engrave svg { width: 100%; height: auto; display: block; }
-    .cc-engrave {
-      width: 210px; height: 210px; border-radius: 50%; margin: .4rem auto .8rem; display: grid; place-items: center; text-align: center; padding: 2rem;
-      background: radial-gradient(circle at 35% 30%, #f6d677, #b8891c 60%, #6d4f0c); color: #3a2a04; box-shadow: 0 8px 18px rgba(0, 0, 0, .45), inset 0 0 0 6px rgba(0, 0, 0, .12);
-      font-family: Georgia, serif; font-weight: 700; font-size: .78rem; line-height: 1.35; text-shadow: 0 1px 0 rgba(255, 240, 190, .55);
-    }
+    .cc-cardprop { max-width: 300px; filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .4)); }
+    .cc-cardprop svg { width: 100%; height: auto; display: block; }
+    .cc-tin { max-width: 260px; margin: .4rem 0 .8rem; filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .4)); }
+    .cc-tin svg { width: 100%; height: auto; display: block; }
 
     /* ---- Burner phone ---- */
     .cc-phone {
@@ -364,25 +366,35 @@
     .cc-readout.is-good { color: var(--accent); }
     .cc-dropglow { box-shadow: 0 0 0 4px rgba(212, 168, 44, .55), 0 0 24px rgba(212, 168, 44, .45); }
 
-    /* Cipher disk */
-    .cc-diskwrap { display: grid; grid-template-columns: minmax(260px, 400px) minmax(0, 1fr); gap: 1.2rem; align-items: start; }
-    .cc-disk { width: 100%; max-width: 400px; margin: 0 auto; touch-action: none; }
-    .cc-disk svg { width: 100%; height: auto; display: block; }
-    .cc-disk__inner { cursor: grab; outline: none; }
-    .cc-disk__inner:focus-visible .cc-ringhalo { stroke: #fff; stroke-width: 3; }
-    .cc-disk.is-dragging .cc-disk__inner { cursor: grabbing; }
-    .cc-ringrot { transition: transform .35s cubic-bezier(.3, 1.4, .5, 1); transform-origin: 200px 200px; }
-    .cc-disk.is-dragging .cc-ringrot { transition: none; }
-    .cc-dl { font-family: Georgia, serif; font-weight: 800; font-size: 19px; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
-    .cc-dl--out { fill: #2e2104; }
-    .cc-dl--in { fill: #f7e3a6; }
-    .cc-dl.is-spot { fill: #0bff8c; }
-    .cc-hit { fill: transparent; cursor: pointer; }
-    .cc-diskctl { display: flex; align-items: center; justify-content: center; gap: .5rem; flex-wrap: wrap; margin-top: .5rem; }
-    .cc-diskread { text-align: center; font-size: .92rem; color: #e8d9bd; margin-top: .4rem; min-height: 2.6em; line-height: 1.4; }
-    .cc-diskread b { color: #ffe08a; font-family: 'Courier New', monospace; font-size: 1.1rem; }
-    .cc-spot { display: inline-flex; align-items: center; gap: .4rem; font-size: .85rem; color: var(--muted); }
-    .cc-spot input { width: 2.6rem; text-align: center; text-transform: uppercase; padding: .3rem; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: #fff; font-weight: 800; }
+    /* Key card (reversed alphabet), folded in half: each column is one swap pair */
+    .cc-decode { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(250px, 1fr); gap: 1.2rem; align-items: start; }
+    .cc-decode__label { font-size: .78rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #e8d9bd; margin: 0 0 .55rem; }
+    .cc-keycard {
+      max-width: 34rem; padding: .7rem .7rem .8rem; border-radius: 6px; color: #2b241a; font-family: 'Courier New', monospace;
+      background: linear-gradient(180deg, #f7f0dc, #efe4c6 49%, #e2d5b2 50%, #f3ead2 51%, #ece1c2);
+      box-shadow: 0 10px 22px rgba(0, 0, 0, .45); transform: rotate(-.5deg);
+    }
+    .cc-kc__half { display: grid; grid-template-columns: repeat(13, minmax(0, 1fr)); gap: 3px; }
+    .cc-kc__half + .cc-kc__half { margin-top: .55rem; padding-top: .55rem; border-top: 1px dashed rgba(90, 70, 40, .4); }
+    .cc-kc__pair {
+      display: grid; justify-items: center; gap: 2px; padding: .3rem 0; border-radius: 5px; min-width: 0;
+      border: 1px solid rgba(90, 70, 40, .2); background: rgba(255, 255, 255, .4); color: inherit; font: inherit; line-height: 1.1;
+    }
+    .cc-kc__top, .cc-kc__bot { font-weight: 900; font-size: clamp(.92rem, 2.4vw, 1.25rem); }
+    .cc-kc__top { color: #1d1708; }
+    .cc-kc__bot { color: #a3341f; width: 70%; text-align: center; padding-top: 2px; border-top: 1px solid rgba(90, 70, 40, .3); }
+    button.cc-kc__pair { cursor: pointer; }
+    @media (hover: hover) { button.cc-kc__pair:hover { background: rgba(212, 168, 44, .25); } }
+    button.cc-kc__pair:focus-visible { outline: 3px solid #2f5d8a; outline-offset: 1px; }
+    .cc-kc__pair.is-lit { background: #ffe680; border-color: #c88f17; box-shadow: 0 0 0 2px rgba(200, 143, 23, .55); }
+    .cc-keycard.is-static { max-width: 300px; margin: .4rem 0 .8rem; padding: .5rem; transform: rotate(-1.5deg); }
+    .cc-keycard.is-static .cc-kc__half { gap: 2px; }
+    .cc-keycard.is-static .cc-kc__half + .cc-kc__half { margin-top: .35rem; padding-top: .35rem; }
+    .cc-keycard.is-static .cc-kc__pair { padding: .12rem 0; }
+    .cc-keycard.is-static .cc-kc__top, .cc-keycard.is-static .cc-kc__bot { font-size: .8rem; }
+    .cc-kcread { min-height: 1.7em; margin: .75rem 0 0; font-size: .95rem; color: #e8d9bd; text-align: center; }
+    .cc-kcread b { font-family: 'Courier New', monospace; font-size: 1.25rem; color: #ffe08a; }
+    .cc-kcread__tip { color: var(--muted); font-size: .88rem; }
     .cc-ws { background: #fffbe8; color: #2b2410; border-radius: 6px; padding: .9rem 1rem; box-shadow: 0 8px 18px rgba(0, 0, 0, .45); border-top: 14px solid #2f5d8a; }
     .cc-ws h4 { margin: 0 0 .5rem; font-size: .98rem; }
     .cc-ws p { margin: 0 0 .5rem; font-size: .84rem; line-height: 1.45; color: #4a3f22; }
@@ -390,17 +402,7 @@
     .cc-wsgrid .lab { font-size: .76rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: #6b5c3a; }
     .cc-wsgrid .box { height: 2.4rem; display: grid; place-items: center; border-radius: 6px; font-family: 'Courier New', monospace; font-weight: 900; font-size: 1.2rem; }
     .cc-wsgrid .box--code { background: #2b2410; color: #ffe08a; }
-    .cc-wsgrid .box--key { background: #e9e1c6; color: #2f5d8a; }
     .cc-wsgrid input { text-align: center; text-transform: uppercase; padding: .3rem 0; height: 2.4rem; font-family: 'Courier New', monospace; font-weight: 900; font-size: 1.2rem; }
-    .cc-keyrow { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-bottom: .2rem; }
-    .cc-keyrow label { font-size: .84rem; font-weight: 800; }
-    .cc-keyrow input { max-width: 11rem; text-transform: uppercase; letter-spacing: .15em; }
-    .cc-laptop { margin-top: 1rem; background: #07090c; border: 6px solid #2a2f37; border-bottom-width: 12px; border-radius: 10px; padding: .7rem .8rem; font-family: 'Courier New', monospace; color: #8fe3b0; font-size: .78rem; }
-    .cc-laptop__bar { color: var(--muted); font-size: .72rem; margin-bottom: .4rem; font-family: system-ui, sans-serif; }
-    .cc-laptop__list { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.8rem, 1fr)); gap: .1rem .6rem; max-height: 130px; overflow: hidden; }
-    .cc-laptop__list span { animation: ccIn .2s ease; }
-    .cc-laptop__list i { color: #ff7a7a; font-style: normal; }
-    .cc-laptop__sum { margin-top: .5rem; color: #ffd27a; }
 
     /* ---- Kit: codes cracked + notebook ---- */
     .cc-kit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 1rem; margin-top: 1rem; }
@@ -430,7 +432,7 @@
     .cc-lockword { display: inline-flex; align-items: center; gap: .4rem; font-weight: 700; color: #fff; }
 
     @media (max-width: 960px) {
-      .cc-layout, .cc-kit, .cc-diskwrap { grid-template-columns: 1fr; }
+      .cc-layout, .cc-kit, .cc-decode { grid-template-columns: 1fr; }
       .cc-bookwrap, .cc-stencil { grid-template-columns: 1fr; }
     }
     @media (max-width: 700px) {
@@ -446,10 +448,12 @@
       .cc-scene { aspect-ratio: 4 / 3.4; }
       .cc-hs__label { font-size: 8px; padding: 1px 4px; }
       .cc-wsgrid { grid-template-columns: 3.6rem repeat(5, minmax(0, 1fr)); }
+      .cc-keycard:not(.is-static) { padding: .5rem .35rem .6rem; margin-inline: -.25rem; }
+      .cc-keycard:not(.is-static) .cc-kc__half { gap: 2px; }
       .cc-phone { max-width: 230px; aspect-ratio: auto; min-height: 400px; }
     }
     @media (prefers-reduced-motion: reduce) {
-      .cc-hs, .cc-msg, .cc-flip__inner, .cc-card, .cc-ringrot, .cc-leaf, .cc-codetile, .cc-lesson { animation: none !important; transition: none !important; }
+      .cc-hs, .cc-msg, .cc-flip__inner, .cc-card, .cc-leaf, .cc-codetile, .cc-lesson { animation: none !important; transition: none !important; }
       .cc-hs.is-buzzing svg, .cc-phone.is-buzzing { animation: none !important; }
     }
   </style>
@@ -479,8 +483,8 @@
         <nav class="main-nav" aria-label="Primary">
           <a class="nav-link" href="game.html">Mission Hub</a>
         </nav>
-        <a class="nav-btn nav-btn--next" href="forensics.html" aria-label="Next challenge: Network Forensics">
-          Next<span aria-hidden="true">&rarr;</span>
+        <a class="nav-btn nav-btn--next" href="game.html" aria-label="Back to the Mission Hub to open the vault">
+          Vault<span aria-hidden="true">&rarr;</span>
         </a>
         <div class="vault-status" id="vaultStatus" role="status" aria-live="polite" data-visible="team">
           <span class="vault-status__label">Vault</span>
@@ -490,9 +494,8 @@
             <li data-vault-key="incident">&bull;</li>
             <li data-vault-key="mfa">&bull;</li>
             <li data-vault-key="crypto">&bull;</li>
-            <li data-vault-key="forensics">&bull;</li>
           </ol>
-          <span class="vault-status__count">0/6</span>
+          <span class="vault-status__count">0/5</span>
         </div>
         <button class="nav-btn alert nav-btn--logout" type="button" data-action="logout">Logout</button>
       </div>
@@ -524,7 +527,7 @@
 
     <section class="status-hud mt-2" aria-label="Team status">
       <div class="points-box">
-        <p class="points-box__label">Team points</p>
+        <p class="points-box__label">Points kept</p>
         <p class="points-box__value" id="cryptoPointsTotal">000</p>
         <p class="points-box__delta" id="cryptoPointsDelta" aria-live="polite"></p>
       </div>
@@ -656,16 +659,13 @@
               <span class="cc-hs__label">Coffee card</span>
             </button>
 
-            <button class="cc-hs hs-disk" type="button" data-item="disk" aria-label="Brass disk with letters">
-              <svg viewBox="0 0 100 100" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
-                <circle cx="50" cy="50" r="47" fill="#c9971f" stroke="#6d4f0c" stroke-width="2"/>
-                <circle cx="50" cy="50" r="35" fill="#8f6a12" stroke="#5f4509" stroke-width="2"/>
-                <circle cx="50" cy="50" r="22" fill="#d9b04a" stroke="#6d4f0c" stroke-width="1.5"/>
-                <g stroke="#5f4509" stroke-width="1.2"><path d="M50 3 v8 M50 89 v8 M3 50 h8 M89 50 h8 M17 17 l6 6 M77 77 l6 6 M83 17 l-6 6 M17 83 l6 -6"/></g>
-                <g stroke="#f2d27a" stroke-width="1" opacity=".8"><path d="M50 15 v6 M50 79 v6 M15 50 h6 M79 50 h6 M25 25 l4 4 M71 71 l4 4 M75 25 l-4 4 M25 75 l4 -4"/></g>
-                <circle cx="50" cy="50" r="5" fill="#6d4f0c"/>
+            <button class="cc-hs hs-mints" type="button" data-item="mints" aria-label="Tin of mints">
+              <svg viewBox="0 0 70 50" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
+                <rect x="3" y="4" width="64" height="42" rx="8" fill="#e8eef0" stroke="#98a4a8" stroke-width="2"/>
+                <rect x="10" y="12" width="50" height="26" rx="4" fill="#2f8f6b"/>
+                <text x="35" y="30" font-size="11" font-weight="900" fill="#f4f6f8" text-anchor="middle" font-family="Arial, sans-serif">MINTS</text>
               </svg>
-              <span class="cc-hs__label">Brass disk</span>
+              <span class="cc-hs__label">Mints</span>
             </button>
 
             <button class="cc-hs hs-pen" type="button" data-item="pen" aria-label="Chunky black pen">
@@ -696,15 +696,6 @@
               <span class="cc-hs__label">Keys</span>
             </button>
 
-            <button class="cc-hs hs-mints" type="button" data-item="mints" aria-label="Tin of mints">
-              <svg viewBox="0 0 70 50" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
-                <rect x="3" y="4" width="64" height="42" rx="8" fill="#e8eef0" stroke="#98a4a8" stroke-width="2"/>
-                <rect x="10" y="12" width="50" height="26" rx="4" fill="#2f8f6b"/>
-                <text x="35" y="30" font-size="11" font-weight="900" fill="#f4f6f8" text-anchor="middle" font-family="Arial, sans-serif">MINTS</text>
-              </svg>
-              <span class="cc-hs__label">Mints</span>
-            </button>
-
             <button class="cc-hs hs-glasses" type="button" data-item="glasses" aria-label="Sunglasses">
               <svg viewBox="0 0 120 50" aria-hidden="true" preserveAspectRatio="xMidYMid meet">
                 <path d="M8 14 Q4 40 28 42 Q50 42 52 20 Q52 12 40 12 L16 12 Q8 12 8 14 Z" fill="#3c4f66" stroke="#111" stroke-width="3"/>
@@ -730,7 +721,7 @@
         </div>
       </div>
 
-      <!-- Workbench: the book, the puzzle page and the brass disk open here -->
+      <!-- Workbench: the book, the puzzle page and the key card open here -->
       <div class="cc-bench" id="ccBench" hidden tabindex="-1" aria-labelledby="ccBenchTitle">
         <div class="cc-bench__head">
           <h3 id="ccBenchTitle">Workbench</h3>
@@ -754,8 +745,7 @@
 
     <nav class="challenge-nav mt-2" aria-label="Puzzle navigation">
       <a class="btn ghost" href="mfa.html">&larr; MFA / Authentication</a>
-      <a class="btn ghost" href="game.html">Mission Hub</a>
-      <a class="btn" href="forensics.html">Next: Network Forensics &rarr;</a>
+      <a class="btn" href="game.html">Back to the hub to open the vault &rarr;</a>
     </nav>
   </main>
 

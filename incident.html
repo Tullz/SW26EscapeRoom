@@ -18,11 +18,13 @@
   <title>Cyber Escape Rooms — Incident Management</title>
 
   <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/game-clock.css" />
   <script src="js/accessibility.js" defer></script>
   <script src="js/utils.js" defer></script>
   <script src="js/state-sync.js" defer></script>
   <script src="js/session.js" defer></script>
   <script src="js/vault.js" defer></script>
+  <script src="js/game-clock.js" defer></script>
   <script src="js/incident.js" defer></script>
 
   <style>
@@ -540,9 +542,8 @@
             <li data-vault-key="incident">&bull;</li>
             <li data-vault-key="mfa">&bull;</li>
             <li data-vault-key="crypto">&bull;</li>
-            <li data-vault-key="forensics">&bull;</li>
           </ol>
-          <span class="vault-status__count">0/6</span>
+          <span class="vault-status__count">0/5</span>
         </div>
         <button class="nav-btn alert nav-btn--logout" type="button" data-action="logout">Logout</button>
       </div>
@@ -575,7 +576,7 @@
     <!-- Status HUD -->
     <section class="status-hud mt-2" aria-label="Team status">
       <div class="points-box">
-        <p class="points-box__label">Team points</p>
+        <p class="points-box__label">Points kept</p>
         <p class="points-box__value" id="incidentPointsTotal">000</p>
         <p class="points-box__delta" id="incidentPointsDelta" aria-live="polite"></p>
       </div>

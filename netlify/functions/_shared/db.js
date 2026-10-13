@@ -81,3 +81,29 @@ export async function ensureTeamStateTable(client) {
   await client.query(`alter table team_state add column if not exists vault jsonb not null default '{}'::jsonb`);
   teamStateTableReady = true;
 }
+
+// The database clock, in ms. Every server time (game clock, solvedAt/openedAt stamps) comes
+// from here, so they all agree whichever function instance wrote them.
+export async function dbNowMs(client) {
+  const { rows } = await client.query(`select (extract(epoch from now()) * 1000)::float8 as ms`);
+  return Math.floor(Number(rows[0].ms));
+}
+
+// The global game clock: one row (id = 1), free roam until a facilitator switches mode.
+let gameStateTableReady = false;
+
+export async function ensureGameStateTable(client) {
+  if (gameStateTableReady) return;
+  await client.query(`
+    create table if not exists game_state (
+      id integer primary key default 1 check (id = 1),
+      mode text not null default 'free' check (mode in ('free', 'competition')),
+      started_at timestamptz null,
+      ended_at timestamptz null,
+      duration_min integer not null default 60,
+      updated_at timestamptz not null default now()
+    )
+  `);
+  await client.query(`insert into game_state (id) values (1) on conflict (id) do nothing`);
+  gameStateTableReady = true;
+}

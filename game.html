@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Mission Hub: solve six security rooms in any order, collect a code word from each and crack the vault." />
+  <meta name="description" content="Mission Hub: solve five security rooms in any order, collect a code word from each and crack the vault." />
   <link rel="icon" href="assets/favicon.png" type="image/png" />
 
   <!-- Tight CSP (local assets only) -->
@@ -19,8 +19,11 @@
   <title>Cyber Escape Rooms — Mission Hub</title>
 
   <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/game-clock.css" />
   <script src="js/accessibility.js" defer></script>
   <script src="js/utils.js" defer></script>
+  <script src="js/scoring.js" defer></script>
+  <script src="js/game-clock.js" defer></script>
   <script src="js/state-sync.js" defer></script>
   <script src="js/session.js" defer></script>
   <script src="js/vault.js" defer></script>
@@ -281,8 +284,6 @@
       padding: clamp(1rem, 2.5vw, 1.4rem);
       border-color: rgba(255, 196, 87, .3);
       background: linear-gradient(180deg, rgba(255, 196, 87, .06), var(--panel) 40%);
-      position: sticky;
-      top: 6.5rem;
     }
     .hub-vault__head { display: flex; gap: .8rem; align-items: flex-start; margin-bottom: 1rem; }
     .hub-vault__icon {
@@ -307,6 +308,8 @@
       gap: .65rem;
     }
     .vault-slot { display: grid; gap: .3rem; }
+    /* Odd number of slots: the last one gets the full width. */
+    .vault-slot:last-child:nth-child(odd) { grid-column: 1 / -1; }
     .vault-slot__label {
       width: auto;
       text-align: left;
@@ -367,18 +370,324 @@
     #lockFeedback.warn { color: var(--warn); }
     .hub-vault.open { border-color: rgba(9, 255, 136, .6); }
 
-    /* Secondary: scoring & help */
-    .hub-more { padding: 0; }
+    /* ---- Locked while the game is waiting / over ---- */
+    .hub-lock-note {
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+      margin: 0 0 .9rem;
+      padding: .6rem .8rem;
+      border-radius: 10px;
+      border: 1px dashed rgba(139, 148, 158, .5);
+      background: rgba(10, 14, 20, .55);
+      color: var(--ink);
+      font-size: .9rem;
+      line-height: 1.4;
+    }
+    .hub-lock-note svg { flex: 0 0 auto; width: 18px; height: 18px; color: var(--muted); }
+    .hub-path.is-locked .mission-tracker__item {
+      opacity: .45;
+      filter: grayscale(.7);
+      cursor: not-allowed;
+    }
+    .hub-path.is-locked .mission-tracker__item:hover { background: transparent; border-color: transparent; }
+    .hub-path.is-locked .mission-tracker__item .mission-tracker__progress {
+      color: var(--muted);
+      background: transparent;
+      border-color: rgba(139, 148, 158, .35);
+    }
+    .hub-vault.is-locked .vault-slots,
+    .hub-vault.is-locked .lock-actions { opacity: .45; filter: grayscale(.7); }
+    .hub-vault.is-locked .lock-word,
+    .hub-vault.is-locked .btn { cursor: not-allowed; }
+    .hub-vault .hub-lock-note { margin: 0 0 .9rem; }
+    .hub-next__btn.btn.is-disabled {
+      background: rgba(139, 148, 158, .14);
+      color: var(--muted);
+      border: 1px dashed rgba(139, 148, 158, .45);
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    /* ---- Game clock bar (competition mode) ---- */
+    .hub-clock {
+      --clock: var(--accent);
+      --clock-soft: rgba(9, 255, 136, .1);
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) minmax(0, 17rem);
+      align-items: center;
+      gap: .9rem 1.25rem;
+      padding: 1rem clamp(1rem, 3vw, 1.6rem);
+      border-color: color-mix(in srgb, var(--clock) 45%, transparent);
+      background: linear-gradient(90deg, var(--clock-soft), var(--panel) 60%);
+    }
+    .hub-clock.is-amber { --clock: #ffc457; --clock-soft: rgba(255, 196, 87, .12); }
+    .hub-clock.is-red { --clock: var(--danger); --clock-soft: rgba(255, 85, 85, .14); }
+    .hub-clock[data-state="waiting"] { --clock: var(--brand); --clock-soft: rgba(88, 166, 255, .12); }
+    .hub-clock[data-state="over"] { --clock: var(--warn); --clock-soft: rgba(255, 166, 87, .12); }
+    .hub-clock__icon {
+      width: 48px; height: 48px;
+      border-radius: 14px;
+      display: grid; place-items: center;
+      color: var(--clock);
+      background: var(--clock-soft);
+      border: 1px solid color-mix(in srgb, var(--clock) 45%, transparent);
+    }
+    .hub-clock__icon svg { width: 26px; height: 26px; }
+    .hub-clock__body { display: grid; gap: .2rem; min-width: 0; }
+    .hub-clock__label {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: .45rem;
+      font-size: .75rem;
+      font-weight: 700;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      color: var(--clock);
+    }
+    .hub-clock[data-state="waiting"] .hub-clock__label::before {
+      content: "";
+      width: .55rem; height: .55rem;
+      border-radius: 50%;
+      background: var(--clock);
+      animation: hub-clock-pulse 1.6s ease-in-out infinite;
+    }
+    .hub-clock__big {
+      margin: 0;
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-variant-numeric: tabular-nums;
+      font-size: clamp(2.4rem, 6vw, 3.3rem);
+      font-weight: 700;
+      line-height: 1.05;
+      color: #fff;
+    }
+    .hub-clock.is-amber .hub-clock__big,
+    .hub-clock.is-red .hub-clock__big { color: var(--clock); }
+    .hub-clock.is-red[data-state="running"] .hub-clock__big { animation: hub-clock-pulse 1s ease-in-out infinite; }
+    .hub-clock__big.is-text {
+      font-family: inherit;
+      font-size: clamp(1.2rem, 2.8vw, 1.55rem);
+      line-height: 1.25;
+    }
+    .hub-clock__text { margin: 0; color: var(--muted); font-size: .92rem; line-height: 1.45; }
+    .hub-clock__text strong { color: var(--ink); }
+    .hub-clock__aside { display: grid; gap: .45rem; align-content: center; }
+    .hub-clock__track {
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(139, 148, 158, .16);
+      overflow: hidden;
+    }
+    .hub-clock__fill {
+      height: 100%;
+      width: 100%;
+      background: var(--clock);
+      border-radius: inherit;
+      transition: width 1s linear, background-color .3s ease;
+    }
+    .hub-clock__meta { margin: 0; color: var(--muted); font-size: .86rem; }
+    .hub-clock__meta strong { color: var(--clock); font-family: "JetBrains Mono", Consolas, monospace; }
+    .hub-clock__final {
+      display: grid;
+      gap: .15rem;
+      justify-items: start;
+      padding: .7rem .9rem;
+      border-radius: 12px;
+      background: rgba(10, 14, 20, .6);
+      border: 1px solid var(--border);
+    }
+    .hub-clock__final-label { font-size: .72rem; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+    .hub-clock__final-value { font-family: "JetBrains Mono", Consolas, monospace; font-size: 1.9rem; font-weight: 700; color: #fff; line-height: 1.1; }
+    .hub-clock__final-value small { font-size: .9rem; color: var(--muted); font-weight: 400; margin-left: .2rem; }
+    .hub-clock__final a { font-size: .86rem; color: var(--brand); }
+    @keyframes hub-clock-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+    @media (prefers-reduced-motion: reduce) {
+      .hub-clock[data-state="waiting"] .hub-clock__label::before,
+      .hub-clock.is-red[data-state="running"] .hub-clock__big { animation: none; }
+      .hub-clock__fill { transition: none; }
+    }
+
+    /* Free roam chip (next to the team name) */
+    .hub-eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; }
+    .hub-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      padding: .2rem .6rem;
+      border-radius: 999px;
+      border: 1px solid rgba(88, 166, 255, .4);
+      background: rgba(88, 166, 255, .1);
+      color: var(--brand);
+      font-size: .72rem;
+      letter-spacing: .04em;
+      text-transform: none;
+      font-weight: 600;
+    }
+
+    /* ---- Bonus room ---- */
+    .hub-side { display: grid; gap: 1.25rem; align-content: start; min-width: 0; }
+    .hub-bonus {
+      --bonus: #d2a8ff;
+      padding: clamp(1rem, 2.5vw, 1.4rem);
+      border-color: rgba(210, 168, 255, .3);
+      background: linear-gradient(180deg, rgba(210, 168, 255, .06), var(--panel) 45%);
+    }
+    .hub-bonus .hub-section-title h2 { color: var(--bonus); }
+    .hub-bonus__room {
+      display: grid;
+      grid-template-columns: 40px minmax(0, 1fr);
+      align-items: center;
+      gap: .55rem .9rem;
+      padding: .8rem 1rem;
+      border-radius: 12px;
+      border: 1px solid rgba(210, 168, 255, .35);
+      background: rgba(10, 14, 20, .55);
+      color: inherit;
+      text-decoration: none;
+      transition: border-color .2s ease, background-color .2s ease, box-shadow .2s ease;
+    }
+    a.hub-bonus__room[href]:hover,
+    a.hub-bonus__room[href]:focus-visible {
+      border-color: var(--bonus);
+      background: rgba(210, 168, 255, .08);
+      box-shadow: 0 10px 24px rgba(210, 168, 255, .1);
+    }
+    a.hub-bonus__room[href]:focus-visible { outline: 2px solid var(--bonus); outline-offset: 2px; }
+    .hub-bonus__icon {
+      grid-row: span 2;
+      width: 40px; height: 40px;
+      border-radius: 12px;
+      display: grid; place-items: center;
+      color: var(--bonus);
+      background: rgba(210, 168, 255, .12);
+      border: 1px solid rgba(210, 168, 255, .4);
+    }
+    .hub-bonus__icon svg { width: 22px; height: 22px; }
+    .hub-bonus__icon .shackle-open { display: none; }
+    .hub-bonus:not([data-state="locked"]) .hub-bonus__icon .shackle-open { display: inline; }
+    .hub-bonus:not([data-state="locked"]) .hub-bonus__icon .shackle-closed { display: none; }
+    .hub-bonus__status {
+      grid-column: 2;
+      justify-self: start;
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      font-size: .74rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      padding: .28rem .65rem;
+      border-radius: 999px;
+      color: #1a0f2b;
+      background: var(--bonus);
+    }
+    .hub-bonus__note { margin: .8rem 0 0; color: var(--muted); font-size: .88rem; line-height: 1.45; }
+    .hub-bonus__note strong { color: var(--ink); font-weight: 600; }
+    /* locked: clearly not a link */
+    .hub-bonus[data-state="locked"] .hub-bonus__room {
+      border-style: dashed;
+      border-color: rgba(139, 148, 158, .45);
+      cursor: not-allowed;
+    }
+    .hub-bonus[data-state="locked"] .hub-bonus__icon {
+      color: var(--muted);
+      background: rgba(139, 148, 158, .1);
+      border-color: rgba(139, 148, 158, .4);
+    }
+    .hub-bonus[data-state="locked"] .hub-room__name { color: var(--muted); }
+    .hub-bonus[data-state="locked"] .hub-bonus__status {
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid rgba(139, 148, 158, .45);
+      letter-spacing: .02em;
+      text-transform: none;
+    }
+    .hub-bonus[data-state="complete"] .hub-bonus__status {
+      color: var(--accent);
+      background: transparent;
+      border: 1px solid rgba(9, 255, 136, .4);
+    }
+
+    /* ---- Score panel ---- */
+    .hub-tally { padding: clamp(1rem, 2.5vw, 1.4rem); display: grid; gap: 1rem; }
+    .hub-tally .hub-section-title { margin-bottom: 0; }
+    .hub-tally__sum {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.15fr);
+      gap: 1.6rem;
+    }
+    .hub-tally__part {
+      position: relative;
+      display: grid;
+      grid-template-areas: "label" "value" "note";
+      align-content: start;
+      gap: .2rem;
+      padding: .8rem .95rem;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(10, 14, 20, .55);
+      min-width: 0;
+    }
+    .hub-tally__part + .hub-tally__part::before {
+      content: "+";
+      position: absolute;
+      left: -1.25rem;
+      top: 50%;
+      transform: translateY(-50%);
+      width: .9rem;
+      text-align: center;
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--muted);
+    }
+    .hub-tally__part.hub-tally__total::before { content: "="; }
+    .hub-tally__label {
+      grid-area: label;
+      font-size: .74rem;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .hub-tally__value {
+      grid-area: value;
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-variant-numeric: tabular-nums;
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.15;
+    }
+    .hub-tally__note { grid-area: note; font-size: .8rem; color: var(--muted); line-height: 1.35; }
+    .hub-tally__part.is-zero .hub-tally__value { color: var(--muted); }
+    .hub-tally__total {
+      border-color: rgba(9, 255, 136, .5);
+      background: linear-gradient(160deg, rgba(9, 255, 136, .1), rgba(10, 14, 20, .6));
+    }
+    .hub-tally__total .hub-tally__label { color: var(--accent); }
+    .hub-tally__total .hub-tally__value { color: var(--accent); font-size: 2rem; }
+    .hub-tally__notes { margin: 0; color: var(--warn); font-size: .88rem; }
+
+    /* Secondary: scoring rules & help */
+    .hub-more { padding: 0; border-radius: 12px; border: 1px solid var(--border); background: rgba(10, 14, 20, .35); }
     .hub-more > summary {
       cursor: pointer;
-      padding: .9rem 1.2rem;
+      padding: .8rem 1rem;
       color: var(--muted);
       font-size: .92rem;
       list-style-position: inside;
     }
     .hub-more > summary:hover { color: var(--ink); }
-    .hub-more__body { padding: 0 1.2rem 1.1rem; display: grid; gap: .6rem; color: var(--muted); font-size: .92rem; }
+    .hub-more__body { padding: 0 1rem 1rem; display: grid; gap: .6rem; color: var(--muted); font-size: .92rem; }
     .hub-more__body p { margin: 0; }
+    .hub-rules { margin: 0; padding-left: 1.1rem; display: grid; gap: .35rem; }
+    .hub-rules strong { color: var(--ink); }
     .hub-more .score-log { margin: 0; }
 
     .hub-footer { text-align: center; color: var(--muted); font-size: .8rem; margin: 1.5rem 0 .5rem; }
@@ -386,10 +695,16 @@
     /* Header on the hub: brand, vault tracker, logout only */
     .hub-page .site-header .header-actions { flex-wrap: nowrap; }
 
+    @media (max-width: 1000px) {
+      .hub-tally__sum { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; }
+      .hub-tally__part + .hub-tally__part::before { content: none; }
+      .hub-tally__total { grid-column: 1 / -1; }
+    }
     @media (max-width: 900px) {
       .hub-hero { grid-template-columns: 1fr; }
       .hub-body { grid-template-columns: 1fr; }
-      .hub-vault { position: static; }
+      .hub-clock { grid-template-columns: auto minmax(0, 1fr); }
+      .hub-clock__aside { grid-column: 1 / -1; }
     }
     @media (max-width: 720px) {
       .hub-page .site-header__inner {
@@ -417,11 +732,28 @@
       .hub-path .mission-tracker__progress { grid-column: 2; justify-self: start; margin-top: -.25rem; }
       .hub-path .mission-tracker__item.is-later .mission-tracker__progress { display: none; }
       .hub-section-title { flex-direction: column; gap: .2rem; }
+      .hub-clock { gap: .7rem .9rem; padding: .9rem 1rem; }
+      .hub-clock__icon { width: 40px; height: 40px; border-radius: 12px; }
+      .hub-clock__icon svg { width: 22px; height: 22px; }
+      .hub-bonus__room { grid-template-columns: 36px minmax(0, 1fr); gap: .5rem .75rem; padding: .75rem; }
+      .hub-bonus__icon { width: 36px; height: 36px; }
+      .hub-path.is-locked .mission-tracker__item.is-later .mission-tracker__progress { display: inline-block; }
+      /* Score: one row per part, like a receipt */
+      .hub-tally__sum { grid-template-columns: 1fr; gap: .5rem; }
+      .hub-tally__part {
+        grid-template-areas: "label value" "note value";
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        column-gap: .75rem;
+        padding: .6rem .8rem;
+      }
+      .hub-tally__value { font-size: 1.3rem; }
+      .hub-tally__total .hub-tally__value { font-size: 1.6rem; }
     }
   </style>
 </head>
 
-<body data-session="team" class="hub-page">
+<body data-session="team" class="hub-page" data-no-clock-pill>
   <a class="skip-link" href="#main">Skip to content</a>
 
   <!-- Global Header -->
@@ -446,9 +778,8 @@
             <li data-vault-key="incident">•</li>
             <li data-vault-key="mfa">•</li>
             <li data-vault-key="crypto">•</li>
-            <li data-vault-key="forensics">•</li>
           </ol>
-          <span class="vault-status__count">0/6</span>
+          <span class="vault-status__count">0/5</span>
         </div>
         <button class="nav-btn alert nav-btn--logout" type="button" data-action="logout">Logout</button>
       </div>
@@ -457,12 +788,43 @@
 
   <main class="hub" id="main" role="main" tabindex="-1">
 
+    <!-- 0. The game clock (competition mode only). Rendered by js/game.js from window.gameClock -->
+    <section class="card hub-clock" id="hubClock" aria-labelledby="hubClockLabel" hidden>
+      <span class="hub-clock__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="13" r="8"/>
+          <path d="M12 9v4l2.5 2.5"/>
+          <path d="M9.5 2h5"/>
+          <path d="M12 2v3"/>
+        </svg>
+      </span>
+      <div class="hub-clock__body">
+        <p class="hub-clock__label" id="hubClockLabel">Time left</p>
+        <p class="hub-clock__big" id="hubClockBig">--:--</p>
+        <p class="hub-clock__text" id="hubClockText"></p>
+      </div>
+      <div class="hub-clock__aside">
+        <div class="hub-clock__meter" id="hubClockMeter">
+          <div class="hub-clock__track" aria-hidden="true"><div class="hub-clock__fill" id="hubClockFill"></div></div>
+          <p class="hub-clock__meta" id="hubClockMeta"></p>
+        </div>
+        <div class="hub-clock__final" id="hubClockFinal" hidden>
+          <span class="hub-clock__final-label">Final score</span>
+          <span class="hub-clock__final-value"><span id="hubClockFinalScore">0</span><small>pts</small></span>
+          <a href="#hubScore">See the breakdown</a>
+        </div>
+      </div>
+    </section>
+
     <!-- 1. Mission + the one thing to do next -->
     <section class="card hub-hero" aria-labelledby="hubTitle">
       <div>
-        <p class="hub-eyebrow">Team <strong id="teamName" data-user-name>TEAM</strong></p>
+        <p class="hub-eyebrow">
+          <span>Team <strong id="teamName">TEAM</strong></span>
+          <span class="hub-chip" id="hubFreeChip" hidden>Free roam (practice): no clock</span>
+        </p>
         <h1 class="glow" id="hubTitle">Crack the vault</h1>
-        <p class="hub-lead">Solve <strong>6 security rooms</strong> in any order (about 15 minutes each). Every room you solve reveals a <strong>code word</strong> — type it into the vault below. All 6 words open the vault.</p>
+        <p class="hub-lead">Solve <strong>5 security rooms</strong> in any order. Every room you solve reveals a <strong>code word</strong>: type it into the vault below. All 5 words open the vault.</p>
       </div>
 
       <div class="hub-next" aria-live="polite">
@@ -471,101 +833,140 @@
         <p class="hub-next__hint" id="nextPuzzleHint">Loading your team's progress…</p>
         <div class="hub-stats">
           <div class="hub-progress">
-            <span id="progressStatus">0 of 6 rooms complete</span>
+            <span id="progressStatus">0 of 5 rooms complete</span>
             <div class="hub-progress__track" aria-hidden="true"><div class="hub-progress__fill" id="missionProgressFill"></div></div>
           </div>
-          <p class="hub-score" style="margin:0">Score <strong id="scoreTotal">100</strong> pts<span class="points-box__delta" id="missionPointsDelta" aria-live="polite"></span></p>
+          <p class="hub-score" style="margin:0"><span id="scoreTotalLabel">Score</span> <strong id="scoreTotal">100</strong> pts<span class="points-box__delta" id="missionPointsDelta" aria-live="polite"></span></p>
         </div>
       </div>
     </section>
 
     <div class="hub-body">
       <!-- 2. The rooms (any order) -->
-      <section class="card hub-path mission-tracker" aria-labelledby="pathHeading">
+      <section class="card hub-path mission-tracker" id="roomsCard" aria-labelledby="pathHeading">
         <div class="hub-section-title">
           <h2 id="pathHeading">The rooms</h2>
           <p>Play them in any order. Tap a room to enter it.</p>
         </div>
+        <p class="hub-lock-note" id="roomsLockNote" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+          <span id="roomsLockText">The rooms are locked.</span>
+        </p>
         <!-- Rendered by js/game.js from its ROOMS list -->
         <ol class="mission-tracker__list" id="missionTrackerList"></ol>
       </section>
 
-      <!-- 3. The goal: the vault -->
-      <section class="card hub-vault" id="vaultChest" aria-labelledby="vaultHeading">
-        <div class="hub-vault__head">
-          <span class="hub-vault__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="4" y="11" width="16" height="10" rx="2"/>
-              <path class="shackle-closed" d="M8 11V7a4 4 0 0 1 8 0v4"/>
-              <path class="shackle-open" d="M8 11V7a4 4 0 0 1 7.5-2"/>
-              <circle cx="12" cy="16" r="1.5"/>
-            </svg>
-          </span>
-          <div>
-            <h2 id="vaultHeading">The Vault</h2>
-            <p>When a room gives you its code word, type it into that room's slot (words save automatically). The vault opens when all six words are right.</p>
+      <div class="hub-side">
+        <!-- 3. The goal: the vault -->
+        <section class="card hub-vault" id="vaultChest" aria-labelledby="vaultHeading">
+          <div class="hub-vault__head">
+            <span class="hub-vault__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="11" width="16" height="10" rx="2"/>
+                <path class="shackle-closed" d="M8 11V7a4 4 0 0 1 8 0v4"/>
+                <path class="shackle-open" d="M8 11V7a4 4 0 0 1 7.5-2"/>
+                <circle cx="12" cy="16" r="1.5"/>
+              </svg>
+            </span>
+            <div>
+              <h2 id="vaultHeading">The Vault</h2>
+              <p>When a room gives you its code word, type it into that room's slot (words save automatically). The vault opens when all five words are right.</p>
+            </div>
           </div>
-        </div>
 
-        <!-- Rendered by js/game.js: one .lock-word input per room, in the same order as the room list -->
-        <div class="vault-slots" id="vaultSlots"></div>
+          <p class="hub-lock-note" id="vaultLockNote" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+            <span id="vaultLockText">The vault is locked.</span>
+          </p>
 
-        <div class="lock-actions">
-          <button class="btn primary" id="unlockBtn" type="button">Crack the vault</button>
-          <button class="btn ghost sm" id="clearCodeBtn" type="button">Clear</button>
-        </div>
-        <p id="lockFeedback" aria-live="polite"></p>
-      </section>
+          <!-- Rendered by js/game.js: one .lock-word input per room, in the same order as the room list -->
+          <div class="vault-slots" id="vaultSlots"></div>
+
+          <div class="lock-actions">
+            <button class="btn primary" id="unlockBtn" type="button">Crack the vault</button>
+            <button class="btn ghost sm" id="clearCodeBtn" type="button">Clear</button>
+          </div>
+          <p id="lockFeedback" aria-live="polite"></p>
+        </section>
+
+        <!-- 4. Bonus room: unlocks once the vault is open; no effect on the score -->
+        <section class="card hub-bonus" id="bonusRoom" aria-labelledby="bonusHeading" data-state="locked">
+          <div class="hub-section-title">
+            <h2 id="bonusHeading">Bonus room</h2>
+            <p>For teams that finish early</p>
+          </div>
+          <a class="hub-bonus__room" id="bonusRoomLink" aria-disabled="true" aria-describedby="bonusNote">
+            <span class="hub-bonus__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="11" width="16" height="10" rx="2"/>
+                <path class="shackle-closed" d="M8 11V7a4 4 0 0 1 8 0v4"/>
+                <path class="shackle-open" d="M8 11V7a4 4 0 0 1 7.5-2"/>
+                <circle cx="12" cy="16" r="1.5"/>
+              </svg>
+            </span>
+            <span class="hub-room">
+              <span class="hub-room__name">Network Forensics</span>
+              <span class="hub-room__blurb">Piece together the attack timeline from the evidence left behind.</span>
+            </span>
+            <span class="hub-bonus__status" id="bonusStatus">Crack the vault to unlock</span>
+          </a>
+          <p class="hub-bonus__note" id="bonusNote"><strong>It doesn't change your score:</strong> it's just for fun if you finish early.</p>
+        </section>
+      </div>
     </div>
 
-    <!-- Secondary info, tucked away -->
-    <details class="card hub-more">
-      <summary>How scoring works</summary>
-      <div class="hub-more__body">
-        <p>Your team starts with 100 points. Asking for a hint or giving a wrong answer costs a few points, so think before you click. Highest score at the end wins.</p>
-        <p>Stuck on a room? Use its hint button, or ask a facilitator.</p>
-        <p><button class="btn ghost sm" type="button" id="scoreLogBtn">View score log</button></p>
-        <div id="scoreLog" class="score-log" hidden></div>
+    <!-- 5. Score: total + plain breakdown (numbers from js/scoring.js) -->
+    <section class="card hub-tally" id="hubScore" aria-labelledby="scoreHeading" tabindex="-1">
+      <div class="hub-section-title">
+        <h2 id="scoreHeading">Your score</h2>
+        <p id="scoreSub">Updates as you play</p>
       </div>
-    </details>
+      <ol class="hub-tally__sum" id="scoreBreakdown">
+        <li class="hub-tally__part" data-part="pot">
+          <span class="hub-tally__label">Points kept</span>
+          <span class="hub-tally__value" id="tallyPot">100</span>
+          <span class="hub-tally__note" id="tallyPotNote">Starts at 100. Hints and mistakes cost a few.</span>
+        </li>
+        <li class="hub-tally__part" data-part="rooms">
+          <span class="hub-tally__label">Rooms solved</span>
+          <span class="hub-tally__value" id="tallyRooms">+0</span>
+          <span class="hub-tally__note" id="tallyRoomsNote">0 of 5</span>
+        </li>
+        <li class="hub-tally__part" data-part="vault">
+          <span class="hub-tally__label">Vault</span>
+          <span class="hub-tally__value" id="tallyVault">+0</span>
+          <span class="hub-tally__note" id="tallyVaultNote">Not cracked yet</span>
+        </li>
+        <li class="hub-tally__part" data-part="time">
+          <span class="hub-tally__label">Time bonus</span>
+          <span class="hub-tally__value" id="tallyTime">+0</span>
+          <span class="hub-tally__note" id="tallyTimeNote">Only when the clock is running</span>
+        </li>
+        <li class="hub-tally__part hub-tally__total" data-part="total">
+          <span class="hub-tally__label">Total</span>
+          <span class="hub-tally__value" id="tallyTotal">100</span>
+          <span class="hub-tally__note" id="tallyTotalNote">Highest total wins</span>
+        </li>
+      </ol>
+      <p class="hub-tally__notes" id="tallyNotes" hidden></p>
 
-    <!-- Only shown after the vault has been cracked -->
-    <section class="card endless-callout" id="bonusCallout" aria-hidden="true" hidden>
-      <h2>Bonus Missions Ready</h2>
-      <p class="muted">Vault cracked! Keep the crew sharp with optional bonus missions. They don't affect the main leaderboard.</p>
-      <div id="playerAliasCard" class="player-alias" hidden aria-hidden="true">
-        <div>
-          <label class="player-alias__label" for="playerAliasInput">Player name (optional)</label>
-          <input id="playerAliasInput" type="text" maxlength="40" placeholder="Enter your name" data-sanitize="text" autocomplete="off" />
+      <details class="hub-more">
+        <summary>How scoring works</summary>
+        <div class="hub-more__body">
+          <ul class="hub-rules">
+            <li><strong>Points kept:</strong> your team starts with 100 points. Using a hint or giving a wrong answer costs a few, so think before you click.</li>
+            <li><strong>Rooms:</strong> you get <span data-cfg="roomPoints">20</span> points for every room you solve.</li>
+            <li><strong>Vault:</strong> you get <span data-cfg="vaultPoints">50</span> points when you crack it.</li>
+            <li><strong>Time bonus:</strong> when your facilitator runs the <span data-cfg="durationMin">60</span>-minute clock, every whole minute still left when you crack the vault is worth <span data-cfg="timeBonusPerMinute">2</span> points. For example, crack it with 20 minutes to spare and you get <span data-cfg-example>40</span> extra points.</li>
+            <li><strong>When time runs out,</strong> the rooms and the vault close. Only what you finished in time counts.</li>
+            <li><strong>Bonus room:</strong> just for fun. It doesn't change your score.</li>
+            <li><strong>Winning:</strong> the highest total wins. If two teams have the same total, the team that cracked the vault first wins.</li>
+          </ul>
+          <p>Stuck on a room? Use its hint button, or ask a facilitator.</p>
+          <p><button class="btn ghost sm" type="button" id="scoreLogBtn" aria-expanded="false" aria-controls="scoreLog">View score log</button></p>
+          <div id="scoreLog" class="score-log" hidden></div>
         </div>
-        <p class="player-alias__hint muted">Displayed separately from the team login. Leave blank to stay anonymous.</p>
-        <p class="player-alias__display">Showing as: <strong id="playerAliasDisplay">—</strong></p>
-      </div>
-      <div class="bonus-actions">
-        <a class="btn ghost" href="endless.html">Launch Endless Challenge</a>
-      </div>
-      <div class="bonus-grid">
-        <article class="bonus-mission">
-          <h3>Firewall Configuration</h3>
-          <p class="muted">Arrange firewall rules so trusted services flow and hostile traffic stays out.</p>
-          <a class="btn ghost" href="firewall.html">Open Firewall Mission</a>
-        </article>
-        <article class="bonus-mission">
-          <h3>Data Leak Investigation</h3>
-          <p class="muted">Inspect access logs and isolate the account that started the leak.</p>
-          <a class="btn ghost" href="breach.html">Open Leak Lab</a>
-        </article>
-        <article class="bonus-mission">
-          <h3>Social Engineering</h3>
-          <p class="muted">Spot persuasion tactics in a conversation and respond without leaking intel.</p>
-          <a class="btn ghost" href="social.html">Open Social Engineering Lab</a>
-        </article>
-        <article class="bonus-mission">
-          <h3>Secure Wi-Fi Setup</h3>
-          <p class="muted">Tune wireless controls to shut out rogue clients.</p>
-          <a class="btn ghost" href="wifi.html">Open Wi‑Fi Lab</a>
-        </article>
-      </div>
+      </details>
     </section>
 
     <footer class="hub-footer">

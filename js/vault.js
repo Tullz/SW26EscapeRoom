@@ -1,14 +1,19 @@
+/* vault.js — code words, the header vault tracker and the room-complete helpers.
+   The vault takes one code word from each of the five CORE rooms. Forensics is a bonus room:
+   no code word, it unlocks once the vault is open, and completeBonus() records it. */
+
 (function () {
   'use strict';
 
+  // The five core rooms, in display order (header dots, hub vault).
   const PUZZLES = [
     { key: 'phishing', label: 'Phishing', storage: 'vault_word_phishing', href: 'phishing.html' },
     { key: 'osint', label: 'OSINT', storage: 'vault_word_osint', href: 'osint.html' },
     { key: 'incident', label: 'Incident Mgmt', storage: 'vault_word_incident', href: 'incident.html' },
     { key: 'mfa', label: 'MFA / Auth', storage: 'vault_word_mfa', href: 'mfa.html' },
-    { key: 'crypto', label: 'Encryption', storage: 'vault_word_crypto', href: 'crypto.html' },
-    { key: 'forensics', label: 'Forensics', storage: 'vault_word_forensics', href: 'forensics.html' }
+    { key: 'crypto', label: 'Encryption', storage: 'vault_word_crypto', href: 'crypto.html' }
   ];
+  const BONUS_ROOMS = { forensics: { label: 'Forensics' } };
 
   function readWord(item) {
     try {
@@ -119,10 +124,10 @@
     status.classList.toggle('is-complete', isComplete);
     if (isComplete && !vaultCompleteAnnounced) {
       vaultCompleteAnnounced = true;
-      let seen = false;
-      try { seen = sessionStorage.getItem(announcedKey()) === '1' || localStorage.getItem('vault_opened') === '1'; } catch (_) {}
+      let seen = isVaultOpened();
+      try { seen = seen || sessionStorage.getItem(announcedKey()) === '1'; } catch (_) {}
       if (!seen) {
-        showToast('All six rooms solved! Type the code words into the vault on the Mission Hub.');
+        showToast('All five rooms solved! Type the code words into the vault on the Mission Hub.');
         try { sessionStorage.setItem(announcedKey(), '1'); } catch (_) {}
       }
     } else if (!isComplete) {
@@ -204,6 +209,51 @@
     return updateUi();
   }
 
+  // ---------- Vault opened + bonus room -------------------------------------
+
+  // Opened on this computer, or the team's server copy says so (cracked on another device).
+  function isVaultOpened() {
+    try {
+      if (localStorage.getItem('vault_opened') === '1') return true;
+    } catch (_) {}
+    try {
+      return window.stateSync?.lastRemote?.vault?.opened === true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function isBonusComplete(key) {
+    if (!BONUS_ROOMS[key]) return false;
+    return readFlags()[key] === true;
+  }
+
+  // The one call the bonus room makes when it is solved: marks it complete, syncs now and
+  // shows a toast. Safe to call again; returns true only the first time.
+  function completeBonus(key) {
+    const room = BONUS_ROOMS[key];
+    if (!room) return false;
+    if (isBonusComplete(key)) {
+      scheduleUi();
+      return false;
+    }
+    // Sets the flag, logs "Puzzle completed" once and pushes to the server right away.
+    try { window.utils?.setProgressPercent?.(key, 100, { complete: true }); } catch (_) {}
+    scheduleUi();
+    showToast('Bonus room complete');
+    return true;
+  }
+
+  // 'vault:opened' (window): the hub fires it when the team cracks the vault here; we fire it
+  // when a sync or another tab shows the vault was opened elsewhere. Once per page.
+  let vaultOpenSeen = isVaultOpened();
+  window.addEventListener('vault:opened', () => { vaultOpenSeen = true; });
+  function checkVaultOpened(source) {
+    if (vaultOpenSeen || !isVaultOpened()) return;
+    vaultOpenSeen = true;
+    try { window.dispatchEvent(new CustomEvent('vault:opened', { detail: { source } })); } catch (_) {}
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     updateUi();
     const list = document.querySelector('#vaultStatus .vault-status__digits');
@@ -222,7 +272,10 @@
   // Keep the tracker right whatever changed progress: this page, a sync pull, another tab,
   // or coming back to the page from the browser's back/forward cache.
   window.addEventListener('progress:change', scheduleUi);
-  window.addEventListener('state-sync:applied', scheduleUi);
+  window.addEventListener('state-sync:applied', (ev) => {
+    scheduleUi();
+    if (!ev?.detail?.reset) checkVaultOpened('sync');
+  });
   window.addEventListener('pageshow', scheduleUi);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') scheduleUi();
@@ -231,6 +284,7 @@
     if (!event.key) return;
     const progressKey = window.utils?.progressKey?.();
     if (event.key === progressKey || PUZZLES.some(item => item.storage === event.key)) scheduleUi();
+    if (event.key === 'vault_opened' && event.newValue === '1') checkVaultOpened('storage');
   });
 
   window.vault = {
@@ -240,6 +294,9 @@
     unlock,
     completeRoom,
     isRoomComplete,
+    isVaultOpened,
+    completeBonus,
+    isBonusComplete,
     PUZZLES
   };
 })();

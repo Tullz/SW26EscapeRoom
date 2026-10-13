@@ -1,6 +1,7 @@
-/* auth.js — Cyber Escape Rooms
-   - Login via Netlify Function (Neon-backed) with graceful demo fallback
-   - Saves { username, role } in localStorage as "user"
+/* auth.js — Cyber Escape Rooms login
+   - Logs in only through the Netlify Function (Neon-backed users table); no offline accounts
+   - Saves { username (lower-case), role, token? } in localStorage as "user"
+     (token = signed admin token, admins only; the admin page sends it to the game clock)
    - Redirects admin -> admin.html, teams -> game.html
    - Global logout()
 */
@@ -12,27 +13,11 @@
 
   // Netlify Function endpoint (same origin, CSP-friendly)
   const LOGIN_ENDPOINT = '/.netlify/functions/login';
+  const LOGIN_TIMEOUT_MS = 10000;
 
-  // Demo accounts (fallback if server is offline / not configured yet)
-  const DEMO_USERS = {
-    admin: { password: 'r8z-Je0_H9fcbJDm', role: 'admin' },
-    team1: { password: 'fsz1XVheyP_00xWh', role: 'team' },
-    team2: { password: '15oYWcU2d9mooynH', role: 'team' },
-    team3: { password: 'lGU6W0NkikzDr2Dp', role: 'team' },
-    team4: { password: 'hVD3hVew2bbDtFHs', role: 'team' },
-    team5: { password: 'I7Ev1VSZRFICIatx', role: 'team' },
-    trojan_horsin: { password: 'Cslvq90kRfLLdzg7', role: 'team' },
-    blackhoodies: { password: '2UbFZ1oYWkAEBJUl', role: 'team' },
-    cipherettes: { password: 'CmLdyP85YmPQd3JF', role: 'team' },
-    peas: { password: 'V55EVxp_2cR2Q99L', role: 'team' },
-    sats: { password: '8sCBNg0o1xUs2Tp0', role: 'team' },
-    darkwebaliens: { password: 'QkrjPdhm6UHKwgI0', role: 'team' },
-    crossguild: { password: 'ss_Qs8SWXdetYZjV', role: 'team' },
-    hobarthackers: { password: 'n04dnUOAT-SGIgVQ', role: 'team' },
-    specs: { password: 'YBKCrtgvuAP-U6', role: 'team' },
-    gatecrashers: { password: 'kLfkvAvU1AerPi4H', role: 'team' },
-    rootkitrebels: { password: 'RkReb3ls!92', role: 'team' }
-  };
+  const MSG_UNREACHABLE = "Can't reach the game server. Check your connection or ask a facilitator.";
+  const MSG_WRONG = "That username or password isn't right. Check them and try again, or ask a facilitator.";
+  const MSG_MISSING = 'Please enter your username and password.';
 
   // ---------- DOM helpers --------------------------------------------------
 
@@ -61,8 +46,12 @@
 
   // ---------- Storage ------------------------------------------------------
 
+  // Usernames are stored lower-case so every `${username}_...` key matches the server's team key.
   function saveUser(user) {
-    localStorage.setItem('user', JSON.stringify(user));
+    const saved = { username: String(user.username).toLowerCase(), role: user.role };
+    if (user.token) saved.token = user.token;
+    localStorage.setItem('user', JSON.stringify(saved));
+    return saved;
   }
 
   function readUser() {
@@ -71,43 +60,34 @@
 
   // ---------- Server login (Neon via Netlify Function) ---------------------
 
-  async function tryServerLogin(username, password) {
-    // Returns { ok: boolean, user?: {username, role}, error?: string }
+  // Returns { ok: true, user: { username, role, token? } } or { ok: false, error }.
+  async function serverLogin(username, password) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), LOGIN_TIMEOUT_MS);
     try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 8000); // 8s timeout
       const res = await fetch(LOGIN_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
         signal: ctrl.signal
       });
-      clearTimeout(t);
-
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        return { ok: false, error: `Server error ${res.status}${text ? `: ${text}` : ''}` };
-      }
-
-      const data = await res.json();
-      // Expected shape: { ok: true, user: { username, role } }
+      if (res.status === 401) return { ok: false, error: MSG_WRONG };
+      if (res.status === 400) return { ok: false, error: MSG_MISSING };
+      // Anything else that isn't a success (function missing, database down, proxy error)
+      // looks the same to a player: the game server can't log them in right now.
+      if (!res.ok) return { ok: false, error: MSG_UNREACHABLE };
+      const data = await res.json().catch(() => null);
+      // Expected shape: { ok: true, user: { username, role }, token? (admins) }
       if (data && data.ok && data.user && data.user.username && data.user.role) {
-        return { ok: true, user: { username: data.user.username, role: data.user.role } };
+        return { ok: true, user: { username: data.user.username, role: data.user.role, token: data.token || data.user.token || null } };
       }
-      return { ok: false, error: 'Unexpected server response' };
-    } catch (e) {
-      return { ok: false, error: e.name === 'AbortError' ? 'Login timed out' : (e.message || 'Network error') };
+      return { ok: false, error: MSG_UNREACHABLE };
+    } catch (_) {
+      // Network error, offline, or timed out.
+      return { ok: false, error: MSG_UNREACHABLE };
+    } finally {
+      clearTimeout(timer);
     }
-  }
-
-  // ---------- Demo fallback ------------------------------------------------
-
-  function tryDemoLogin(username, password) {
-    const entry = DEMO_USERS[username?.toLowerCase?.()];
-    if (entry && password === entry.password) {
-      return { ok: true, user: { username, role: entry.role } };
-    }
-    return { ok: false, error: 'Invalid credentials' };
   }
 
   // ---------- Public logout (used by headers) ------------------------------
@@ -191,9 +171,6 @@
     const usernameEl = $('#username');
     const passwordEl = $('#password');
 
-    // Helpful defaults (optional)
-    if (!usernameEl.value) usernameEl.value = 'team1';
-
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       setError('');
@@ -204,47 +181,28 @@
 
       if (!username || !password) {
         setLoading(false);
-        return setError('Please enter a username and password.');
+        return setError(MSG_MISSING);
       }
 
-      // 1) Try server (Netlify Function / Neon)
-      const server = await tryServerLogin(username, password);
-      if (server.ok) {
-        saveUser(server.user);
-        if (server.user.role === 'team') {
-          await bootstrapTeamState(server.user.username);
-          try {
-            window.utils?.pushActivity({ type: 'session', status: 'login', detail: 'Signed in' });
-            window.stateSync?.saveNow?.('login');
-          } catch (_) {
-            /* ignore */
-          }
-        }
+      const result = await serverLogin(username, password);
+      if (!result.ok) {
         setLoading(false);
-        if (window.a11y) window.a11y.announce('Login successful');
-        return redirectForRole(server.user.role);
+        return setError(result.error);
       }
 
-      // 2) Fallback to demo users
-      const demo = tryDemoLogin(username, password);
-      if (demo.ok) {
-        saveUser(demo.user);
-        if (demo.user.role === 'team') {
-          try {
-            window.utils?.pushActivity({ type: 'session', status: 'login', detail: 'Signed in (demo)' });
-            window.stateSync?.saveNow?.('login');
-          } catch (_) {
-            /* ignore */
-          }
+      const user = saveUser(result.user);
+      if (user.role === 'team') {
+        await bootstrapTeamState(user.username);
+        try {
+          window.utils?.pushActivity({ type: 'session', status: 'login', detail: 'Signed in' });
+          window.stateSync?.saveNow?.('login');
+        } catch (_) {
+          /* ignore */
         }
-        setLoading(false);
-        if (window.a11y) window.a11y.announce('Logged in with demo account');
-        return redirectForRole(demo.user.role);
       }
-
-      // 3) Fail
       setLoading(false);
-      setError('Login failed. ' + (server.error || 'Check your username and password.'));
+      if (window.a11y) window.a11y.announce('Login successful');
+      return redirectForRole(user.role);
     });
 
     // Clear button feedback

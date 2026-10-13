@@ -9,6 +9,7 @@
    - a room completed on another device shows up here;
    - only an admin reset (a new vault.resetVersion) or an admin "reopen" of one room can take
      a completion away.
+   - the server's time stamps (vault.solvedAt / vault.openedAt) always come from the server copy.
    Pushes use keepalive and are flushed when the page is hidden, so a completion still
    reaches the server when the player goes straight back to the Mission Hub. */
 
@@ -114,6 +115,15 @@
       if (lv.entries && typeof lv.entries === 'object') out.entries = lv.entries;
       else if (rv.entries && typeof rv.entries === 'object') out.entries = rv.entries;
       else delete out.entries;
+      // Server time stamps (solvedAt per room, openedAt) are only ever written by the server:
+      // keep the remote copy's, ignore the arriving side's, and drop a room's stamp once the
+      // room is no longer complete (admin reopen).
+      const solvedAt = {};
+      Object.entries(obj(rv.solvedAt)).forEach(([k, at]) => {
+        if (progress[k] === true && num(at) > 0) solvedAt[k] = num(at);
+      });
+      if (Object.keys(solvedAt).length) out.solvedAt = solvedAt; else delete out.solvedAt;
+      if (out.opened === true && num(rv.openedAt) > 0) out.openedAt = num(rv.openedAt); else delete out.openedAt;
       return out;
     }
 

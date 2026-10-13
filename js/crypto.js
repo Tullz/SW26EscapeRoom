@@ -8,10 +8,11 @@
                   paperback. The format is written in invisible ink inside the book's cover;
                   the pen in the case has a UV torch in its cap.
      2. stencil — the punched coffee loyalty card, laid over the newspaper word search, shows
-                  half a sentence; turned upside down it shows the rest (the key is the dog's name).
-     3. disk    — a second text holds a 5-letter password scrambled with a keyword cipher (each
-                  letter shifted by the matching key letter). The key is the dog's name on the
-                  courier's keyring; the brass cipher disk turns it back into the real word.
+                  half a sentence; turned upside down it shows the rest: KEY UNDER THE MINTS.
+     3. cipher  — a second text holds a 5-letter password scrambled with a reversed alphabet
+                  (A<->Z, B<->Y, C<->X ...). The crew's key card (the alphabet forwards, and
+                  backwards underneath) is folded up under the mints in the tin. On the workbench
+                  each code letter is one lookup on the card: find it, write down its partner.
    The room's code word is never written in this file: it is computed by decoding FINAL.
 
    To add or reorder a code: add an entry to STEPS (isDone / hintSet / lesson / onDone),
@@ -32,7 +33,7 @@
 
   // ---------- Constants ----------
   const ROOM = 'crypto';
-  const STATE_VERSION = 1;
+  const STATE_VERSION = 2;   // 2: the brass disk (code 3) became the reversed-alphabet key card
   const COST = { wrong: 2, hint: 5 };
   const points = window.utils?.points;
 
@@ -47,14 +48,12 @@
   // ---------- Ciphers ----------
   const A = 65;
   const lettersOnly = (s) => String(s || '').toUpperCase().replace(/[^A-Z]/g, '');
-  const mod = (n, m) => ((n % m) + m) % m;
-  function shiftLetter(ch, by) { return String.fromCharCode(mod(ch.charCodeAt(0) - A + by, 26) + A); }
-  // Keyword cipher: letter i is shifted by key letter (i mod key length). dir -1 decodes.
-  function keyword(text, key, dir) {
-    return text.split('').map(function (ch, i) { return shiftLetter(ch, dir * (key.charCodeAt(i % key.length) - A)); }).join('');
+  // Reversed alphabet (Atbash): A<->Z, B<->Y, C<->X ... The same swap scrambles and unscrambles.
+  function atbash(text) {
+    return lettersOnly(text).split('').map(function (ch) { return String.fromCharCode(A + 25 - (ch.charCodeAt(0) - A)); }).join('');
   }
-  const FINAL = { cipher: 'MCUYJ', key: 'RUFUS' };
-  const WORD = keyword(FINAL.cipher, FINAL.key, -1);
+  const FINAL = { cipher: 'ERKVI' };
+  const WORD = atbash(FINAL.cipher);
 
   // ---------- Content: the paperback (fixed line breaks so line counting is reliable) ----------
   const BOOK = {
@@ -85,12 +84,14 @@
   const LEAVES = BOOK.pages.length + 2;
 
   // ---------- Content: the word search + coffee-card stencil ----------
+  // Words run left to right or top to bottom (SAND and PIER go down). Face up the holes show
+  // KEY UNDER, upside down THE MINTS.
   const GRID = {
     cols: 9, rows: 6,
-    letters: 'SKHDSHELLTDRYBOATISCRABTOINAKHGULLDSNNCYWAVEGDDMATPIER',
+    letters: 'SKHDSHELLATPYGULLUNTIDEDHOIDKEEWAVEMICRABNGRDDMTBOATSP',
     holes: [[0, 1], [0, 6], [1, 3], [1, 8], [2, 0], [2, 5], [3, 2], [4, 7]],  // card face up
     words: ['GULL', 'TIDE', 'PIER', 'WAVE', 'SAND', 'SHELL', 'CRAB', 'BOAT'],
-    halves: { up: 'KEY IS THE…', down: '…DOGS NAME' }
+    halves: { up: 'KEY UNDER…', down: '…THE MINTS' }
   };
   function holeCells(rot, flip) {
     return GRID.holes.map(function (p) {
@@ -131,26 +132,27 @@
     wrong_book: { who: 'courier', text: 'Ha! Gibberish. Told you.' },
     book_done: { who: 'courier', tone: 'warn', text: '...Lucky guess.' },
     book_done2: { who: 'kemi', tone: 'good', text: '"Coffee card over puzzle." That isn\'t a sentence, it\'s an instruction.' },
-    stencil_half: { who: 'kemi', text: '"Key is the..." the what? That\'s only half a sentence.' },
-    stencil_half2: { who: 'kemi', text: '"...dogs name"? That sounds like the end of a sentence. Where\'s the start?' },
+    stencil_half: { who: 'kemi', text: '"Key under..." Under what? That\'s only half a sentence.' },
+    stencil_half2: { who: 'kemi', text: '"...the mints"? That sounds like the end of a sentence. Where\'s the start?' },
     stencil_done: { who: 'courier', tone: 'warn', text: 'It\'s a word search. It doesn\'t mean anything.' },
     text2: { who: 'kemi', tone: 'warn', text: 'His phone just buzzed again! Another message from the snake.' },
-    phone_t2: { who: 'kemi', text: 'Five scrambled letters, and the buyer will ask for them tonight. I ran them through our code-breaking laptop: it tried every simple shift of the alphabet in under a second, and none of them made a word. Each letter has been moved by a different amount. We need their key.' },
+    phone_t2: { who: 'kemi', text: 'Five scrambled letters, and the buyer will ask for them tonight. "Decode it with the usual key", so the crew has a key for this code. I bet it\'s somewhere in that briefcase.' },
+    phone_t2_have: { who: 'kemi', text: 'Five scrambled letters, and the buyer will ask for them tonight. "Decode it with the usual key"... What about that card you found in the mints tin?' },
     phone_t2b: { who: 'courier', text: 'Told you. Unbreakable.' },
+    mints: { who: 'courier', tone: 'warn', text: 'Oi! Hands off my mints.' },
+    key_found: { who: 'kemi', tone: 'good', text: 'A card with two rows of letters: the alphabet forwards, and the alphabet backwards underneath. That has to be the key to one of their codes.' },
     dog: { who: 'courier', tone: 'warn', text: 'Oi. Leave my dog out of this.' },
-    wrong_disk: { who: 'courier', text: 'Nope. Keep spinning.' },
+    wrong_decode: { who: 'courier', text: 'Nope. That\'s not the password.' },
     solved: { who: 'kemi', tone: 'good', text: function () { return '<strong>' + WORD + '</strong>. That\'s the handover password! We\'ll be waiting at Pier 4 when the buyer asks for it.'; } },
-    solved2: { who: 'courier', tone: 'warn', text: 'You cracked it with my DOG\'S NAME?' },
-    solved3: { who: 'kemi', tone: 'good', text: 'Brilliant work, team. The crew picked a key anyone could guess, and that\'s what sank them.' }
+    solved2: { who: 'courier', tone: 'warn', text: 'How?! That card was meant to be our secret!' },
+    solved3: { who: 'kemi', tone: 'good', text: 'Brilliant work, team. Their code had no secret key: once you know the trick, anyone can read it.' }
   };
   const WHO = { kemi: 'DS Kemi Adeyemi', courier: 'Courier (interview room)' };
 
   // ---------- Content: notebook clues ----------
   const CLUES = {
     t1: function () { return '<b>Text from ' + SNAKE + ':</b> "Tonight\'s instructions. You know where to look." <b>' + BOOK_CODES_TEXT.join(' &middot; ') + '</b>'; },
-    wallpaper: '<b>Phone lock screen:</b> a photo of a scruffy brown dog.',
     paper: '<b>Newspaper:</b> folded open at the puzzles page. Nobody has started the word search.',
-    receipt: '<b>Receipt:</b> Paws &amp; Claws Pet Supplies: a chew toy, dog shampoo and tennis balls.',
     card: '<b>Coffee loyalty card:</b> 8 holes punched in odd places, not in the stamp boxes.',
     pen: '<b>Pen:</b> the cap has a tiny UV torch for reading invisible ink.',
     ink_book: { uv: true, html: '<b>Invisible ink inside the book\'s cover:</b> page &middot; line &middot; word' },
@@ -160,8 +162,7 @@
     stencil_up: '<b>Card over the word search:</b> ' + GRID.halves.up,
     stencil_down: '<b>Card upside down:</b> ' + GRID.halves.down,
     t2: '<b>Second text from ' + SNAKE + ':</b> buyer at Pier 4, 9pm. Password <b>' + FINAL.cipher + '</b>: "decode it with the usual key".',
-    tag: '<b>Keyring tag:</b> a bone-shaped dog tag that says <b>' + FINAL.key + '</b>.',
-    disk_back: '<b>Back of the brass disk:</b> 1. Turn the key letter to the arrow. 2. Find the code letter on the inner ring. 3. The real letter is on the outer ring beside it.'
+    keycard: '<b>Card from under the mints:</b> the alphabet forwards, with the alphabet backwards underneath (A above Z, B above Y&hellip;).'
   };
 
   // ---------- Content: hints (each set gets more specific) ----------
@@ -176,19 +177,19 @@
       'The holes in the coffee card aren\'t stamps. Keep the card in your hand, open the newspaper\'s puzzle page and lay the card over the word search.',
       'With the card on the word search, read the letters showing through the holes from left to right, top to bottom. Then turn the card upside down and read again.'
     ],
-    key: [
-      'The stencil says the key is the dog\'s name. Does the courier have a dog? Look at his phone\'s lock screen and the receipt in the lid.',
-      'The dog\'s name is written on something he carries every day. Have a look at his keys.',
-      'The bone-shaped tag on the keyring says ' + FINAL.key + '. Open the brass disk and type ' + FINAL.key + ' into the Key box.'
-    ],
     text2: [
       'The courier\'s phone just buzzed. Has anyone read the new message?',
-      'Look at the phone in your hands and tap the new message notification. The scrambled password will be copied onto the brass disk\'s worksheet.'
+      'Look at the phone in your hands and tap the new message notification to read it.'
     ],
-    disk: [
-      'Open the brass disk and turn it over: the instructions are engraved on the back. Work on one letter at a time.',
-      'For each letter: turn the inner ring until that letter\'s key letter is under the arrow. Then find the code letter on the inner ring: the real letter is on the outer ring right beside it. (Tap a letter on the inner ring to light up its partner.)',
-      'First letter: turn the inner ring until ' + FINAL.key[0] + ' is under the arrow, then find ' + FINAL.cipher[0] + ' on the inner ring: the outer letter beside it is ' + WORD[0] + '. Next, put ' + FINAL.key[1] + ' under the arrow and look for ' + FINAL.cipher[1] + ', and so on.'
+    keycard: [
+      'The coffee card said KEY UNDER THE MINTS. Is there a tin of mints in the briefcase?',
+      'Click the tin of mints in the bottom half of the briefcase and tip the mints out. The crew\'s key is folded up underneath them.'
+    ],
+    cipher: [
+      'Look at the card from the mints tin. The top line is the alphabet forwards and the line under it is the alphabet backwards, so every letter has a partner: A and Z, B and Y, and so on.',
+      'Work one letter at a time. Find the code letter on the card and type its partner (the letter right above or below it) into the box under that code letter. Tap a letter on the card to light up its partner.',
+      'Letter by letter: ' + FINAL.cipher[0] + ' sits above ' + WORD[0] + ', so the first real letter is ' + WORD[0] + '. Next find ' + FINAL.cipher[1] + ' on the card and write down its partner, then do the same for ' +
+        FINAL.cipher.slice(2, -1).split('').join(', ') + ' and ' + FINAL.cipher.slice(-1) + '.'
     ]
   };
 
@@ -209,10 +210,10 @@
       onDone: function () { say('stencil_done'); later(function () { deliverText('t2'); }, 2200); }
     },
     {
-      id: 'disk', name: 'The keyword cipher disk', gadget: 'disk', final: true,
-      hintSet: function (s) { if (s.texts.includes('t2') && !s.read.t2) return 'text2'; return keyIsRight(s) ? 'disk' : 'key'; },
-      isDone: function (s) { return !!s.diskSolved; },
-      lesson: { title: 'Strong keys and weak keys', text: 'A single shift has only 26 possible keys, so a laptop can try them all in a blink. A keyword moves every letter a different amount, and real encryption uses keys so long that no computer could ever try them all. So criminals go after the key instead. This crew picked their dog\'s name.' }
+      id: 'cipher', name: 'The reversed alphabet', gadget: 'decode', final: true,
+      hintSet: function (s) { if (s.texts.includes('t2') && !s.read.t2) return 'text2'; return s.keyFound ? 'cipher' : 'keycard'; },
+      isDone: function (s) { return !!s.decSolved; },
+      lesson: { title: 'A trick is not a key', text: 'Every letter was swapped for another one, but always the same way: A for Z, B for Y. There\'s no secret key, so anyone who knows the trick can read it. Real encryption uses a long secret key that nobody could guess, so the key is the thing to protect.' }
     }
   ];
 
@@ -229,21 +230,41 @@
       bench: null, benches: [],
       page: 0, slots: BOOK.code.map(function () { return ''; }), activeSlot: 0, bookSolved: false,
       stencil: { placed: false, rot: 0, flip: false, seenUp: false, seenDown: false },
-      disk: { angle: 0, key: '', out: FINAL.cipher.split('').map(function () { return ''; }), spot: '' },
-      diskSolved: false, bruteShown: false,
+      keyFound: false,
+      dec: { out: FINAL.cipher.split('').map(function () { return ''; }), lit: -1 },
+      decSolved: false,
       hints: {}, wrongs: 0, hintsUsed: 0, warned: {},
       completed: false, completedAt: 0
     };
   }
+  // Version 1 had a brass cipher disk for code 3. Keep codes 1-2 (and a finished room);
+  // code 3 starts again with the key card.
+  function migrate(s) {
+    if (s.version !== 1) return s;
+    ['disk', 'diskSolved', 'bruteShown'].forEach(function (k) { delete s[k]; });
+    if (s.done) delete s.done.disk;
+    if (s.hints) { delete s.hints.key; delete s.hints.disk; }
+    if (s.warned) delete s.warned.disk;
+    if (s.lesson === 'disk') s.lesson = null;
+    if (s.bench === 'disk') s.bench = null;
+    if (s.focus === 'disk') s.focus = null;
+    if (Array.isArray(s.clues)) s.clues = s.clues.filter(function (id) { return CLUES[id]; });
+    if (s.completed) { s.keyFound = true; s.decSolved = true; s.done = Object.assign(s.done || {}, { cipher: true }); }
+    s.version = 2;
+    return s;
+  }
   function loadState() {
     try {
       const raw = localStorage.getItem(STATE_KEY);
-      const s = raw ? JSON.parse(raw) : null;
+      let s = raw ? JSON.parse(raw) : null;
+      if (s && typeof s === 'object') s = migrate(s);
       if (s && s.version === STATE_VERSION) {
         const f = freshState();
         const merged = Object.assign(f, s);
         merged.stencil = Object.assign(freshState().stencil, s.stencil || {});
-        merged.disk = Object.assign(freshState().disk, s.disk || {});
+        merged.dec = Object.assign(freshState().dec, s.dec || {});
+        if (!Array.isArray(merged.dec.out) || merged.dec.out.length !== FINAL.cipher.length) merged.dec.out = freshState().dec.out;
+        if (merged.completed) merged.dec.out = WORD.split('');
         return merged;
       }
     } catch (_) {}
@@ -263,19 +284,17 @@
     STEPS.forEach(function (s) { state.done[s.id] = true; });
     state.bookSolved = true;
     state.stencil.seenUp = true; state.stencil.seenDown = true;
-    state.diskSolved = true;
+    state.keyFound = true;
+    state.decSolved = true;
     if (!state.texts.includes('t2')) state.texts.push('t2');
     state.read = { t1: true, t2: true };
     state.slots = BOOK_ANSWER.slice();
-    state.disk.key = FINAL.key;
-    state.disk.out = WORD.split('');
+    state.dec.out = WORD.split('');
     state.lesson = null;
     if (!state.msgs.includes('solved')) state.msgs = ['intro_kemi', 'solved', 'solved2', 'solved3'];
     save();
   }
   if (!state.completed && vaultSaysComplete()) adoptSolved();
-
-  function keyIsRight(s) { return lettersOnly(s.disk.key) === FINAL.key; }
 
   // ---------- DOM refs ----------
   const els = {
@@ -342,7 +361,7 @@
     if (state.done.book && state.stencil.seenUp) pct = 45;
     if (state.done.stencil) pct = 60;
     if (state.read.t2) pct = 65;
-    if (state.done.stencil && keyIsRight(state)) pct = 75;
+    if (state.done.stencil && state.keyFound) pct = 75;
     return Math.min(pct, 95);
   }
   function setProgress() {
@@ -371,7 +390,7 @@
     });
     els.feed.scrollTop = els.feed.scrollHeight;
   }
-  const REPEATABLE = { wrong_book: true, wrong_disk: true };
+  const REPEATABLE = { wrong_book: true, wrong_decode: true };
   function say(id) {
     const m = MSGS[id];
     if (!m) return;
@@ -405,7 +424,8 @@
     }
     state.clues.forEach(function (id) {
       const c = CLUES[id];
-      els.clues.appendChild(h('li', { class: c && c.uv ? 'is-uv' : '' }, clueHtml(id)));
+      if (!c) return;   // a clue from an older version of the room
+      els.clues.appendChild(h('li', { class: c.uv ? 'is-uv' : '' }, clueHtml(id)));
     });
   }
   function renderCodes() {
@@ -681,7 +701,6 @@
         '<div class="r"><span>Tennis balls x3</span><span>5.00</span></div><div class="r" style="font-weight:700;margin-top:.3rem"><span>TOTAL</span><span>23.50</span></div><br>' +
         '<div style="text-align:center">Thanks! See you and<br>your pup next time!</div>'));
       c.appendChild(h('p', null, 'A receipt from a pet shop, dated last week.'));
-      addClue('receipt');
     },
     book: function () {
       const c = shell('In the case', 'A paperback novel');
@@ -730,19 +749,6 @@
       if (state.cardHeld) c.appendChild(h('p', { class: 'cc-feedback is-good' }, 'The card is in your hand. You can lay it over things on the workbench.'));
       addClue('card');
     },
-    disk: function () {
-      const c = shell('In the case', 'A brass disk');
-      const front = h('div', { class: 'cc-engrave', style: 'padding:0;overflow:hidden' }, diskSvg({ small: true }));
-      const back = h('div', { class: 'cc-engrave' }, 'TO READ A MESSAGE<br><br>1. Turn the KEY letter to the arrow<br>2. Find the CODE letter on the inner ring<br>3. The real letter is on the outer ring beside it');
-      const fp = flipProp('disk', front, back, function (flipped) { if (flipped) addClue('disk_back'); });
-      if (state.flipped.disk) addClue('disk_back');
-      c.appendChild(fp.wrap);
-      c.appendChild(h('p', null, 'A heavy brass disk with two rings of letters, one inside the other. The inner ring turns. Something is engraved on the back.'));
-      const row = h('div', { class: 'cc-actions' });
-      row.appendChild(fp.btn);
-      row.appendChild(button('btn primary', 'Use the disk', function () { openBench('disk'); }));
-      c.appendChild(row);
-    },
     pen: function () {
       const c = shell('In the case', 'A chunky black pen');
       if (!state.uvFound) {
@@ -764,18 +770,26 @@
     },
     keys: function () {
       const c = shell('In the case', 'A keyring');
-      const front = h('div', { class: 'cc-tag' }, '<div><div aria-hidden="true">&#128062;</div><div class="cc-tag__name">' + FINAL.key + '</div></div>');
+      const front = h('div', { class: 'cc-tag' }, '<div><div aria-hidden="true">&#128062;</div><div class="cc-tag__name">RUFUS</div></div>');
       const back = h('div', { class: 'cc-tag' }, 'If I\'m lost, please call my human: 0400 555 017');
       const fp = flipProp('keys', front, back);
       c.appendChild(fp.wrap);
       c.appendChild(h('p', null, 'Two door keys and a bone-shaped dog tag.'));
       const row = h('div', { class: 'cc-actions' }); row.appendChild(fp.btn); c.appendChild(row);
-      addClue('tag');
-      if (state.texts.includes('t2') && !state.completed) say('dog');
+      if (!state.completed) say('dog');
     },
     mints: function () {
       const c = shell('In the case', 'A tin of mints');
-      c.appendChild(h('p', null, 'Extra strong mints. Three left, and nothing hidden under them. You checked twice.'));
+      if (!state.keyFound) {
+        c.appendChild(h('div', { class: 'cc-tin' }, TIN_SVG));
+        c.appendChild(h('p', null, 'Extra strong mints, three left. Something papery is poking out from underneath them.'));
+        c.appendChild(button('btn primary', 'Tip the mints out', findKeyCard));
+        if (!state.completed) say('mints');
+        return;
+      }
+      c.appendChild(keyCardEl(false));
+      c.appendChild(h('p', null, 'Folded flat under the mints: a creased card with two rows of letters. Along the top, the alphabet runs forwards. Underneath, it runs backwards.'));
+      c.appendChild(button('btn primary', state.read.t2 ? 'Use the card to decode the password' : 'Lay the card on the workbench', function () { openBench('decode'); }));
     },
     glasses: function () {
       const c = shell('In the case', 'Sunglasses');
@@ -819,6 +833,56 @@
       '<rect x="18" y="18" width="864" height="564" rx="30" fill="none" stroke="#c8ae7e" stroke-width="3"/>' + print +
       '</g>' + GRID.holes.map(function (p) { return '<circle cx="' + hx(p) + '" cy="' + (p[0] * 100 + 50) + '" r="33" fill="none" stroke="rgba(60,40,20,.55)" stroke-width="4"/>'; }).join('') +
       '</svg>';
+  }
+
+  // ---------- The mints tin + the key card hidden under the mints ----------
+  const TIN_SVG = '<svg viewBox="0 0 240 150" role="img" aria-label="An open tin with three mints in it. A corner of paper pokes out from underneath them.">' +
+    '<rect x="5" y="7" width="230" height="136" rx="24" fill="#b8c3c8" stroke="#7d8a90" stroke-width="3"/>' +
+    '<rect x="17" y="19" width="206" height="112" rx="15" fill="#dfe6e9"/>' +
+    '<path d="M122 131 L223 131 L223 78 Z" fill="#f3ead2" stroke="#c9b98c" stroke-width="2"/>' +
+    '<text x="182" y="121" font-size="13" font-weight="700" fill="#8a2c1c" font-family="Courier New, monospace" transform="rotate(-27 182 121)">Z Y X</text>' +
+    '<g fill="#fbfdfe" stroke="#c5cfd3" stroke-width="2"><circle cx="74" cy="60" r="21"/><circle cx="118" cy="88" r="21"/><circle cx="160" cy="54" r="21"/></g>' +
+    '<g fill="none" stroke="#e1e8eb" stroke-width="2"><circle cx="74" cy="60" r="12"/><circle cx="118" cy="88" r="12"/><circle cx="160" cy="54" r="12"/></g>' +
+    '</svg>';
+
+  // The card is folded in half: A-M over Z-N on the top half, N-Z over M-A below the crease,
+  // so every column is one swap pair. On the workbench each pair is a button (one tab stop:
+  // arrow keys move, typing a letter jumps to it) that lights up when tapped.
+  function keyCardEl(interactive) {
+    const card = h('div', { class: 'cc-keycard' + (interactive ? '' : ' is-static') });
+    if (interactive) {
+      card.setAttribute('role', 'group');
+      card.setAttribute('aria-label', 'Key card: the alphabet forwards, with the alphabet backwards underneath. Tap a letter, or use the arrow keys or type a letter, to light it up with its partner.');
+    } else {
+      card.setAttribute('role', 'img');
+      card.setAttribute('aria-label', 'A creased card: the alphabet forwards along the top and backwards underneath. A sits above Z, B above Y, and so on.');
+    }
+    [0, 13].forEach(function (start) {
+      const half = h('div', { class: 'cc-kc__half' });
+      for (let i = start; i < start + 13; i++) {
+        const top = String.fromCharCode(A + i), bottom = atbash(top);
+        const inner = '<span class="cc-kc__top">' + top + '</span><span class="cc-kc__bot">' + bottom + '</span>';
+        if (interactive) half.appendChild(h('button', { type: 'button', class: 'cc-kc__pair', 'data-i': String(i), tabindex: '-1', 'aria-label': top + ' swaps with ' + bottom }, inner));
+        else half.appendChild(h('span', { class: 'cc-kc__pair', 'aria-hidden': 'true' }, inner));
+      }
+      card.appendChild(half);
+    });
+    return card;
+  }
+
+  function findKeyCard() {
+    if (state.keyFound) return;
+    state.keyFound = true;
+    save();
+    addClue('keycard');
+    renderHotspots();
+    renderCloseup();
+    setProgress();
+    renderHint();
+    if (state.bench === 'decode') renderBench();
+    try { els.closeup.focus({ preventScroll: true }); } catch (_) {}
+    say('key_found');
+    announce('You tip the mints out. Underneath them is a folded card with two rows of letters.');
   }
 
   // =====================================================================
@@ -867,7 +931,6 @@
         row.appendChild(button('cc-pbtn', 'Open messages', openThread));
         body.appendChild(row);
       }
-      addClue('wallpaper');
     } else {
       const head = h('div', { class: 'cc-thread__head' });
       const back = button('cc-pbtn', '&lsaquo; Lock screen', function () { state.phoneView = 'lock'; save(); renderPhone(); });
@@ -892,7 +955,7 @@
         newly.forEach(function (id) {
           addClue(id);
           if (id === 't1') say('phone_t1');
-          if (id === 't2') { say('phone_t2'); later(function () { say('phone_t2b'); }, 1800); }
+          if (id === 't2') { say(state.keyFound ? 'phone_t2_have' : 'phone_t2'); later(function () { say('phone_t2b'); }, 1800); }
         });
         renderHotspots();
         setProgress();
@@ -922,7 +985,7 @@
   const GADGETS = {
     book: { label: 'The paperback', render: renderBook },
     stencil: { label: 'Puzzle page', render: renderStencil },
-    disk: { label: 'Brass disk', render: renderDisk }
+    decode: { label: 'Key card', render: renderDecode }
   };
   function openBench(id) {
     if (!GADGETS[id]) return;
@@ -935,7 +998,7 @@
     announce(GADGETS[id].label + ' is open on the workbench.');
   }
   function renderBench() {
-    stopBrute();
+    state.benches = state.benches.filter(function (id) { return GADGETS[id]; });
     if (!state.bench || !GADGETS[state.bench]) { els.bench.hidden = true; return; }
     els.bench.hidden = false;
     els.benchTitle.textContent = 'Workbench: ' + GADGETS[state.bench].label.toLowerCase();
@@ -1339,166 +1402,118 @@
     }
   }
 
-  // ---------- Gadget 3: the brass cipher disk + worksheet ----------
-  const STEP_DEG = 360 / 26;
-  const disk = { svg: null, ring: null, read: null, wrap: null, keyBoxes: [], outInputs: [], fb: null, hiIn: null, hiOut: null };
-  const diskK = () => mod(Math.round(-state.disk.angle / STEP_DEG), 26);
-  function polar(r, deg) { const a = deg * Math.PI / 180; return [200 + r * Math.sin(a), 200 - r * Math.cos(a)]; }
-  function diskSvg(opts) {
-    opts = opts || {};
-    const uid = ++svgUid;
-    let outer = '', inner = '', ticksO = '', ticksI = '', hits = '';
-    for (let i = 0; i < 26; i++) {
-      const deg = i * STEP_DEG;
-      const p = polar(171, deg);
-      outer += '<text class="cc-dl cc-dl--out" data-out="' + i + '" x="' + p[0].toFixed(1) + '" y="' + p[1].toFixed(1) + '" transform="rotate(' + deg.toFixed(2) + ' ' + p[0].toFixed(1) + ' ' + p[1].toFixed(1) + ')">' + String.fromCharCode(A + i) + '</text>';
-      const q = polar(127, deg);
-      inner += '<text class="cc-dl cc-dl--in" data-in="' + i + '" x="' + q[0].toFixed(1) + '" y="' + q[1].toFixed(1) + '" transform="rotate(' + deg.toFixed(2) + ' ' + q[0].toFixed(1) + ' ' + q[1].toFixed(1) + ')">' + String.fromCharCode(A + i) + '</text>';
-      hits += '<circle class="cc-hit" data-letter="' + i + '" cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="17"/>';
-      const t1 = polar(150, deg + STEP_DEG / 2), t2 = polar(192, deg + STEP_DEG / 2);
-      ticksO += '<line x1="' + t1[0].toFixed(1) + '" y1="' + t1[1].toFixed(1) + '" x2="' + t2[0].toFixed(1) + '" y2="' + t2[1].toFixed(1) + '"/>';
-      const u1 = polar(106, deg + STEP_DEG / 2), u2 = polar(148, deg + STEP_DEG / 2);
-      ticksI += '<line x1="' + u1[0].toFixed(1) + '" y1="' + u1[1].toFixed(1) + '" x2="' + u2[0].toFixed(1) + '" y2="' + u2[1].toFixed(1) + '"/>';
-    }
-    const w1 = polar(196, -STEP_DEG / 2), w2 = polar(196, STEP_DEG / 2), w3 = polar(104, STEP_DEG / 2), w4 = polar(104, -STEP_DEG / 2);
-    const wedge = 'M' + w1.join(' ') + ' A196 196 0 0 1 ' + w2.join(' ') + ' L' + w3.join(' ') + ' A104 104 0 0 0 ' + w4.join(' ') + ' Z';
-    const vb = opts.small ? '0 0 400 400' : '-10 -34 420 444';
-    return '<svg viewBox="' + vb + '" ' + (opts.small ? 'aria-hidden="true"' : 'role="presentation"') + '>' +
-      '<defs>' +
-      '<radialGradient id="ccBrO' + uid + '" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#f7dc84"/><stop offset=".6" stop-color="#c9971f"/><stop offset="1" stop-color="#7a5a0e"/></radialGradient>' +
-      '<radialGradient id="ccBrI' + uid + '" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#9b7516"/><stop offset="1" stop-color="#4a3606"/></radialGradient>' +
-      '<radialGradient id="ccBrH' + uid + '" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="#f3d36c"/><stop offset="1" stop-color="#8a6512"/></radialGradient>' +
-      '</defs>' +
-      '<circle cx="200" cy="200" r="194" fill="url(#ccBrO' + uid + ')" stroke="#4a3606" stroke-width="3"/>' +
-      '<g stroke="#5f4509" stroke-width="1.5" opacity=".55">' + ticksO + '</g>' + outer +
-      (opts.small ? '' : '<g class="cc-hi-out"></g>') +
-      '<g class="' + (opts.small ? 'cc-disk__static' : 'cc-disk__inner') + '"' + (opts.small ? '' : ' tabindex="0" role="slider" aria-label="Inner ring of the brass disk. Use the arrow keys to turn it, or type a letter to turn that letter to the arrow." aria-valuemin="0" aria-valuemax="25"') + '>' +
-      '<g class="cc-ringrot" style="transform: rotate(' + (opts.small ? 0 : state.disk.angle) + 'deg)">' +
-      '<circle class="cc-ringhalo" cx="200" cy="200" r="149" fill="url(#ccBrI' + uid + ')" stroke="#2e2104" stroke-width="2"/>' +
-      '<g stroke="#e6c35c" stroke-width="1" opacity=".35">' + ticksI + '</g>' +
-      '<g class="cc-hi-in"></g>' + inner + hits +
-      '<circle cx="200" cy="200" r="104" fill="url(#ccBrH' + uid + ')" stroke="#5f4509" stroke-width="2"/>' +
-      '<g stroke="#8a6512" stroke-width="3" opacity=".7"><circle cx="200" cy="200" r="70" fill="none"/><circle cx="200" cy="200" r="40" fill="none"/>' +
-      '<path d="M200 130 L200 160 M200 240 L200 270 M130 200 L160 200 M240 200 L270 200 M150 150 L171 171 M229 229 L250 250 M250 150 L229 171 M150 250 L171 229"/></g>' +
-      '<circle cx="200" cy="200" r="12" fill="#5f4509"/>' +
-      '</g></g>' +
-      (opts.small ? '' : '<path d="' + wedge + '" fill="rgba(255,255,255,.12)" stroke="#ff6b6b" stroke-width="3" pointer-events="none"/>' +
-        '<path d="M184 -30 L216 -30 L200 -6 Z" fill="#ff6b6b" stroke="#5a1010" stroke-width="2" pointer-events="none"/>') +
-      '</svg>';
-  }
-
-  function renderDisk(body) {
-    const wrap = h('div', { class: 'cc-diskwrap' });
-    const left = h('div');
-    const dwrap = h('div', { class: 'cc-disk' }, diskSvg());
-    disk.wrap = dwrap;
-    disk.svg = $('svg', dwrap);
-    disk.ring = $('.cc-ringrot', dwrap);
-    disk.slider = $('.cc-disk__inner', dwrap);
-    left.appendChild(dwrap);
-    const ctl = h('div', { class: 'cc-diskctl' });
-    const l = button('btn ghost sm', '&#9664; Turn', function () { turnDisk(-1); });
-    l.setAttribute('aria-label', 'Turn the inner ring back one letter');
-    const r = button('btn ghost sm', 'Turn &#9654;', function () { turnDisk(1); });
-    r.setAttribute('aria-label', 'Turn the inner ring forward one letter');
-    const spot = h('label', { class: 'cc-spot' }, 'Light up inner letter:');
-    const spotIn = h('input', { type: 'text', maxlength: '1', 'aria-label': 'Light up a letter on the inner ring', 'data-sanitize': 'off', autocomplete: 'off' });
-    spotIn.value = state.disk.spot || '';
-    spotIn.addEventListener('input', function () {
-      const L = lettersOnly(spotIn.value).slice(-1);
-      spotIn.value = L;
-      setSpot(L);
-    });
-    spot.appendChild(spotIn);
-    ctl.appendChild(l); ctl.appendChild(r); ctl.appendChild(spot);
-    left.appendChild(ctl);
-    disk.read = h('div', { class: 'cc-diskread', 'aria-live': 'polite' });
-    left.appendChild(disk.read);
+  // ---------- Gadget 3: the key card + worksheet ----------
+  const dec = { card: null, pairs: [], read: null, inputs: [], fb: null };
+  function renderDecode(body) {
+    const wrap = h('div', { class: 'cc-decode' });
+    const left = h('div', { class: 'cc-decode__card' });
+    left.appendChild(h('p', { class: 'cc-decode__label' }, 'The card from the mints tin'));
+    dec.card = keyCardEl(true);
+    dec.pairs = $$('.cc-kc__pair', dec.card);
+    left.appendChild(dec.card);
+    dec.read = h('p', { class: 'cc-kcread' });
+    left.appendChild(dec.read);
     wrap.appendChild(left);
-
-    const right = h('div');
-    right.appendChild(renderWorksheet());
-    if (state.read.t2) right.appendChild(renderLaptop());
-    wrap.appendChild(right);
+    wrap.appendChild(renderWorksheet());
     body.appendChild(wrap);
-    attachDiskDrag();
-    updateDisk();
+    attachKeyCard();
+    lightPair(state.dec.lit, false);
+  }
+  function lightPair(i, speak) {
+    state.dec.lit = i >= 0 && i < 26 ? i : -1;
+    dec.pairs.forEach(function (b, j) { b.classList.toggle('is-lit', j === state.dec.lit); });
+    if (!dec.read) return;
+    if (state.dec.lit < 0) {
+      dec.read.innerHTML = '<span class="cc-kcread__tip">Tap a letter on the card to light up its partner.</span>';
+      return;
+    }
+    const a = String.fromCharCode(A + state.dec.lit), b = atbash(a);
+    dec.read.innerHTML = '<b>' + a + '</b> <span aria-hidden="true">&harr;</span> <b>' + b + '</b>&nbsp; ' + a + ' swaps with ' + b + '.';
+    if (speak) announce(a + ' swaps with ' + b + '.');
+  }
+  function attachKeyCard() {
+    const rove = function (i, focus) {
+      dec.pairs.forEach(function (b, j) { b.tabIndex = j === i ? 0 : -1; });
+      if (focus) { try { dec.pairs[i].focus(); } catch (_) {} }
+    };
+    rove(state.dec.lit >= 0 ? state.dec.lit : 0, false);
+    dec.card.addEventListener('click', function (e) {
+      const b = e.target.closest && e.target.closest('.cc-kc__pair');
+      if (!b) return;
+      const i = Number(b.dataset.i);
+      rove(i, false);
+      lightPair(i, true);
+      save();
+    });
+    dec.card.addEventListener('keydown', function (e) {
+      const cur = dec.pairs.indexOf(document.activeElement);
+      if (cur < 0) return;
+      let to = null;
+      if (e.key === 'ArrowRight') to = (cur + 1) % 26;
+      else if (e.key === 'ArrowLeft') to = (cur + 25) % 26;
+      else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') to = (cur + 13) % 26;
+      else if (e.key === 'Home') to = 0;
+      else if (e.key === 'End') to = 25;
+      else if (/^[a-z]$/i.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) to = e.key.toUpperCase().charCodeAt(0) - A;
+      if (to == null) return;
+      e.preventDefault();
+      rove(to, true);
+      lightPair(to, true);
+      save();
+    });
   }
 
   function renderWorksheet() {
     const ws = h('div', { class: 'cc-ws' });
     ws.appendChild(h('h4', null, 'Worksheet'));
-    disk.keyBoxes = []; disk.outInputs = []; disk.fb = null;
+    dec.inputs = []; dec.fb = null;
     if (!state.read.t2) {
-      ws.appendChild(h('p', null, 'Nothing to decode yet. Any message for this disk will be copied here.'));
+      ws.appendChild(h('p', null, 'Nothing to decode yet. If a coded message turns up, it will be copied here.'));
       return ws;
     }
-    ws.appendChild(h('p', null, 'The password from the courier\'s phone. Each code letter has its own key letter underneath.'));
-    const keyrow = h('div', { class: 'cc-keyrow' });
-    keyrow.appendChild(h('label', { for: 'ccKeyIn' }, 'Key word:'));
-    const keyIn = h('input', { id: 'ccKeyIn', type: 'text', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'characters', maxlength: '12', 'data-sanitize': 'off' });
-    keyIn.value = state.disk.key || '';
-    if (state.diskSolved) keyIn.disabled = true;
-    keyIn.addEventListener('input', function () {
-      const before = keyIsRight(state);
-      state.disk.key = lettersOnly(keyIn.value).slice(0, 12);
-      keyIn.value = state.disk.key;
-      save();
-      drawKeyBoxes();
-      if (before !== keyIsRight(state)) { renderHint(); setProgress(); }
-    });
-    keyrow.appendChild(keyIn);
-    ws.appendChild(keyrow);
-
+    ws.appendChild(h('p', null, 'The password from the courier\'s phone. Use the key card to turn each code letter back into a real letter.'));
     const grid = h('div', { class: 'cc-wsgrid' });
     grid.appendChild(h('span', { class: 'lab', text: 'Code' }));
     FINAL.cipher.split('').forEach(function (ch) { grid.appendChild(h('span', { class: 'box box--code', text: ch })); });
-    grid.appendChild(h('span', { class: 'lab', text: 'Key letter' }));
-    FINAL.cipher.split('').forEach(function () { const b = h('span', { class: 'box box--key', text: '' }); disk.keyBoxes.push(b); grid.appendChild(b); });
     grid.appendChild(h('span', { class: 'lab', text: 'Real letter' }));
     FINAL.cipher.split('').forEach(function (ch, i) {
-      const inp = h('input', { type: 'text', maxlength: '1', autocomplete: 'off', spellcheck: 'false', 'data-sanitize': 'off', 'aria-label': 'Real letter ' + (i + 1) + ' of ' + FINAL.cipher.length + ' (code letter ' + ch + ')' });
-      inp.value = state.disk.out[i] || '';
-      if (state.diskSolved) inp.disabled = true;
+      const inp = h('input', { type: 'text', maxlength: '1', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'characters', 'data-sanitize': 'off', 'aria-label': 'Real letter ' + (i + 1) + ' of ' + FINAL.cipher.length + ' (code letter ' + ch + ')' });
+      inp.value = state.dec.out[i] || '';
+      if (state.decSolved) inp.disabled = true;
       inp.addEventListener('input', function () {
         const L = lettersOnly(inp.value).slice(-1);
         inp.value = L;
-        state.disk.out[i] = L;
+        state.dec.out[i] = L;
         save();
-        if (L && disk.outInputs[i + 1]) disk.outInputs[i + 1].focus();
+        if (L && dec.inputs[i + 1]) dec.inputs[i + 1].focus();
       });
       inp.addEventListener('keydown', function (e) {
-        if (e.key === 'Backspace' && !inp.value && disk.outInputs[i - 1]) { disk.outInputs[i - 1].focus(); }
-        if (e.key === 'Enter') { e.preventDefault(); checkDisk(); }
+        if (e.key === 'Backspace' && !inp.value && dec.inputs[i - 1]) { dec.inputs[i - 1].focus(); }
+        if (e.key === 'Enter') { e.preventDefault(); checkDecode(); }
       });
-      disk.outInputs.push(inp);
+      dec.inputs.push(inp);
       grid.appendChild(inp);
     });
     ws.appendChild(grid);
-    drawKeyBoxes();
-    if (state.diskSolved) {
+    if (state.decSolved) {
       ws.appendChild(h('p', null, 'Unlocked: <span class="cc-scramble is-solved">' + WORD + '</span>'));
     } else {
-      ws.appendChild(button('btn primary sm', 'Try this password', checkDisk));
-      disk.fb = h('p', { class: 'cc-feedback', role: 'status' });
-      ws.appendChild(disk.fb);
+      ws.appendChild(button('btn primary sm', 'Try this password', checkDecode));
+      dec.fb = h('p', { class: 'cc-feedback', role: 'status' });
+      ws.appendChild(dec.fb);
     }
     return ws;
   }
-  function drawKeyBoxes() {
-    const key = lettersOnly(state.disk.key);
-    disk.keyBoxes.forEach(function (b, i) { b.textContent = key ? key[i % key.length] : ''; });
-  }
-  function checkDisk() {
-    if (state.diskSolved || !disk.fb) return;
-    const out = state.disk.out.map(lettersOnly).join('');
+  function checkDecode() {
+    if (state.decSolved || !dec.fb) return;
+    const out = state.dec.out.map(lettersOnly).join('');
     if (out.length < WORD.length) {
-      disk.fb.className = 'cc-feedback is-info';
-      disk.fb.textContent = 'Fill in all ' + WORD.length + ' real letters first.';
+      dec.fb.className = 'cc-feedback is-info';
+      dec.fb.textContent = 'Fill in all ' + WORD.length + ' real letters first.';
       return;
     }
     if (out === WORD) {
-      state.diskSolved = true;
+      state.decSolved = true;
       save();
       advance();
       return;
@@ -1507,142 +1522,9 @@
     spend(COST.wrong, 'Encryption room: wrong password decode');
     state.wrongs += 1;
     save();
-    disk.fb.className = 'cc-feedback is-bad';
-    disk.fb.textContent = 'Gibberish (-2 pts). ' + right + ' of ' + WORD.length + ' letters are right. ' +
-      (keyIsRight(state) ? 'For each letter: key letter under the arrow, find the code letter on the inner ring, read the outer letter beside it.' : 'Are you sure you have the right key?');
-    if (!state.warned.disk) { state.warned.disk = true; save(); say('wrong_disk'); }
-  }
-
-  let bruteTimer = null;
-  function stopBrute() { if (bruteTimer) { clearInterval(bruteTimer); bruteTimer = null; } }
-  function renderLaptop() {
-    const lap = h('div', { class: 'cc-laptop', 'aria-label': 'Kemi\'s code-breaking laptop' });
-    lap.appendChild(h('div', { class: 'cc-laptop__bar', text: 'Kemi\'s code-breaking laptop: trying every simple shift on ' + FINAL.cipher }));
-    const list = h('div', { class: 'cc-laptop__list' });
-    const sum = h('div', { class: 'cc-laptop__sum' });
-    lap.appendChild(list); lap.appendChild(sum);
-    const lines = [];
-    for (let s = 1; s < 26; s++) lines.push('shift ' + s + ': ' + FINAL.cipher.split('').map(function (ch) { return shiftLetter(ch, -s); }).join('') + ' <i>&#10007;</i>');
-    const finish = function () { sum.textContent = 'All 25 shifts tried in 0.002 seconds. Real words found: 0. Not a simple shift.'; };
-    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (state.bruteShown || reduce) {
-      lines.forEach(function (t) { list.appendChild(h('span', null, t)); });
-      finish();
-      if (!state.bruteShown) { state.bruteShown = true; save(); }
-    } else {
-      let i = 0;
-      bruteTimer = setInterval(function () {
-        if (i >= lines.length) { stopBrute(); finish(); state.bruteShown = true; save(); return; }
-        list.appendChild(h('span', null, lines[i++]));
-      }, 70);
-    }
-    return lap;
-  }
-
-  function turnDisk(dir) {
-    const snapped = Math.round(state.disk.angle / STEP_DEG) * STEP_DEG;
-    state.disk.angle = snapped - dir * STEP_DEG;
-    if (disk.ring) disk.ring.style.transform = 'rotate(' + state.disk.angle + 'deg)';
-    save();
-    updateDisk();
-  }
-  function snapDisk() {
-    state.disk.angle = Math.round(state.disk.angle / STEP_DEG) * STEP_DEG;
-    if (disk.ring) disk.ring.style.transform = 'rotate(' + state.disk.angle + 'deg)';
-    save();
-    updateDisk();
-  }
-  function setSpot(L) {
-    state.disk.spot = L || '';
-    save();
-    updateDisk();
-  }
-  function updateDisk() {
-    if (!disk.svg) return;
-    const k = diskK();
-    const keyL = String.fromCharCode(A + k);
-    disk.slider.setAttribute('aria-valuenow', String(k));
-    disk.slider.setAttribute('aria-valuetext', keyL + ' is under the arrow');
-    $$('.cc-dl.is-spot', disk.svg).forEach(function (t) { t.classList.remove('is-spot'); });
-    const hiIn = $('.cc-hi-in', disk.svg), hiOut = $('.cc-hi-out', disk.svg);
-    hiIn.innerHTML = ''; hiOut.innerHTML = '';
-    let html = 'Under the arrow: <b>' + keyL + '</b>';
-    if (state.disk.spot) {
-      const j = state.disk.spot.charCodeAt(0) - A;
-      const o = mod(j - k, 26);
-      const q = polar(127, j * STEP_DEG), p = polar(171, o * STEP_DEG);
-      hiIn.innerHTML = '<circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="17" fill="rgba(9,255,136,.28)" stroke="#0bff8c" stroke-width="2"/>';
-      hiOut.innerHTML = '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="17" fill="rgba(9,255,136,.28)" stroke="#0bff8c" stroke-width="2"/>';
-      const ti = $('[data-in="' + j + '"]', disk.svg), to = $('[data-out="' + o + '"]', disk.svg);
-      if (ti) ti.classList.add('is-spot');
-      if (to) to.classList.add('is-spot');
-      html += '<br>Inner <b>' + state.disk.spot + '</b> lines up with outer <b>' + String.fromCharCode(A + o) + '</b>';
-    } else {
-      html += '<br><span style="color:var(--muted);font-size:.85rem">Tap a letter on the inner ring to light up its partner.</span>';
-    }
-    disk.read.innerHTML = html;
-  }
-  function attachDiskDrag() {
-    const svg = disk.svg;
-    let drag = null;
-    function centre() {
-      const r = svg.getBoundingClientRect();
-      return { x: r.left + r.width * (210 / 420), y: r.top + r.height * (234 / 444) };
-    }
-    function angleOf(e, c) { return Math.atan2(e.clientX - c.x, -(e.clientY - c.y)) * 180 / Math.PI; }
-    disk.slider.addEventListener('pointerdown', function (e) {
-      if (e.button != null && e.button !== 0) return;
-      const c = centre();
-      drag = { c: c, last: angleOf(e, c), x0: e.clientX, y0: e.clientY, moved: false, target: e.target };
-      e.preventDefault();
-      try { disk.slider.focus({ preventScroll: true }); } catch (_) {}
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp);
-      window.addEventListener('pointercancel', onUp);
-    });
-    function onMove(e) {
-      if (!drag) return;
-      if (!drag.moved && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 5) return;
-      drag.moved = true;
-      disk.wrap.classList.add('is-dragging');
-      const a = angleOf(e, drag.c);
-      let d = a - drag.last;
-      if (d > 180) d -= 360;
-      if (d < -180) d += 360;
-      drag.last = a;
-      state.disk.angle += d;
-      disk.ring.style.transform = 'rotate(' + state.disk.angle + 'deg)';
-    }
-    function onUp() {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-      if (!drag) return;
-      const d = drag; drag = null;
-      disk.wrap.classList.remove('is-dragging');
-      if (!d.moved) {
-        const hit = d.target && d.target.closest ? d.target.closest('[data-letter]') : null;
-        if (hit) {
-          const L = String.fromCharCode(A + Number(hit.dataset.letter));
-          const sp = $('.cc-spot input', disk.wrap.parentNode);
-          if (sp) sp.value = L;
-          setSpot(L);
-          announce('Inner ' + L + ' lines up with outer ' + String.fromCharCode(A + mod(Number(hit.dataset.letter) - diskK(), 26)));
-        }
-        return;
-      }
-      snapDisk();
-    }
-    disk.slider.addEventListener('keydown', function (e) {
-      if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); turnDisk(1); }
-      else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); turnDisk(-1); }
-      else if (/^[a-z]$/i.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        const target = e.key.toUpperCase().charCodeAt(0) - A;
-        const delta = mod(target - diskK() + 13, 26) - 13;
-        turnDisk(delta);
-      }
-    });
+    dec.fb.className = 'cc-feedback is-bad';
+    dec.fb.textContent = 'Gibberish (-2 pts). ' + right + ' of ' + WORD.length + ' letters are right. For each code letter, find it on the key card and write down its partner.';
+    if (!state.warned.decode) { state.warned.decode = true; save(); say('wrong_decode'); }
   }
 
   // =====================================================================
@@ -1672,8 +1554,7 @@
     p.appendChild(document.createTextNode(' — enter it in the vault on the Mission Hub.'));
     c.appendChild(p);
     const row = h('div', { class: 'cc-row' });
-    row.appendChild(h('a', { class: 'btn primary', href: 'game.html', text: 'Go to the Mission Hub' }));
-    row.appendChild(h('a', { class: 'btn ghost', href: 'forensics.html', text: 'Next room: Network Forensics →' }));
+    row.appendChild(h('a', { class: 'btn primary', href: 'game.html', text: 'Back to the Mission Hub to open the vault' }));
     c.appendChild(row);
     c.appendChild(h('p', { class: 'muted', style: 'font-size:.85rem;color:var(--muted)', text: 'Wrong guesses: ' + (state.wrongs || 0) + ' · Hints used: ' + (state.hintsUsed || 0) }));
     const deb = h('div', { class: 'cc-debrief' });
@@ -1682,9 +1563,9 @@
       '<li>You use it every day: the padlock in your web browser, your phone\'s lock screen, an encrypted work laptop, WhatsApp messages.</li>' +
       '<li>A lost laptop that\'s encrypted is just a brick to a thief.</li></ul>'));
     deb.appendChild(h('div', { class: 'cc-debrief__card' },
-      '<h3>Strong keys beat weak keys</h3><ul><li>A single shift has 26 keys: a laptop tries them all in a blink. Real encryption keys are too long for any computer to guess.</li>' +
-      '<li>So attackers go after the key. Never use a pet\'s name, birthday or team name.</li>' +
-      '<li>Your password is often the key. Three or four random words make a strong passphrase.</li></ul>'));
+      '<h3>A trick is not a key</h3><ul><li>The reversed alphabet swaps every letter the same way, every time. There\'s no secret key: once you know the trick, anyone can read it.</li>' +
+      '<li>Real encryption uses a long secret key that no computer could guess, so attackers go after the key instead. Protect it.</li>' +
+      '<li>Your password is often the key. Three or four random words make a strong passphrase; a pet\'s name, birthday or team name doesn\'t.</li></ul>'));
     deb.appendChild(h('div', { class: 'cc-debrief__card' },
       '<h3>Keep the key away from the lock</h3><ul><li>Never send a locked file and its password in the same email: text or call with the password.</li>' +
       '<li>Don\'t write keys or passwords next to what they unlock.</li>' +
@@ -1714,8 +1595,8 @@
     if (state.completed) return;
     state.completed = true;
     state.completedAt = Date.now();
-    state.diskSolved = true;
-    state.done.disk = true;
+    state.decSolved = true;
+    state.done.cipher = true;
     state.step = STEPS.length;
     state.lesson = null;
     state.phoneView = 'msgs';
@@ -1803,7 +1684,7 @@
     setProgress();
   }
 
-  window.addEventListener('pagehide', function () { clearTimers(); stopBrute(); });
+  window.addEventListener('pagehide', function () { clearTimers(); });
   // Re-draw the book when switching between one-page and two-page layouts.
   let wasNarrow = isNarrow();
   window.addEventListener('resize', function () {

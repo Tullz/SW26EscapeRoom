@@ -1,4 +1,4 @@
-/* forensics.js — Network Forensics room: "The Friday Night Leak" (Cyber Escape Rooms)
+/* forensics.js — Bonus room: Network Forensics, "The Friday Night Leak" (Cyber Escape Rooms)
 
    Story: the secret designs for Copperleaf Games' "Project Aurora" leaked over the
    weekend. The team are the investigators, working from Glen the night guard's
@@ -9,7 +9,12 @@
             clock is an hour fast (sticky note on the monitor, wall clock in shot).
    Stage 2  Name the culprit: refused badge #0417 -> IT notice -> leaving-drinks photo.
    Stage 3  Prove it: pin three pieces of evidence to the culprit's photo.
-   Then: CASE CLOSED, debrief, and the code word via window.vault.completeRoom().
+   Then: CASE CLOSED and the debrief.
+
+   Bonus room (sixth round): it stays locked until the team has cracked the vault on
+   the Mission Hub, it has no code word, and nothing in it touches the team score
+   (hints are free, wrong answers cost nothing). Completion goes through
+   window.vault.completeBonus('forensics'), which only sets progress.forensics.
 
    Room state: localStorage `${team}_forensics_state` (cleared by the admin reset).
 */
@@ -24,11 +29,7 @@
   if (!$('#fxRoom') || !$('#fxBoard')) return;
 
   const utils = window.utils;
-  const points = utils?.points;
   const ROOM = 'forensics';
-  // Kept out of the page source; only shown once the case is closed.
-  const WORD = [67, 73, 80, 72, 69, 82].map((c) => String.fromCharCode(c)).join('');
-  const COST = { check: 2, accuse: 3, proof: 2, hint: 5 };
   const TEAM = String(utils?.getUser?.()?.username || 'team').toLowerCase();
   const STATE_KEY = `${TEAM}_forensics_state`;
   const STATE_VERSION = 1;
@@ -47,8 +48,10 @@
     pill: $('#fxStagePill'),
     pillTitle: $('#fxStageTitle'),
     help: $('#fxBoardHelp'),
-    vaultText: $('#fxVaultText'),
-    complete: $('#fxComplete')
+    complete: $('#fxComplete'),
+    locked: $('#fxLocked'),
+    lockedDone: $('#fxLockedDone'),
+    caseWrap: $('#fxCase')
   };
 
   // =====================================================================
@@ -176,7 +179,7 @@
     1: 'Stage 1 of 3: Rebuild Friday night',
     2: 'Stage 2 of 3: Name the culprit',
     3: 'Stage 3 of 3: Prove it',
-    4: 'Case closed'
+    4: 'Bonus case closed'
   };
 
   // =====================================================================
@@ -292,16 +295,23 @@
   // =====================================================================
   // Small helpers
   // =====================================================================
-  function spend(amount, reason) { try { points?.spend?.(amount, reason); } catch (_) { /* ignore */ } }
   function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
+  // The bonus case is recorded as progress.forensics only (no code word).
   function roomSolved() {
-    try { if (window.vault?.isRoomComplete) return window.vault.isRoomComplete(ROOM); } catch (_) { /* ignore */ }
-    try { return !!utils?.readProgress?.()[ROOM]; } catch (_) { return false; }
+    try { if (typeof window.vault?.isBonusComplete === 'function') return window.vault.isBonusComplete(ROOM) === true; } catch (_) { /* ignore */ }
+    try { return utils?.readProgress?.()[ROOM] === true; } catch (_) { return false; }
+  }
+
+  // The room only opens once the team has cracked the vault on the Mission Hub.
+  function vaultOpened() {
+    try { if (window.vault?.isVaultOpened?.() === true) return true; } catch (_) { /* ignore */ }
+    try { if (localStorage.getItem('vault_opened') === '1') return true; } catch (_) { /* ignore */ }
+    try { return window.stateSync?.lastRemote?.vault?.opened === true; } catch (_) { return false; }
   }
 
   // Intermediate progress for the Mission Hub. Completion itself (100%) only
-  // ever goes through window.vault.completeRoom().
+  // ever goes through finishRoom().
   function syncPct() {
     if (!utils?.setProgressPercent || state.solved || roomSolved()) return;
     let pct = 0;
@@ -831,7 +841,7 @@
       els.hintBtn.textContent = 'All hints shown';
       els.hintBtn.disabled = true;
     } else {
-      els.hintBtn.textContent = `Hint ${shown + 1} of 3 (-${COST.hint} pts)`;
+      els.hintBtn.textContent = `Hint ${shown + 1} of 3 (free)`;
       els.hintBtn.disabled = false;
     }
     if (!shown) {
@@ -848,7 +858,6 @@
     if (!hs) return;
     const shown = state.hints[hs] || 0;
     if (shown >= 3) return;
-    spend(COST.hint, 'Hint');
     state.hints[hs] = shown + 1;
     save();
     renderHints();
@@ -951,7 +960,7 @@
     const chosen = suspectSel ? PEOPLE[suspectSel].name : null;
     return `<div class="fx-tl">
         <h3>Who was in the yellow raincoat?</h3>
-        <p class="fx-stage__intro">Choose a suspect, then press Accuse. Check your choice against the evidence on the board first: a wrong accusation costs ${COST.accuse} points.</p>
+        <p class="fx-stage__intro">Choose a suspect, then press Accuse. Check your choice against the evidence on the board first.</p>
         <div class="fx-suspects" role="group" aria-label="Suspects">
           ${SUSPECTS.map((s) => {
             const out = state.accused.includes(s.id);
@@ -971,7 +980,7 @@
   function stage3HTML() {
     return `<div class="fx-tl">
         <h3>Prove it</h3>
-        <p class="fx-stage__intro">Rosa needs three pieces of proof for the police. Choose a proof below, then click the item on the board that proves it. A wrong proof costs ${COST.proof} points.</p>
+        <p class="fx-stage__intro">Rosa needs three pieces of proof for the police. Choose a proof below, then click the item on the board that proves it.</p>
         <div class="fx-proofs" role="group" aria-label="Proofs to pin to Lena's photo">
           ${PROOFS.map((p) => {
             const done = state.proofs[p.id];
@@ -987,9 +996,10 @@
       </div>`;
   }
 
-  function closedHTML() {
+  // The debrief lives in the end card (renderComplete), above the board.
+  function debriefHTML() {
     return `<div class="fx-closed">
-        <h3>Case closed</h3>
+        <h3>What happened</h3>
         <p>Lena Fox left Copperleaf in September to join Tinderbox Games. On Friday night her old badge was refused at the front door, so she slipped in behind Theo at the side door, went straight to Maya's unlocked laptop, and copied Project Aurora onto a USB stick in a few minutes.</p>
       </div>
       <div class="fx-debrief">
@@ -1000,8 +1010,11 @@
           <li>Don't hold secure doors open for people you don't know. Let them use their own badge or send them to reception.</li>
           <li>Report a lost badge straight away, and hand yours back when you leave.</li>
         </ul></div>
-      </div>
-      <div class="fx-tl">
+      </div>`;
+  }
+
+  function closedHTML() {
+    return `<div class="fx-tl">
         <div class="fx-tl__head"><h3>Friday night, rebuilt</h3><span class="fx-tl__axis">Earliest &rarr; latest</span></div>
         ${timelineHTML(false)}
       </div>
@@ -1120,14 +1133,13 @@
       return;
     }
     state.badChecks++;
-    spend(COST.check, 'Timeline check');
     if (state.badChecks === 2) say('nudge');
     save();
     bounced = back.slice();
     const pinnedN = state.pinned.length;
     stageFeedback = {
       tone: 'bad',
-      text: `${pinnedN} of ${SLOTS} ${pinnedN === 1 ? 'moment is' : 'moments are'} now pinned in the right place. ${back.length} didn't fit and went back to the tray. Check the times in the evidence again. (-${COST.check} points)`
+      text: `${pinnedN} of ${SLOTS} ${pinnedN === 1 ? 'moment is' : 'moments are'} now pinned in the right place. ${back.length} didn't fit and went back to the tray. Check the times in the evidence again.`
     };
     renderFeed();
     renderStage('[data-action="check"]');
@@ -1270,10 +1282,9 @@
     }
     if (!state.accused.includes(id)) state.accused.push(id);
     suspectSel = null;
-    spend(COST.accuse, 'Wrong accusation');
     save();
     const s = SUSPECTS.find((x) => x.id === id);
-    stageFeedback = { tone: 'bad', text: `Not ${PEOPLE[id].name}. ${s.why} (-${COST.accuse} points)` };
+    stageFeedback = { tone: 'bad', text: `Not ${PEOPLE[id].name}. ${s.why}` };
     renderStage('[data-action="accuse"]');
     announce(stageFeedback.text);
   }
@@ -1295,10 +1306,9 @@
       animateStrings = new Set([`p:${p.id}`]);
       fb = { tone: 'good', text: `Pinned: ${ITEMS[item].label} proves "${p.label}".` };
     } else {
-      spend(COST.proof, 'Wrong proof');
       state.wrongProofs++;
       snapString(item);
-      fb = { tone: 'bad', text: `${p.wrong[item] || PROOF_GENERIC[item] || 'That item doesn\'t prove this.'} (-${COST.proof} points)` };
+      fb = { tone: 'bad', text: p.wrong[item] || PROOF_GENERIC[item] || 'That item doesn\'t prove this.' };
     }
     stageFeedback = fb;
     closeupFeedback = fb;
@@ -1329,23 +1339,12 @@
       void els.stamp.offsetWidth;
       els.stamp.classList.add('is-thump');
     }
-    finishRoom();
+    finishRoom(true);
   }
 
   // =====================================================================
-  // Completion (shared contract)
+  // Completion (bonus room: no code word, no points)
   // =====================================================================
-  function renderVault() {
-    if (!els.vaultText || !state.solved) return;
-    els.vaultText.innerHTML = '';
-    els.vaultText.appendChild(document.createTextNode('Code word: '));
-    const strong = document.createElement('strong');
-    strong.id = 'fxVaultValue';
-    strong.textContent = WORD;
-    els.vaultText.appendChild(strong);
-    els.vaultText.appendChild(document.createTextNode(' (enter it in the vault on the Mission Hub)'));
-  }
-
   function renderComplete() {
     const c = els.complete;
     if (!c) return;
@@ -1355,39 +1354,35 @@
       return;
     }
     const hints = (state.hints[1] || 0) + (state.hints[2] || 0) + (state.hints[3] || 0);
-    c.innerHTML = '';
-    const add = (tag, attrs, text) => {
-      const el = document.createElement(tag);
-      Object.keys(attrs || {}).forEach((k) => el.setAttribute(k, attrs[k]));
-      if (text != null) el.textContent = text;
-      c.appendChild(el);
-      return el;
-    };
-    add('h2', {}, 'Case closed');
-    add('p', {}, 'You rebuilt Friday night, named the culprit and gave the police their proof.');
-    add('div', { class: 'fx-codeword', 'aria-label': `Code word ${WORD}` }, WORD);
-    const p = add('p', {});
-    p.appendChild(document.createTextNode('Code word: '));
-    const s = document.createElement('strong');
-    s.textContent = WORD;
-    p.appendChild(s);
-    p.appendChild(document.createTextNode('. Enter it in the vault on the Mission Hub.'));
-    add('p', { class: 'muted', style: 'color:var(--muted);font-size:.9rem' },
-      `Wrong timeline checks: ${state.badChecks} · Wrong accusations: ${state.accused.length} · Wrong proofs: ${state.wrongProofs} · Hints used: ${hints}`);
-    const a = add('a', { class: 'btn primary', href: 'game.html' }, 'Go to the Mission Hub');
-    a.style.marginTop = '.2rem';
+    c.innerHTML = `<h2>Bonus case closed</h2>
+      <p>You rebuilt Friday night, named the culprit and proved it. Nice work, detectives!</p>
+      ${debriefHTML()}
+      <p class="fx-complete__stats">Wrong timeline checks: ${state.badChecks} · Wrong accusations: ${state.accused.length} · Wrong proofs: ${state.wrongProofs} · Hints used: ${hints}. This bonus case doesn't change your score.</p>
+      <div class="fx-complete__actions">
+        <a class="btn primary" href="game.html">Back to the Mission Hub</a>
+        <a class="btn ghost" href="celebration.html">See your results</a>
+      </div>`;
     c.hidden = false;
   }
 
-  // window.vault.completeRoom() sets the progress flag, stores the word, syncs to
-  // the server and ticks the header tracker. It returns true only the first time.
-  function finishRoom() {
+  // Records the bonus room as done (progress.forensics only: no code word, and the
+  // score is never touched). window.vault.completeBonus() syncs and shows a toast; it
+  // returns true only the first time. justSolved: the case was closed on this page.
+  function finishRoom(justSolved) {
     let first = false;
-    try { first = window.vault?.completeRoom?.(ROOM, WORD, { message: `Code word ${WORD} secured.` }) === true; } catch (_) { /* ignore */ }
-    renderVault();
+    if (!roomSolved()) {
+      try {
+        if (typeof window.vault?.completeBonus === 'function') {
+          first = window.vault.completeBonus(ROOM) === true;
+        } else if (utils?.setProgressPercent) {
+          utils.setProgressPercent(ROOM, 100, { complete: true });
+          first = true;
+        }
+      } catch (_) { /* ignore */ }
+    }
     renderComplete();
-    if (first) {
-      announce(`Case closed. Code word ${WORD}. Enter it in the vault on the Mission Hub.`);
+    if (justSolved || first) {
+      announce('Bonus case closed. Nice work, detectives!');
       setTimeout(() => {
         els.complete?.scrollIntoView({ behavior: REDUCED() ? 'auto' : 'smooth', block: 'start' });
       }, 1300);
@@ -1404,7 +1399,6 @@
     renderBoard();
     renderCloseup();
     renderStage(focusSel);
-    renderVault();
     renderComplete();
     requestAnimationFrame(drawStrings);
   }
@@ -1542,22 +1536,29 @@
   if (window.ResizeObserver) new ResizeObserver(() => drawStrings()).observe(els.board);
 
   // =====================================================================
-  // Boot
+  // Boot: locked screen until the vault is open, then the case
   // =====================================================================
-  function boot() {
+  let started = false;
+
+  function startCase(liveUnlock) {
+    if (started) return;
+    started = true;
+    state = loadState();
+    const hadFocus = els.locked?.contains(document.activeElement);
+    if (els.locked) els.locked.hidden = true;
+    if (els.caseWrap) els.caseWrap.hidden = false;
+
     utils?.initStatusHud?.(ROOM, {
-      score: '#fxPointsTotal',
-      delta: '#fxPointsDelta',
       progressFill: '#fxProgressFill',
       progressLabel: '#fxProgressText'
     });
-    points?.ensure?.();
     // The previous version of this room kept its state under a shared key.
     try { localStorage.removeItem('forensics_state'); } catch (_) { /* ignore */ }
 
     const registered = roomSolved();
     if (!state.solved && registered) {
-      // Solved on another device or browser: show the closed case.
+      // Solved on another device or browser (or before this became the bonus room):
+      // show the closed case.
       state = solvedState();
       save();
     }
@@ -1569,11 +1570,42 @@
     buildBoard();
     renderAll();
     if (state.solved && !registered) {
-      // Solved here but the shared vault doesn't know yet (e.g. a sync was lost).
-      finishRoom();
+      // Solved here but the shared progress doesn't know yet (e.g. a sync was lost).
+      finishRoom(false);
     } else if (!state.solved) {
       syncPct();
     }
+    if (liveUnlock) {
+      if (hadFocus) $('#main')?.focus({ preventScroll: true });
+      announce('The vault is open, so the bonus case is unlocked.');
+    }
+  }
+
+  function showLocked() {
+    if (els.lockedDone) els.lockedDone.hidden = !roomSolved();
+    if (els.caseWrap) els.caseWrap.hidden = true;
+    if (els.locked) els.locked.hidden = false;
+  }
+
+  function checkLock(liveUnlock) {
+    if (started) return;
+    if (vaultOpened()) startCase(liveUnlock);
+    else showLocked();
+  }
+
+  function boot() {
+    checkLock(false);
+    // Open the case without a reload when the vault is cracked: on the hub in another
+    // tab, on another laptop (picked up by the sync), or while this page sat in the
+    // back/forward cache.
+    const recheck = () => checkLock(true);
+    window.addEventListener('vault:opened', recheck);
+    document.addEventListener('vault:opened', recheck);
+    window.addEventListener('state-sync:applied', recheck);
+    window.addEventListener('pageshow', recheck);
+    window.addEventListener('storage', (ev) => {
+      if (!ev.key || ev.key === 'vault_opened' || ev.key === utils?.progressKey?.()) recheck();
+    });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

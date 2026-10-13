@@ -1,9 +1,13 @@
 /* game.js — Cyber Escape Rooms (Mission Hub + Vault Lock)
-   - Renders the room list and the next-step call to action from ROOMS
+   - Renders the 5 core rooms, the bonus room and the next-step call to action
    - Rooms can be played in any order, on any of the team's devices
    - The vault opens if and only if every slot holds that room's code word
      (checked per slot against a salted SHA-256; finished rooms are NOT required,
      so a team that split up can type in words found on other devices)
+   - Game clock (window.gameClock, js/game-clock.js): free roam = no clock; waiting / over =
+     rooms and vault locked; running = big countdown. Reacts live to game:change / game:tick.
+   - Score panel: the total from window.scoring.compute (js/scoring.js) with a plain breakdown
+   - Bonus room (Network Forensics): unlocks once the vault is open; never changes the score
 */
 
 (function () {
@@ -20,8 +24,7 @@
     osint:     'fdb8926d5972a73a5528140090665e3563017c80bb42d30a302ae74522ff8f2d',
     incident:  'a54cb56e99787a0adfde640f678b28844cd9be15b3c972d7ef7866187ea4e900',
     mfa:       'ce6e3eb959ebcbc99edc9ec55b01d510298b306eddc98c601e2d6c5e3dbf836b',
-    crypto:    '4a48c4b8f0bec07419e1a50a82f4ea1e5c060931d126cf68dd8559b1c44995b9',
-    forensics: 'a572bcb2beaef6d56e68c29f63f593da06431b576c856bed23d3ddf36855ce69'
+    crypto:    '4a48c4b8f0bec07419e1a50a82f4ea1e5c060931d126cf68dd8559b1c44995b9'
   };
 
   // -------------------- DOM helpers ---------------------------------------
@@ -48,30 +51,14 @@
       return {};
     }
   }
-  
+
 
   // -------------------- Team display --------------------------------------
 
-  let aliasInput = null;
-  let aliasDisplay = null;
-
-  function updateAliasUI(alias) {
-    if (aliasInput && aliasInput.value !== alias) {
-      aliasInput.value = alias;
-    }
-    if (aliasDisplay) {
-      aliasDisplay.textContent = alias || '—';
-    }
-  }
-
   function renderTeamName(){
-    const user = readUser();
-    const alias = window.utils?.getPlayerAlias?.() || '';
     const el = $('#teamName');
     if (!el) return;
-    const baseName = user?.username || 'TEAM';
-    const name = alias || baseName;
-    el.textContent = name.toUpperCase();
+    el.textContent = String(readUser()?.username || 'TEAM').toUpperCase();
   }
 
   // -------------------- Rooms (single source of truth) --------------------
@@ -87,12 +74,15 @@
     { key: 'mfa',       label: 'MFA / Authentication', vaultLabel: 'MFA',          path: 'mfa.html',
       blurb: 'Help a colleague take back her phished account and fend off the attacker.' },
     { key: 'crypto',    label: 'Encryption',           vaultLabel: 'Encryption',   path: 'crypto.html',
-      blurb: 'Search a captured courier\'s briefcase, find the hidden keys and crack the crew\'s codes.' },
-    { key: 'forensics', label: 'Network Forensics',    vaultLabel: 'Forensics',    path: 'forensics.html',
-      blurb: 'Piece together the attack timeline from the evidence left behind.' }
+      blurb: 'Search a captured courier\'s briefcase, find the hidden keys and crack the crew\'s codes.' }
   ];
+  // Not in the vault, no code word, no effect on the score. Unlocks once the vault is open.
+  const BONUS_ROOM = { key: 'forensics', label: 'Network Forensics', path: 'forensics.html' };
   const PUZZLES = ROOMS.map(r => r.key);
   const ROOM_BY_KEY = Object.fromEntries(ROOMS.map((r, i) => [r.key, { ...r, index: i }]));
+
+  const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+  const countWord = (n) => NUMBER_WORDS[n] || String(n);
 
   function el(tag, cls, text){
     const node = document.createElement(tag);
@@ -151,12 +141,130 @@
   }
   renderShell();
 
+  // -------------------- Game clock (js/game-clock.js) ---------------------
+  // Every call is defensive: the hub must work (as free roam) if the clock is missing or
+  // has not answered yet.
+
+  const STATUSES = ['free', 'waiting', 'running', 'over'];
+  const MINUTE = 60000;
+
+  function currentGame(){
+    try { return window.gameClock?.get?.() || null; } catch (_) { return null; }
+  }
+
+  function serverNow(){
+    try {
+      const t = Number(window.gameClock?.now?.());
+      if (Number.isFinite(t) && t > 0) return t;
+    } catch (_) {}
+    return Date.now();
+  }
+
+  function remainingMs(game = currentGame()){
+    try {
+      const v = window.gameClock?.remainingMs?.();
+      if (v != null && Number.isFinite(Number(v))) return Math.max(0, Number(v));
+    } catch (_) {}
+    const endsAt = Number(game?.endsAt);
+    return game?.status === 'running' && endsAt > 0 ? Math.max(0, endsAt - serverNow()) : null;
+  }
+
+  // 'free' | 'waiting' | 'running' | 'over', or null before the first answer (acts like free roam).
+  function gameStatus(game = currentGame()){
+    if (!game || !STATUSES.includes(game.status)) return null;
+    if (game.status === 'running' && remainingMs(game) === 0) return 'over';
+    return game.status;
+  }
+
+  const isPlayLocked = (status) => status === 'waiting' || status === 'over';
+
+  function cfg(){
+    return window.scoring?.CONFIG || {
+      roomPoints: 20, vaultPoints: 50, timeBonusPerMinute: 2, durationMin: 60,
+      coreRooms: PUZZLES, bonusRoom: BONUS_ROOM.key
+    };
+  }
+
+  function durationMin(game = currentGame()){
+    const d = Number(game?.durationMin);
+    return d > 0 ? d : cfg().durationMin;
+  }
+
+  // Countdown text: rounds up, so it reads 60:00 at the start and 00:00 only when time is up.
+  function fmtClock(ms){
+    const total = Math.max(0, Math.ceil(Number(ms || 0) / 1000));
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+  }
+
+  function fmtDuration(ms){
+    return typeof window.scoring?.fmtDuration === 'function' ? window.scoring.fmtDuration(ms) : fmtClock(ms);
+  }
+
+  // -------------------- Score (js/scoring.js) -----------------------------
+
+  // The moment this browser cracked the vault, used until the server's openedAt stamp arrives.
+  function provisionalKey(){ return `${readUser()?.username || 'team'}_vault_cracked_at`; }
+  function readProvisional(){
+    try {
+      const v = Number(sessionStorage.getItem(provisionalKey()));
+      return v > 0 ? v : null;
+    } catch (_) { return null; }
+  }
+  function saveProvisional(at){
+    try { sessionStorage.setItem(provisionalKey(), String(at)); } catch (_) {}
+  }
+
+  function readPoints(){
+    try {
+      const v = Number(window.utils?.points?.get?.());
+      return Number.isFinite(v) ? v : null;
+    } catch (_) { return null; }
+  }
+
+  // The team in the server-row shape scoring.compute expects: this browser's progress OR the
+  // team's synced progress, the running score, and the server-stamped vault times.
+  function teamSnapshot(){
+    const local = readProgress();
+    const remote = window.stateSync?.lastRemote || null;
+    const progress = {};
+    [...PUZZLES, BONUS_ROOM.key].forEach(k => {
+      progress[k] = local?.[k] === true || remote?.progress?.[k] === true;
+    });
+    const rv = remote?.vault || {};
+    return {
+      progress,
+      score: readPoints(),
+      vault: { opened: isVaultOpened(), openedAt: rv.openedAt ?? null, solvedAt: rv.solvedAt || {} }
+    };
+  }
+
+  function computeScore(game = currentGame()){
+    if (typeof window.scoring?.compute !== 'function') return null;
+    try {
+      return window.scoring.compute(teamSnapshot(), game, { provisionalOpenedAt: readProvisional() });
+    } catch (err) {
+      console.warn('[hub] could not compute the score', err);
+      return null;
+    }
+  }
+
   // -------------------- Progress rendering --------------------------------
 
   function isVaultOpened(){
+    let viaVault = false;
+    try { viaVault = window.vault?.isVaultOpened?.() === true; } catch (_) {}
     let local = false;
     try { local = localStorage.getItem('vault_opened') === '1'; } catch (_) {}
-    return local || window.stateSync?.lastRemote?.vault?.opened === true;
+    return viaVault || local || window.stateSync?.lastRemote?.vault?.opened === true;
+  }
+
+  function isBonusComplete(){
+    try {
+      if (window.vault?.isBonusComplete?.(BONUS_ROOM.key) === true) return true;
+    } catch (_) {}
+    return readProgress()?.[BONUS_ROOM.key] === true
+      || window.stateSync?.lastRemote?.progress?.[BONUS_ROOM.key] === true;
   }
 
   function readMeta(){
@@ -195,7 +303,20 @@
     return wordInputs.length > 0 && wordInputs.every(i => (i.value || '').trim());
   }
 
+  // Why the rooms / vault are locked, in plain words (null when they are not).
+  function lockReason(status){
+    if (status === 'waiting') return 'Locked until the facilitator starts the game.';
+    if (status === 'over') return 'Time\'s up: the rooms are closed.';
+    return null;
+  }
+
+  let booted = false;
+
   function renderProgress(){
+    if (!booted) return;
+    const game = currentGame();
+    const status = gameStatus(game);
+    const locked = isPlayLocked(status);
     const p = readProgress();
     const meta = readMeta();
     const remote = window.stateSync?.lastRemote || null;
@@ -203,8 +324,10 @@
     const statuses = Object.fromEntries(PUZZLES.map(k => [k, roomStatus(k, p, meta, remote)]));
     const done = PUZZLES.filter(k => statuses[k].complete).length;
 
-    const status = $('#progressStatus');
-    if (status) status.textContent = `${done} of ${PUZZLES.length} rooms complete`;
+    $('#main')?.setAttribute('data-game-status', status || 'free');
+
+    const statusEl = $('#progressStatus');
+    if (statusEl) statusEl.textContent = `${done} of ${PUZZLES.length} rooms complete`;
 
     const overallPercent = Math.round((done / PUZZLES.length) * 100);
     const globalFill = $('#missionProgressFill');
@@ -224,11 +347,21 @@
 
     const nextPuzzle = suggestRoom(statuses);
 
+    // Rooms are locked (not links) while the game is waiting to start or after time's up.
+    const roomsCard = $('#roomsCard');
+    roomsCard?.classList.toggle('is-locked', locked);
+    const roomsNote = $('#roomsLockNote');
+    if (roomsNote) {
+      roomsNote.hidden = !locked;
+      const t = $('#roomsLockText');
+      if (t) t.textContent = lockReason(status) || '';
+    }
+
     PUZZLES.forEach((k, i) => {
       // Scope to the room list: vault.js also puts data-puzzle on header buttons.
       const btn = document.querySelector(`#missionTrackerList .mission-tracker__item[data-puzzle="${k}"]`);
       const { complete, percent } = statuses[k];
-      const isNext = !complete && !vaultOpened && k === nextPuzzle;
+      const isNext = !complete && !vaultOpened && !locked && k === nextPuzzle;
       const started = !complete && percent > 0;
 
       if (btn) {
@@ -241,6 +374,7 @@
         }
         let label;
         if (complete) label = 'Complete';
+        else if (locked) label = 'Locked';
         else if (started) label = `In progress · ${percent}%`;
         else if (isNext) label = 'Up next';
         else label = 'Not started';
@@ -254,61 +388,93 @@
         btn.dataset.progressPercent = String(percent);
         btn.dataset.progressComplete = complete ? 'true' : 'false';
         if (isNext) btn.setAttribute('aria-current', 'step'); else btn.removeAttribute('aria-current');
-        btn.setAttribute('aria-label', `Room ${i + 1}: ${ROOMS[i].label} — ${label}`);
+        if (locked) {
+          // No href = not clickable or focusable; role + aria-disabled keep it announced.
+          btn.removeAttribute('href');
+          btn.setAttribute('role', 'link');
+          btn.setAttribute('aria-disabled', 'true');
+          btn.setAttribute('aria-label', `Room ${i + 1}: ${ROOMS[i].label} — ${complete ? 'complete. ' : ''}${lockReason(status)}`);
+        } else {
+          btn.setAttribute('href', ROOMS[i].path);
+          btn.removeAttribute('role');
+          btn.removeAttribute('aria-disabled');
+          btn.setAttribute('aria-label', `Room ${i + 1}: ${ROOMS[i].label} — ${label}`);
+        }
       }
     });
 
-    renderNextStep({ done, nextPuzzle, statuses, vaultOpened });
+    renderNextStep({ done, nextPuzzle, statuses, vaultOpened, status, game });
     renderSlots(p, remote?.progress);
     renderVaultOpen(vaultOpened);
+    renderVaultLock(status, vaultOpened);
+    renderBonus(vaultOpened);
 
-    const bonusEl = $('#bonusCallout');
-    if (bonusEl) {
-      const showBonus = vaultOpened;
-      bonusEl.hidden = !showBonus;
-      bonusEl.setAttribute('aria-hidden', showBonus ? 'false' : 'true');
-      bonusEl.dataset.active = showBonus ? 'true' : 'false';
-      const aliasCard = $('#playerAliasCard');
-      if (aliasCard) {
-        aliasCard.hidden = !showBonus;
-        aliasCard.setAttribute('aria-hidden', showBonus ? 'false' : 'true');
-        aliasCard.dataset.active = showBonus ? 'true' : 'false';
-      }
-    }
+    const result = computeScore(game);
+    renderClock({ status, game, result, vaultOpened });
+    renderScore({ result, status, game, vaultOpened });
+    renderScoringRules(game);
+    noteStatusChange(status);
   }
 
   // One obvious next action. Rooms can be done in any order, and the vault can be opened
-  // as soon as all six words are known (even if some rooms were solved on another device).
-  function renderNextStep({ done, nextPuzzle, statuses, vaultOpened }){
+  // as soon as all five words are known (even if some rooms were solved on another device).
+  function renderNextStep({ done, nextPuzzle, statuses, vaultOpened, status, game }){
     const nextTag = $('#nextPuzzleTag');
     const nextHint = $('#nextPuzzleHint');
     const startBtn = $('#startChallengesBtn');
+    // href null = a disabled button (not a link, greyed, announced as unavailable).
     const setBtn = (text, href) => {
       if (!startBtn) return;
-      startBtn.href = href;
+      if (href) {
+        startBtn.setAttribute('href', href);
+        startBtn.removeAttribute('role');
+        startBtn.removeAttribute('aria-disabled');
+      } else {
+        startBtn.removeAttribute('href');
+        startBtn.setAttribute('role', 'link');
+        startBtn.setAttribute('aria-disabled', 'true');
+      }
+      startBtn.classList.toggle('is-disabled', !href);
       startBtn.textContent = '';
       startBtn.append(document.createTextNode(text + ' '));
-      const arrow = el('span', null, '→');
-      arrow.setAttribute('aria-hidden', 'true');
-      startBtn.appendChild(arrow);
+      if (href) {
+        const arrow = el('span', null, '→');
+        arrow.setAttribute('aria-hidden', 'true');
+        startBtn.appendChild(arrow);
+      }
     };
     const total = PUZZLES.length;
+    const all = countWord(total);
     if (vaultOpened) {
       if (nextTag) nextTag.textContent = 'Mission complete';
       setBtn('Vault cracked! See your results', 'celebration.html');
       if (nextHint) {
-        nextHint.textContent = done === total
-          ? 'All six rooms solved and the vault is open. Bonus missions are below.'
-          : 'The vault is open! Bonus missions are below, and you can still play any room you skipped.';
+        if (done === total) {
+          nextHint.textContent = `All ${all} rooms solved and the vault is open. The bonus room is unlocked: just for fun, if you have time.`;
+        } else if (status === 'over') {
+          nextHint.textContent = 'The vault is open! The bonus room is unlocked: just for fun, if you have time.';
+        } else {
+          nextHint.textContent = status === 'running'
+            ? 'The vault is open! Until time\'s up, any room you skipped still earns points. Or try the bonus room, just for fun.'
+            : 'The vault is open! The bonus room is unlocked, and you can still play any room you skipped.';
+        }
       }
+    } else if (status === 'waiting') {
+      if (nextTag) nextTag.textContent = 'Get ready';
+      setBtn('Waiting for the facilitator to start', null);
+      if (nextHint) nextHint.textContent = `The rooms unlock as soon as the facilitator starts the ${durationMin(game)}-minute clock. This page updates by itself.`;
+    } else if (status === 'over') {
+      if (nextTag) nextTag.textContent = 'Time\'s up';
+      setBtn('See your final score', '#hubScore');
+      if (nextHint) nextHint.textContent = 'The clock ran out before the vault opened. Well played anyway: your final score is below.';
     } else if (done === total) {
       if (nextTag) nextTag.textContent = 'Final step';
       setBtn('Open the vault', '#vaultHeading');
-      if (nextHint) nextHint.textContent = 'All six rooms solved! Type all six code words into the vault and crack it.';
+      if (nextHint) nextHint.textContent = `All ${all} rooms solved! Type all ${all} code words into the vault and crack it.`;
     } else if (allSlotsFilled()) {
       if (nextTag) nextTag.textContent = 'Ready to try?';
       setBtn('Try the vault', '#vaultHeading');
-      if (nextHint) nextHint.textContent = 'All six slots are filled. Try the vault, or keep solving rooms.';
+      if (nextHint) nextHint.textContent = `All ${all} slots are filled. Try the vault, or keep solving rooms.`;
     } else if (nextPuzzle) {
       const room = ROOM_BY_KEY[nextPuzzle];
       const { percent } = statuses[nextPuzzle];
@@ -349,11 +515,241 @@
     if (!opened) return;
     chest?.classList.add('open');
     openBtn?.setAttribute('aria-label', 'Vault open');
-    unlockBtn?.setAttribute('disabled', 'true');
     if (feedback && !feedback.textContent) {
       feedback.textContent = 'The vault is open. Well done!';
       feedback.classList.add('ok');
     }
+  }
+
+  // While the game is waiting / over the vault can't be tried (unless it is already open).
+  function renderVaultLock(status, opened){
+    const locked = !opened && isPlayLocked(status);
+    chest?.classList.toggle('is-locked', locked);
+    wordInputs.forEach(input => { input.disabled = locked; });
+    if (unlockBtn) unlockBtn.disabled = opened || locked;
+    if (clearBtn) clearBtn.disabled = locked;
+    const note = $('#vaultLockNote');
+    if (note) {
+      note.hidden = !locked;
+      const t = $('#vaultLockText');
+      if (t) {
+        t.textContent = status === 'over'
+          ? 'Time\'s up: the vault can\'t be opened any more.'
+          : 'Locked until the facilitator starts the game. Your saved words stay put.';
+      }
+    }
+  }
+
+  // Bonus room card: a padlocked, non-clickable card until the vault is open; then a link.
+  function renderBonus(vaultOpened){
+    const card = $('#bonusRoom');
+    const link = $('#bonusRoomLink');
+    const statusEl = $('#bonusStatus');
+    if (!card || !link) return;
+    const complete = vaultOpened && isBonusComplete();
+    const state = !vaultOpened ? 'locked' : (complete ? 'complete' : 'open');
+    card.dataset.state = state;
+    let phrase;
+    if (state === 'locked') {
+      link.removeAttribute('href');
+      link.setAttribute('role', 'link');
+      link.setAttribute('aria-disabled', 'true');
+      phrase = 'Crack the vault to unlock';
+    } else {
+      link.setAttribute('href', BONUS_ROOM.path);
+      link.removeAttribute('role');
+      link.removeAttribute('aria-disabled');
+      phrase = complete ? 'Complete' : 'Play now';
+    }
+    if (statusEl) {
+      statusEl.textContent = state === 'complete' ? '✓ Complete' : (state === 'open' ? 'Play now →' : phrase);
+    }
+    link.setAttribute('aria-label', `Bonus room: ${BONUS_ROOM.label} — ${phrase}`);
+  }
+
+  // -------------------- Clock rendering -----------------------------------
+
+  function clockBand(ms){
+    if (ms == null) return null;
+    if (ms < 2 * MINUTE) return 'red';
+    if (ms < 10 * MINUTE) return 'amber';
+    return 'normal';
+  }
+
+  // The parts of the clock bar that change every second while running.
+  function renderRunningClock(ms, { cracked = false, game = currentGame() } = {}){
+    const bar = $('#hubClock');
+    if (!bar || ms == null) return;
+    const dur = durationMin(game) * MINUTE;
+    const fill = $('#hubClockFill');
+    if (fill) fill.style.width = `${Math.max(0, Math.min(100, (ms / dur) * 100))}%`;
+    const meta = $('#hubClockMeta');
+    if (cracked) {
+      bar.classList.remove('is-amber', 'is-red');
+      if (meta) {
+        meta.textContent = '';
+        meta.append(document.createTextNode('Clock: '), el('strong', null, fmtClock(ms)), document.createTextNode(' left for everyone else'));
+      }
+      return;
+    }
+    const big = $('#hubClockBig');
+    if (big) big.textContent = fmtClock(ms);
+    // (js/game-clock.js announces the 10- and 2-minute marks to screen readers.)
+    const band = clockBand(ms);
+    bar.classList.toggle('is-amber', band === 'amber');
+    bar.classList.toggle('is-red', band === 'red');
+    if (meta) {
+      const bonus = Math.floor(ms / MINUTE) * cfg().timeBonusPerMinute;
+      meta.textContent = '';
+      meta.append(document.createTextNode('Crack the vault now: '), el('strong', null, `+${bonus}`), document.createTextNode(' time bonus'));
+    }
+    const timeNote = $('#tallyTimeNote');
+    if (timeNote && bar.dataset.state === 'running') {
+      timeNote.textContent = `Crack it now: +${Math.floor(ms / MINUTE) * cfg().timeBonusPerMinute}`;
+    }
+  }
+
+  function renderClock({ status, game, result, vaultOpened }){
+    const chip = $('#hubFreeChip');
+    if (chip) chip.hidden = status !== 'free';
+    const bar = $('#hubClock');
+    if (!bar) return;
+    const show = status === 'waiting' || status === 'running' || status === 'over';
+    bar.hidden = !show;
+    if (!show) {
+      bar.dataset.state = '';
+      return;
+    }
+    const label = $('#hubClockLabel');
+    const big = $('#hubClockBig');
+    const text = $('#hubClockText');
+    const meter = $('#hubClockMeter');
+    const final = $('#hubClockFinal');
+    const c = cfg();
+    const state = status === 'running' && vaultOpened ? 'cracked' : status;
+    bar.dataset.state = state;
+    big?.classList.toggle('is-text', state === 'waiting' || state === 'over');
+    if (meter) meter.hidden = !(state === 'running' || state === 'cracked');
+    if (final) final.hidden = state !== 'over';
+    if (state !== 'running') bar.classList.remove('is-amber', 'is-red');
+    const set = (node, value) => { if (node) node.textContent = value; };
+
+    if (state === 'waiting') {
+      set(label, 'Get ready');
+      set(big, 'Waiting for the facilitator to start the game');
+      set(text, `The rooms and the vault unlock when the ${durationMin(game)}-minute clock starts. This page updates by itself: no need to reload.`);
+    } else if (state === 'running') {
+      set(label, 'Time left');
+      set(text, `Crack the vault before the clock runs out. Every whole minute still left when you crack it is worth +${c.timeBonusPerMinute} points.`);
+      renderRunningClock(remainingMs(game), { game });
+    } else if (state === 'cracked') {
+      const finished = result?.finishMs != null;
+      set(label, finished ? 'Vault cracked in' : 'Vault open');
+      set(big, finished ? fmtDuration(result.finishMs) : 'Done!');
+      const skipped = result && result.roomsSolved < PUZZLES.length;
+      const next = skipped
+        ? 'Until time\'s up, rooms you skipped still earn points, or try the bonus room for fun.'
+        : 'Fancy more? Try the bonus room for fun while the clock runs down.';
+      set(text, result?.timeBonus > 0 ? `Your time bonus is locked in: +${result.timeBonus} points. ${next}` : next);
+      renderRunningClock(remainingMs(game), { cracked: true, game });
+    } else if (state === 'over') {
+      set(label, 'The clock has stopped');
+      set(big, 'Time\'s up!');
+      if (vaultOpened && result?.finishMs != null) {
+        set(text, `You cracked the vault in ${fmtDuration(result.finishMs)}. The bonus room is still open, just for fun.`);
+      } else if (vaultOpened) {
+        set(text, 'Your vault is open. The bonus room is still open, just for fun.');
+      } else {
+        set(text, 'The rooms and the vault are closed now. Thanks for playing!');
+      }
+      set($('#hubClockFinalScore'), String(result ? result.total : (readPoints() ?? 0)));
+    }
+  }
+
+  // -------------------- Score rendering -----------------------------------
+
+  function setPart(part, value, note, zero){
+    const li = $(`#scoreBreakdown [data-part="${part}"]`);
+    if (!li) return;
+    const v = li.querySelector('.hub-tally__value');
+    const n = li.querySelector('.hub-tally__note');
+    if (v) v.textContent = value;
+    if (n && note != null) n.textContent = note;
+    li.classList.toggle('is-zero', Boolean(zero));
+  }
+
+  function renderScore({ result, status, game, vaultOpened }){
+    const c = cfg();
+    const heroTotal = $('#scoreTotal');
+    const heroLabel = $('#scoreTotalLabel');
+    if (heroLabel) heroLabel.textContent = status === 'over' ? 'Final score' : 'Score';
+    const sub = $('#scoreSub');
+    if (sub) {
+      sub.textContent = ({
+        free: 'Practice game: no clock, so no time bonus',
+        waiting: 'The clock hasn\'t started yet',
+        running: 'Updates as you play',
+        over: 'Time\'s up: this is your final score'
+      })[status] || 'Updates as you play';
+    }
+
+    if (!result) {
+      // scoring.js missing: show what we know (the running score) and nothing invented.
+      const pts = readPoints() ?? 100;
+      if (heroTotal) heroTotal.textContent = String(pts);
+      setPart('pot', String(pts));
+      setPart('total', String(pts));
+      return;
+    }
+
+    if (heroTotal) heroTotal.textContent = String(result.total);
+    const coreCount = (c.coreRooms || PUZZLES).length;
+    setPart('pot', String(result.pot), 'Starts at 100. Hints and mistakes cost a few.', result.pot === 0);
+    setPart('rooms', `+${result.roomPoints}`, `${result.roomsSolved} of ${coreCount} · +${c.roomPoints} each`, !result.roomPoints);
+    setPart('vault', `+${result.vaultPoints}`,
+      result.vaultCracked ? 'Cracked!' : `+${c.vaultPoints} when you crack it`, !result.vaultPoints);
+
+    const openedBeforeStart = result.notes.includes('Vault opened before the clock started');
+    let timeNote;
+    if (result.vaultCracked && result.minutesLeft != null) {
+      timeNote = `${result.minutesLeft} min left × ${c.timeBonusPerMinute}`;
+    } else if (openedBeforeStart) {
+      timeNote = 'None: opened before the clock started';
+    } else if (status === 'running' && !vaultOpened) {
+      timeNote = `Crack it now: +${Math.floor((remainingMs(game) || 0) / MINUTE) * c.timeBonusPerMinute}`;
+    } else if (status === 'waiting') {
+      timeNote = 'Counts once the clock starts';
+    } else if (status === 'over') {
+      timeNote = 'The vault wasn\'t cracked in time';
+    } else {
+      timeNote = 'Only in a timed game';
+    }
+    setPart('time', `+${result.timeBonus}`, timeNote, !result.timeBonus);
+    setPart('total', String(result.total), status === 'over' ? 'Final score' : 'Highest total wins');
+
+    const notes = $('#tallyNotes');
+    if (notes) {
+      notes.hidden = !result.notes.length;
+      notes.textContent = result.notes.length ? `Note: ${result.notes.join('. ')}.` : '';
+    }
+  }
+
+  // "How scoring works": the numbers come from scoring.CONFIG (the HTML holds fallbacks).
+  function renderScoringRules(game){
+    const c = cfg();
+    $$('[data-cfg]').forEach(node => {
+      const key = node.dataset.cfg;
+      const value = key === 'durationMin' ? durationMin(game) : c[key];
+      if (value != null) node.textContent = String(value);
+    });
+    $$('[data-cfg-example]').forEach(node => { node.textContent = String(20 * c.timeBonusPerMinute); });
+  }
+
+  // The status the page was last drawn for (game:tick re-renders when it changes, e.g. at 00:00).
+  // Screen-reader news about the clock itself comes from js/game-clock.js.
+  let lastStatus;
+  function noteStatusChange(status){
+    lastStatus = status;
   }
 
   // -------------------- Lock helpers --------------------------------------
@@ -454,12 +850,24 @@
     try { window.utils?.pushActivity?.({ type: 'vault', status, detail }); } catch (_) {}
   }
 
+  // A friendly "not now" while the game is waiting to start or after time's up (else null).
+  function vaultClosedMessage(status){
+    if (status === 'waiting') return 'Not yet! The vault opens for business when the facilitator starts the game.';
+    if (status === 'over') return 'Time\'s up: the vault can\'t be opened any more.';
+    return null;
+  }
+
   let checkingVault = false;
 
-  // Opens if and only if all six slots hold their room's code word. Whether the rooms are
+  // Opens if and only if all five slots hold their room's code word. Whether the rooms are
   // finished on this device does not matter: a team may have split up across devices.
   async function tryUnlock(){
     if (checkingVault || isVaultOpened()) return;
+    const closed = vaultClosedMessage(gameStatus());
+    if (closed) {
+      setFeedback(closed);
+      return;
+    }
     const total = ROOMS.length;
     const filledCount = wordInputs.filter(i => normalizeWord(i.value)).length;
     if (wordInputs.length !== total || filledCount < total) {
@@ -480,6 +888,15 @@
     }
 
     if (correct === total) {
+      const closedNow = vaultClosedMessage(gameStatus()); // the clock may have run out meanwhile
+      if (closedNow) {
+        setFeedback(closedNow);
+        renderProgress();
+        return;
+      }
+      // The server stamps the real openedAt; until it does, the score uses this moment.
+      const crackedAt = serverNow();
+      saveProvisional(crackedAt);
       setFeedback('Vault cracked! Operation complete.', true);
       chest?.classList.add('open');
       openBtn?.setAttribute('aria-label', 'Vault open');
@@ -490,6 +907,11 @@
       } catch (_) {}
       logVault('opened', 'Vault cracked');
       window.stateSync?.saveNow?.('vault-opened');
+      try {
+        window.dispatchEvent(new CustomEvent('vault:opened', {
+          detail: { team: readUser()?.username || null, openedAt: crackedAt, provisional: true }
+        }));
+      } catch (_) {}
       renderProgress();
       setTimeout(() => {
         window.location.href = 'celebration.html';
@@ -518,11 +940,8 @@
     };
   }
 
-  // -------------------- Boot ----------------------------------------------
+  // ---------- Score log ----------------------------------------------------
 
-  // ---------- Scoreboard ---------------------------------------------------
-
-  const scoreEl = $('#scoreTotal');
   const scoreLogBtn = $('#scoreLogBtn');
   const scoreLogPanel = $('#scoreLog');
 
@@ -537,7 +956,7 @@
 
   function renderScoreLog() {
     if (!scoreLogPanel) return;
-    const log = window.utils.points.log().slice().reverse();
+    const log = (window.utils?.points?.log?.() || []).slice().reverse();
     if (!log.length) {
       scoreLogPanel.textContent = 'No adjustments yet.';
       return;
@@ -553,36 +972,48 @@
     scoreLogPanel.appendChild(ul);
   }
 
-  function updateScore(total) {
-    if (!scoreEl) return;
-    const t = total ?? window.utils.points.get();
-    scoreEl.textContent = String(t).padStart(3, '0');
-  }
-
-  window.addEventListener('score:change', (ev) => {
-    updateScore(ev?.detail?.total);
-    if (scoreLogPanel && !scoreLogPanel.hasAttribute('hidden')) {
-      renderScoreLog();
-    }
-  });
-
   function initScoreboard() {
-    window.utils.points.ensure();
-    updateScore();
+    window.utils?.points?.ensure?.();
     if (scoreLogBtn && scoreLogPanel) {
       scoreLogBtn.addEventListener('click', () => {
         const hidden = scoreLogPanel.hasAttribute('hidden');
         if (hidden) {
           renderScoreLog();
           scoreLogPanel.removeAttribute('hidden');
-          scoreLogBtn.textContent = 'Hide log';
         } else {
           scoreLogPanel.setAttribute('hidden', 'hidden');
-          scoreLogBtn.textContent = 'View log';
         }
+        scoreLogBtn.textContent = hidden ? 'Hide score log' : 'View score log';
+        scoreLogBtn.setAttribute('aria-expanded', hidden ? 'true' : 'false');
       });
     }
   }
+
+  // -------------------- Live updates ---------------------------------------
+
+  window.addEventListener('score:change', () => {
+    if (!booted) return;
+    renderProgress();
+    if (scoreLogPanel && !scoreLogPanel.hasAttribute('hidden')) {
+      renderScoreLog();
+    }
+  });
+
+  // The facilitator started / ended the game, or switched mode: no reload needed.
+  window.addEventListener('game:change', () => renderProgress());
+  window.addEventListener('vault:opened', () => renderProgress());
+
+  window.addEventListener('game:tick', (ev) => {
+    if (!booted) return;
+    const status = gameStatus();
+    if (status !== lastStatus) { renderProgress(); return; } // e.g. the clock just ran out
+    if (status !== 'running') return;
+    const fromTick = Number(ev?.detail?.remainingMs);
+    const ms = Number.isFinite(fromTick) ? Math.max(0, fromTick) : remainingMs();
+    renderRunningClock(ms, { cracked: isVaultOpened() });
+  });
+
+  // -------------------- Boot ----------------------------------------------
 
   document.addEventListener('DOMContentLoaded', () => {
     // Session guard (teams only)
@@ -592,12 +1023,7 @@
       return;
     }
 
-    aliasInput = $('#playerAliasInput');
-    aliasDisplay = $('#playerAliasDisplay');
-    const storedAlias = window.utils?.getPlayerAlias?.() || '';
-    window.utils?.setPlayerAlias?.(storedAlias);
-    updateAliasUI(storedAlias);
-
+    booted = true;
     ensureLogout();
     window.vault?.refresh();
     renderTeamName();
@@ -615,8 +1041,8 @@
         refreshFromSync();
       }
     });
+    // The total is ours (scoring.js); the shared HUD only flashes the latest +/- change.
     window.utils?.initStatusHud('mission', {
-      score: '#scoreTotal',
       delta: '#missionPointsDelta',
       progressFill: '#missionProgressFill'
     });
@@ -624,43 +1050,37 @@
     const pKey = progressKey(user);
     window.addEventListener('storage', (ev) => {
       if (!ev.key) return;
-      if (ev.key === pKey || ev.key === metaKey) {
+      if (ev.key === pKey || ev.key === metaKey || ev.key === 'vault_opened') {
         renderProgress();
-      }
-      if (ev.key === 'player_alias') {
-        const refreshedAlias = window.utils?.getPlayerAlias?.() || '';
-        updateAliasUI(refreshedAlias);
-        renderTeamName();
       }
     });
     initVaultInputs();
     window.addEventListener('state-sync:applied', restoreEntries);
     initScoreboard();
 
-    if (aliasInput) {
-      const syncAlias = (value) => {
-        const sanitized = window.utils?.setPlayerAlias?.(value) ?? '';
-        updateAliasUI(sanitized);
-        renderTeamName();
-      };
-      aliasInput.addEventListener('input', (ev) => {
-        syncAlias(ev.target.value);
-      });
-      aliasInput.addEventListener('blur', (ev) => {
-        syncAlias(ev.target.value);
-      });
-    }
-
     unlockBtn?.addEventListener('click', tryUnlock);
 
-    // "Open the vault" call-to-action: jump to the first empty slot.
+    // In-page call-to-action ("Open the vault", "See your final score"): scroll there; for the
+    // vault, focus the first empty slot.
     $('#startChallengesBtn')?.addEventListener('click', (e) => {
       const href = e.currentTarget.getAttribute('href') || '';
       if (!href.startsWith('#')) return;
       e.preventDefault();
-      $('#vaultChest')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      const target = wordInputs.find(i => !(i.value || '').trim()) || unlockBtn;
-      setTimeout(() => target?.focus({ preventScroll: true }), 350);
+      if (href === '#vaultHeading') {
+        $('#vaultChest')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const target = wordInputs.find(i => !(i.value || '').trim()) || unlockBtn;
+        setTimeout(() => target?.focus({ preventScroll: true }), 350);
+      } else {
+        const target = $(href);
+        target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setTimeout(() => target?.focus?.({ preventScroll: true }), 350);
+      }
+    });
+    $('#hubClockFinal a')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const target = $('#hubScore');
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setTimeout(() => target?.focus?.({ preventScroll: true }), 350);
     });
 
     // Enter in any slot moves to the next one; Enter in the last slot tries the vault.

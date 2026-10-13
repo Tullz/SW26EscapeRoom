@@ -19,6 +19,7 @@
   <title>Cyber Escape Rooms — OSINT Investigation</title>
 
   <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/game-clock.css" />
 
   <style>
     /* === Social-media profile theme === */
@@ -665,6 +666,7 @@
   <script src="js/state-sync.js" defer></script>
   <script src="js/session.js" defer></script>
   <script src="js/vault.js" defer></script>
+  <script src="js/game-clock.js" defer></script>
   <script src="js/osint.js" defer></script>
 </head>
 
@@ -703,9 +705,8 @@
             <li data-vault-key="incident">&bull;</li>
             <li data-vault-key="mfa">&bull;</li>
             <li data-vault-key="crypto">&bull;</li>
-            <li data-vault-key="forensics">&bull;</li>
           </ol>
-          <span class="vault-status__count">0/6</span>
+          <span class="vault-status__count">0/5</span>
         </div>
         <button class="nav-btn alert nav-btn--logout" type="button" data-action="logout">Logout</button>
       </div>
@@ -739,7 +740,7 @@
     <!-- Status HUD -->
     <section class="status-hud" aria-label="Team status">
       <div class="points-box">
-        <p class="points-box__label">Team points</p>
+        <p class="points-box__label">Points kept</p>
         <p class="points-box__value" id="osintPointsTotal">000</p>
         <p class="points-box__delta" id="osintPointsDelta" aria-live="polite"></p>
       </div>

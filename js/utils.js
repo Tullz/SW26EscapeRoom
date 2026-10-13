@@ -58,8 +58,15 @@
   }
 
   // ---------- User & progress ---------------------------------------------
+  // Usernames are lower-case everywhere (storage keys and the server's team key). A session
+  // saved before that rule is normalised once here.
   function getUser() {
-    return getJSON('user', null);
+    const user = getJSON('user', null);
+    if (user && typeof user.username === 'string' && user.username !== user.username.toLowerCase()) {
+      user.username = user.username.toLowerCase();
+      try { setJSON('user', user); } catch (_) {}
+    }
+    return user;
   }
   function saveUser(user) {
     setJSON('user', user);
@@ -511,6 +518,9 @@
     'active_role'
   ];
 
+  // Per-tab copies (sessionStorage): the game clock's last answer (js/game-clock.js).
+  const SESSION_TAB_KEYS = ['game_clock'];
+
   function clearSessionKeys(extraKeys = []) {
     const removals = new Set([...SESSION_KEYS, ...extraKeys.filter(Boolean)]);
     removals.forEach((key) => {
@@ -519,6 +529,9 @@
       } catch (_) {
         /* ignore storage issues */
       }
+    });
+    SESSION_TAB_KEYS.forEach((key) => {
+      try { sessionStorage.removeItem(key); } catch (_) {}
     });
   }
 

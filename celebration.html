@@ -3,24 +3,234 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Victory screen for Cyber Escape Rooms teams who unlock the vault." />
+  <meta name="description" content="Results for Cyber Escape Rooms teams who crack the vault: score breakdown, finish time and the bonus room." />
   <link rel="icon" href="assets/favicon.png" type="image/png" />
-  <title>Cyber Escape Rooms — Celebration</title>
+
+  <!-- Tight CSP (local assets only) -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 img-src 'self' data:;
+                 style-src 'self' 'unsafe-inline';
+                 script-src 'self';
+                 connect-src 'self';
+                 object-src 'none';
+                 base-uri 'self'">
+
+  <title>Cyber Escape Rooms — Vault Cracked</title>
   <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/game-clock.css" />
   <script src="js/accessibility.js" defer></script>
   <script src="js/utils.js" defer></script>
+  <script src="js/scoring.js" defer></script>
+  <script src="js/game-clock.js" defer></script>
+  <script src="js/state-sync.js" defer></script>
   <script src="js/session.js" defer></script>
+  <script src="js/vault.js" defer></script>
   <script src="js/celebration.js" defer></script>
+
+  <style>
+    /* ===== Results page (celebration.html only) ========================== */
+    .celebration [hidden] { display: none !important; }
+    html { background: var(--bg-1); }
+    body.celebration {
+      background:
+        radial-gradient(90% 60% at 50% 0%, rgba(9, 255, 136, .16), transparent 70%),
+        linear-gradient(180deg, #0c1420, var(--bg-1));
+    }
+    .celebration-main { position: relative; overflow: hidden; }
+    .celebration-card {
+      position: relative;
+      z-index: 1;
+      max-width: 560px;
+      display: grid;
+      gap: 1.1rem;
+      justify-items: center;
+      border-color: rgba(9, 255, 136, .35);
+      box-shadow: 0 30px 60px rgba(0, 0, 0, .45), 0 0 0 1px rgba(9, 255, 136, .08), 0 0 80px rgba(9, 255, 136, .08);
+    }
+    .celebration-card .glow { margin: 0; font-size: clamp(2rem, 6vw, 2.8rem); }
+    .celebration-lead { margin: 0; }
+    .cele-eyebrow {
+      margin: 0;
+      font-size: .78rem;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .cele-eyebrow strong { color: var(--accent); letter-spacing: .12em; }
+
+    /* The open padlock pops in */
+    .cele-lock {
+      width: 84px; height: 84px;
+      border-radius: 24px;
+      display: grid; place-items: center;
+      color: #06140d;
+      background: radial-gradient(circle at 30% 25%, #7dffc0, var(--accent) 60%);
+      box-shadow: 0 0 0 8px rgba(9, 255, 136, .12), 0 0 48px rgba(9, 255, 136, .45);
+      animation: cele-pop .7s cubic-bezier(.2, 1.4, .4, 1) both;
+    }
+    .cele-lock svg { width: 44px; height: 44px; }
+    .cele-lock .shackle { transform-origin: 16px 11px; animation: cele-shackle .6s .45s ease-out both; }
+    @keyframes cele-pop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    @keyframes cele-shackle { from { transform: translateY(2px) rotate(0); } to { transform: translateY(0) rotate(-18deg); } }
+
+    .cele-time {
+      display: inline-flex;
+      align-items: baseline;
+      gap: .5rem;
+      padding: .45rem 1rem;
+      border-radius: 999px;
+      border: 1px solid rgba(9, 255, 136, .4);
+      background: rgba(9, 255, 136, .08);
+      color: var(--ink);
+      font-size: .95rem;
+    }
+    .cele-time strong {
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-variant-numeric: tabular-nums;
+      font-size: 1.3rem;
+      color: var(--accent);
+    }
+
+    /* Score receipt */
+    .cele-score {
+      width: 100%;
+      text-align: left;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(10, 14, 20, .6);
+      padding: .9rem 1.1rem;
+    }
+    .cele-score h2 {
+      margin: 0 0 .5rem;
+      font-size: .78rem;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .cele-score dl { margin: 0; display: grid; gap: .1rem; }
+    .cele-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: baseline;
+      gap: .25rem 1rem;
+      padding: .45rem 0;
+      border-bottom: 1px dashed rgba(139, 148, 158, .25);
+    }
+    .cele-row dt { color: var(--ink); }
+    .cele-row dt small { display: block; color: var(--muted); font-size: .8rem; }
+    .cele-row dd {
+      margin: 0;
+      font-family: "JetBrains Mono", Consolas, monospace;
+      font-variant-numeric: tabular-nums;
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: #fff;
+    }
+    .cele-row--total { border-bottom: 0; padding-top: .7rem; }
+    .cele-row--total dt { font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .1em; font-size: .9rem; }
+    .cele-row--total dd { font-size: 1.9rem; color: var(--accent); }
+    .cele-notes { margin: .5rem 0 0; color: var(--warn); font-size: .85rem; }
+
+    /* Bonus room callout */
+    .cele-bonus {
+      width: 100%;
+      display: grid;
+      gap: .35rem;
+      text-align: left;
+      padding: .85rem 1.1rem;
+      border-radius: 14px;
+      border: 1px solid rgba(210, 168, 255, .4);
+      background: linear-gradient(160deg, rgba(210, 168, 255, .1), rgba(10, 14, 20, .55));
+    }
+    .cele-bonus h2 { margin: 0; font-size: 1.05rem; color: #d2a8ff; }
+    .cele-bonus p { margin: 0; color: var(--muted); font-size: .9rem; line-height: 1.45; }
+    .cele-bonus p strong { color: var(--ink); font-weight: 600; }
+
+    .celebration-actions { margin-top: .25rem; width: 100%; display: grid; grid-template-columns: minmax(0, 1fr); gap: .7rem; }
+    .celebration-actions .btn { width: 100%; justify-content: center; text-align: center; gap: .5rem; }
+    .cele-bonus-btn.btn { background: #d2a8ff; color: #1a0f2b; border-color: transparent; font-weight: 700; }
+    .cele-bonus-btn.btn:hover { box-shadow: 0 10px 24px rgba(210, 168, 255, .25); }
+
+    /* Confetti (built by js/celebration.js) */
+    .cele-confetti { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 2; }
+    .cele-confetti i {
+      position: absolute;
+      top: -12px;
+      width: 8px; height: 14px;
+      border-radius: 2px;
+      opacity: .85;
+      animation: cele-fall var(--dur, 3.2s) var(--delay, 0s) linear both;
+    }
+    @keyframes cele-fall {
+      from { transform: translate3d(0, 0, 0) rotate(0deg); }
+      to { transform: translate3d(var(--drift, 0px), 105vh, 0) rotate(var(--spin, 540deg)); opacity: .9; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .cele-lock, .cele-lock .shackle { animation: none; }
+      .cele-lock .shackle { transform: rotate(-18deg); }
+      .cele-confetti { display: none; }
+    }
+    @media (max-width: 520px) {
+      .celebration-main { padding: 1rem .25rem; align-items: flex-start; }
+      .celebration-card { padding: 1.4rem 1.1rem; }
+    }
+  </style>
 </head>
-<body class="celebration" data-session="team">
+<body class="celebration" data-session="team" data-no-clock-pill>
   <a class="skip-link" href="#main">Skip to content</a>
   <main id="main" class="celebration-main" role="main" tabindex="-1">
+    <div class="cele-confetti" id="confetti" aria-hidden="true"></div>
+
     <section class="celebration-card" aria-labelledby="celebrationHeading">
+      <span class="cele-lock" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="11" width="16" height="10" rx="2"/>
+          <path class="shackle" d="M8 11V7a4 4 0 0 1 8 0"/>
+          <circle cx="12" cy="16" r="1.5"/>
+        </svg>
+      </span>
+      <p class="cele-eyebrow">Team <strong id="celeTeam">TEAM</strong></p>
       <h1 id="celebrationHeading" class="glow">Vault Unlocked!</h1>
-      <p class="celebration-lead">Mission accomplished. Your crew cracked every puzzle and opened the vault.</p>
+      <p class="celebration-lead">Mission accomplished. Your crew found all five code words and cracked the vault.</p>
+
+      <p class="cele-time" id="celeTime" hidden>Cracked in <strong id="celeTimeValue">--:--</strong></p>
+
+      <section class="cele-score" aria-labelledby="celeScoreHeading">
+        <h2 id="celeScoreHeading">Your score</h2>
+        <dl>
+          <div class="cele-row">
+            <dt>Points kept <small>Started at 100, minus hints and mistakes</small></dt>
+            <dd id="celePot">100</dd>
+          </div>
+          <div class="cele-row">
+            <dt>Rooms solved <small id="celeRoomsNote">0 of 5 · +20 each</small></dt>
+            <dd id="celeRooms">+0</dd>
+          </div>
+          <div class="cele-row">
+            <dt>Vault <small>Cracked!</small></dt>
+            <dd id="celeVault">+0</dd>
+          </div>
+          <div class="cele-row" id="celeTimeRow" hidden>
+            <dt>Time bonus <small id="celeTimeNote">+2 per minute left</small></dt>
+            <dd id="celeTimeBonus">+0</dd>
+          </div>
+          <div class="cele-row cele-row--total">
+            <dt>Total</dt>
+            <dd id="celeTotal">100</dd>
+          </div>
+        </dl>
+        <p class="cele-notes" id="celeNotes" hidden></p>
+      </section>
+
+      <section class="cele-bonus" aria-labelledby="celeBonusHeading">
+        <h2 id="celeBonusHeading">Bonus room unlocked: Network Forensics</h2>
+        <p>Finished early? Piece together the attack timeline from the evidence left behind. <strong>It doesn't change your score:</strong> it's just for fun.</p>
+      </section>
+
       <div class="celebration-actions">
-        <a class="btn" href="game.html">Back to Mission Hub</a>
-        <a class="btn ghost" href="endless.html">Try the Endless Challenge</a>
+        <a class="btn cele-bonus-btn" href="forensics.html" id="celeBonusBtn">Play the bonus room <span aria-hidden="true">→</span></a>
+        <a class="btn ghost" href="game.html">Back to the Mission Hub</a>
       </div>
     </section>
   </main>

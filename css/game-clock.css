@@ -1,0 +1,161 @@
+/* game-clock.css — header clock pill + the "not started / time's up" room lock (js/game-clock.js) */
+
+/* ===== Header clock pill ================================================== */
+.gc-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .35rem .6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(30, 41, 59, .35);
+  backdrop-filter: blur(4px);
+  color: var(--muted);
+  font-size: .82rem;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  transition: color .2s ease, border-color .2s ease, background .2s ease;
+}
+.gc-pill[hidden] { display: none; }
+.site-header .header-actions .gc-pill { order: 3; }
+/* Slightly tighter spacing so the extra pill still fits on one header row at laptop widths. */
+.site-header .header-actions:has(> .gc-pill:not([hidden])) { column-gap: .6rem; }
+
+.gc-pill__dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.gc-pill[data-state="waiting"] {
+  color: var(--brand);
+  border-color: rgba(88, 166, 255, .45);
+  background: var(--brand-soft);
+}
+.gc-pill[data-state="waiting"] .gc-pill__dot { animation: gcPulse 1.8s ease-in-out infinite; }
+
+.gc-pill[data-state="running"] {
+  color: var(--accent);
+  border-color: rgba(9, 255, 136, .4);
+  background: rgba(9, 255, 136, .08);
+}
+.gc-pill[data-state="running"] .gc-pill__dot { box-shadow: 0 0 8px var(--accent); }
+
+.gc-pill[data-state="warn"] {
+  color: var(--warn);
+  border-color: rgba(255, 166, 87, .55);
+  background: rgba(255, 166, 87, .12);
+}
+
+.gc-pill[data-state="danger"] {
+  color: #ff8a8a;
+  border-color: rgba(255, 85, 85, .6);
+  background: rgba(255, 85, 85, .14);
+}
+.gc-pill[data-state="danger"] .gc-pill__dot { animation: gcBlink 1s steps(2, start) infinite; }
+
+.gc-pill[data-state="over"] {
+  color: #ffb4b4;
+  border-color: rgba(255, 105, 105, .5);
+  background: rgba(255, 85, 85, .1);
+}
+
+@keyframes gcPulse { 50% { opacity: .3; } }
+@keyframes gcBlink { to { visibility: hidden; } }
+
+/* Phones: the vault tracker takes its own row, so the pill joins the button row above it. */
+@media (max-width: 720px) {
+  .site-header .header-actions .gc-pill { order: 2; padding: .3rem .6rem; font-size: .8rem; }
+}
+
+/* ===== Room lock overlay (core rooms, waiting / time's up) ================ */
+html.gc-locked,
+html.gc-locked body { overflow: hidden; }
+
+.gc-lock {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  overflow-y: auto;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(88, 166, 255, .12), transparent 60%),
+    rgba(6, 10, 16, .9);
+  backdrop-filter: blur(6px);
+  animation: gcFadeIn .25s ease;
+}
+
+.gc-lock__card {
+  width: min(100%, 34rem);
+  padding: clamp(1.5rem, 5vw, 2.5rem) clamp(1.1rem, 5vw, 2.25rem);
+  border: 1px solid var(--border);
+  border-top: 4px solid var(--brand);
+  border-radius: 18px;
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+  text-align: center;
+  color: var(--ink);
+}
+.gc-lock[data-state="over"] .gc-lock__card { border-top-color: var(--warn); }
+
+.gc-lock__icon {
+  width: 4.5rem;
+  height: 4.5rem;
+  margin: 0 auto 1rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--brand);
+  background: var(--brand-soft);
+  border: 1px solid rgba(88, 166, 255, .45);
+}
+.gc-lock[data-state="over"] .gc-lock__icon {
+  color: var(--warn);
+  background: rgba(255, 166, 87, .14);
+  border-color: rgba(255, 166, 87, .5);
+}
+
+.gc-lock__title {
+  margin: 0 0 .75rem;
+  font-size: clamp(1.6rem, 5.5vw, 2.25rem);
+  line-height: 1.2;
+  color: #fff;
+}
+
+.gc-lock__text {
+  margin: 0 auto 1.6rem;
+  max-width: 28rem;
+  font-size: 1.08rem;
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+.gc-lock__btn.btn {
+  min-height: 3.25rem;
+  padding: .95rem 1.75rem;
+  font-size: 1.1rem;
+  font-weight: 700;
+  border-radius: 12px;
+}
+.gc-lock__btn.btn:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px var(--ring);
+}
+
+@media (max-width: 480px) {
+  .gc-lock__btn.btn { width: 100%; }
+}
+
+@keyframes gcFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .gc-lock { animation: none; }
+  .gc-pill__dot { animation: none !important; }
+}

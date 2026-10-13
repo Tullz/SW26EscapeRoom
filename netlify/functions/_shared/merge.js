@@ -10,6 +10,8 @@
 //    after that completion (vault.reopened[room] timestamp);
 //  - per-room progress meta: the newer entry (updatedAt) wins;
 //  - vault words / "opened": union; typed vault entries: the incoming side wins;
+//  - vault.solvedAt / vault.openedAt (server time stamps): the remote side's, never the
+//    incoming side's; a room's stamp goes when the room is reopened;
 //  - score: union of both score logs (entries the other side lacks are applied
 //    on top), or taken verbatim from the incoming side when mode is 'local' (admin);
 //  - activity: union.
@@ -113,6 +115,15 @@ export const StateMerge = (function () {
     if (lv.entries && typeof lv.entries === 'object') out.entries = lv.entries;
     else if (rv.entries && typeof rv.entries === 'object') out.entries = rv.entries;
     else delete out.entries;
+    // Server time stamps (solvedAt per room, openedAt) are only ever written by the server:
+    // keep the remote copy's, ignore the arriving side's, and drop a room's stamp once the
+    // room is no longer complete (admin reopen).
+    const solvedAt = {};
+    Object.entries(obj(rv.solvedAt)).forEach(([k, at]) => {
+      if (progress[k] === true && num(at) > 0) solvedAt[k] = num(at);
+    });
+    if (Object.keys(solvedAt).length) out.solvedAt = solvedAt; else delete out.solvedAt;
+    if (out.opened === true && num(rv.openedAt) > 0) out.openedAt = num(rv.openedAt); else delete out.openedAt;
     return out;
   }
 
