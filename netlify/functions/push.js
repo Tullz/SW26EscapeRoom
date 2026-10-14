@@ -1,4 +1,4 @@
-// Admin writes for many teams at once ("Reset all teams", "Push to Neon"). Admin token only
+// Admin writes for many teams at once ("Reset all teams"). Admin token only
 // (a team token is refused and flagged).
 import { createClient, ensureTeamStateTable, dbNowMs, DEFAULT_PROGRESS, errorResponse } from './_shared/db.js';
 import { mergeStates } from './_shared/merge.js';
@@ -88,7 +88,7 @@ export default async (req) => {
       await client.query('begin');
       try {
         // A new resetVersion (admin "Reset all teams", or a single-team reset) replaces the row.
-        // The same resetVersion (admin "Push to Neon" from a possibly stale dashboard copy) is
+        // The same resetVersion (a possibly stale dashboard copy of the same reset) is
         // merged, so it can't undo a room a team completed since the dashboard last pulled.
         const { rows } = await client.query('select * from team_state where team = $1 limit 1 for update', [team]);
         const stored = rows[0];

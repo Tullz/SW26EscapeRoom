@@ -84,7 +84,6 @@
         </div>
       </div>
     </div>
-    <div id="spotlightLayer" aria-hidden="true"></div>
 
     <!-- Game control: mode (free roam / competition) and the shared 60-minute clock -->
     <section class="card admin-game mt-2" id="gamePanel" data-status="unknown" aria-labelledby="gameHeading">
@@ -221,22 +220,19 @@
         </section>
 
         <div class="admin-tools-grid mt-2">
-          <!-- Data Sync (Netlify ↔ Neon) — hooks only -->
+          <!-- Data: refresh from the database now, or save every team's results to a file -->
           <section class="card" aria-labelledby="syncHeading">
-          <h2 id="syncHeading">Data Sync (Netlify ↔ Neon)</h2>
+          <h2 id="syncHeading">Data</h2>
           <p class="mt-1" style="color:var(--muted)">
-            The dashboard pulls every team's progress from the database every 25 seconds. Use these to force it now.
+            The dashboard refreshes every team's progress from the database every 25 seconds. Refresh now does it straight away.
+            Download snapshot saves every team's results as a file: do it right after the game ends.
           </p>
           <div class="flex mt-1 control-row">
-            <button class="btn" id="pullNeonBtn" type="button" title="Fetch latest stats from Neon">Pull from Neon</button>
-            <button class="btn ghost" id="pushNeonBtn" type="button" title="Write local stats to Neon">Push to Neon</button>
+            <button class="btn" id="refreshNowBtn" type="button" title="Fetch every team's progress from the database now">Refresh now</button>
+            <button class="btn ghost" id="downloadStateBtn" type="button">Download snapshot</button>
           </div>
           <p id="syncStatus" class="mt-1 muted" aria-live="polite"></p>
           <div class="sync-diagnostics mt-1" id="syncDiagnostics" aria-live="polite"></div>
-          <div class="flex mt-1 control-row">
-            <button class="btn ghost" id="validateDataBtn" type="button">Run validation</button>
-            <button class="btn ghost" id="downloadStateBtn" type="button">Download snapshot</button>
-          </div>
         </section>
 
           <!-- Game Controls / Utilities -->
@@ -244,13 +240,7 @@
             <h2 id="controlsHeading">Controls</h2>
             <div class="flex mt-1 control-row">
               <button class="btn" id="resetAllProgress" type="button" title="Wipes every team's rooms, code words, vault and points. The game clock is not changed.">Reset All Teams</button>
-              <button class="btn ghost" id="toggleSpotlight" type="button">Toggle Spotlight</button>
-              <button class="btn ghost" id="togglePodium" type="button">Toggle Podium</button>
-              <button class="btn ghost" id="triggerConfetti" type="button">Celebrate</button>
-            </div>
-            <div class="flex mt-1 control-row">
-              <a class="btn ghost" id="backToLogin" href="index.html">Back to Login</a>
-              <button class="btn" type="button" data-action="logout">Logout</button>
+              <button class="btn ghost" id="togglePodium" type="button" title="Confetti and the top 3 teams, on this screen only">Toggle Podium</button>
             </div>
           </section>
         </div>

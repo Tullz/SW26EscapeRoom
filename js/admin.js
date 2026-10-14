@@ -15,7 +15,7 @@
   // ---------- Helpers ------------------------------------------------------
 
   // Seed list (usernames are lower-case); any team found in the database is added on each Neon pull.
-  const TEAMS = ['testteam', 'rajasinghanp', 'morganl', 'claxtonj'];
+  const TEAMS = ['testteam', 'rajasinghanp', 'morganl', 'claxtonj', 'bakert', 'diazj'];
 
   // The 5 core rooms are in the vault and earn room points. Forensics is a bonus room: it opens
   // after the vault, never changes the score, but its completion is still recorded (and shown).
@@ -2068,45 +2068,31 @@
       refresh();
     });
 
-    // Confetti / Spotlight overlays (simple class toggles)
+    // Podium overlay: confetti + the top 3, on the admin's screen only (simple class toggles)
     const confettiLayer = qs('#confettiLayer');
-    const spotlightLayer = qs('#spotlightLayer');
 
-    const hideCelebrate = () => {
+    const hidePodium = () => {
       if (!confettiLayer) return;
       confettiLayer.classList.remove('is-active', 'podium-visible');
       confettiLayer.setAttribute('aria-hidden', 'true');
     };
 
-    const showCelebrate = (withPodium = false) => {
+    const showPodium = () => {
       if (!confettiLayer) return;
       refresh(); // fills the podium from the current leaderboard
-      confettiLayer.classList.add('is-active');
-      confettiLayer.classList.toggle('podium-visible', withPodium);
+      confettiLayer.classList.add('is-active', 'podium-visible');
       confettiLayer.setAttribute('aria-hidden', 'false');
     };
 
-    qs('#celebrateClose')?.addEventListener('click', hideCelebrate);
-
-    qs('#triggerConfetti')?.addEventListener('click', () => {
-      showCelebrate(false);
-      announce('Celebration!');
-    });
-
-    qs('#toggleSpotlight')?.addEventListener('click', () => {
-      if (!spotlightLayer) return;
-      const active = spotlightLayer.classList.toggle('is-active');
-      spotlightLayer.setAttribute('aria-hidden', active ? 'false' : 'true');
-      announce(active ? 'Spotlight on' : 'Spotlight off');
-    });
+    qs('#celebrateClose')?.addEventListener('click', hidePodium);
 
     qs('#togglePodium')?.addEventListener('click', () => {
       if (!confettiLayer) return;
       const showing = !confettiLayer.classList.contains('podium-visible');
       if (showing) {
-        showCelebrate(true);
+        showPodium();
       } else {
-        hideCelebrate();
+        hidePodium();
       }
       announce(showing ? 'Podium shown' : 'Podium hidden');
     });
@@ -2144,8 +2130,9 @@
       }
     };
 
-    // Neon sync hooks (optional Netlify Functions)
-    qs('#pullNeonBtn')?.addEventListener('click', async () => {
+    // Refresh now: the same pull the dashboard does every 25 seconds. (Admin edits save
+    // themselves, so there is no "push" button: it could undo points a team lost since the last pull.)
+    qs('#refreshNowBtn')?.addEventListener('click', async () => {
       const status = qs('#syncStatus');
       try {
         forceChartAnimation = true;
@@ -2153,55 +2140,6 @@
         refresh();
       } catch (_) {
         refresh();
-      }
-    });
-
-    qs('#pushNeonBtn')?.addEventListener('click', async () => {
-      const status = qs('#syncStatus');
-      try {
-        if (status) {
-          status.textContent = 'Pushing to Neon…';
-          status.classList.remove('status-ok', 'status-warn');
-        }
-        const payload = TEAMS.map(getTeamStateSnapshot);
-        const res = await fetch('/.netlify/functions/push', {
-          method: 'POST',
-          headers: authHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ teams: payload })
-        });
-        if (isAuthStatus(res.status)) {
-          noteLoginExpired();
-          throw loginExpiredError();
-        }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        noteLoginOk();
-        const body = await res.json().catch(() => ({ ok: true }));
-        if (status) {
-          status.textContent = 'Push complete.';
-          status.classList.add('status-ok');
-        }
-        announce('Pushed stats to Neon.');
-        noteSync('Push', body?.updated ? `Synced ${body.updated} teams to Neon.` : 'Push complete.');
-      } catch (e) {
-        if (status) {
-          status.textContent = `Push failed: ${e.message}`;
-          status.classList.add('status-warn');
-        }
-        noteSync('Push', e.message, 'warn');
-      }
-    });
-
-    qs('#validateDataBtn')?.addEventListener('click', () => {
-      const problems = teamRows.flatMap(row => (row.issues || []).map(issue => `${row.team}: ${issue}`));
-      if (!problems.length) {
-        noteSync('Validation', 'No data issues detected.', 'info');
-      } else {
-        noteSync('Validation', `${problems.length} data issue(s) flagged. See highlighted team cards.`, 'warn');
-        if (typeof console !== 'undefined') {
-          const payload = problems.map(text => ({ issue: text }));
-          if (typeof console.table === 'function') console.table(payload);
-          else console.log(payload);
-        }
       }
     });
 
@@ -2223,7 +2161,7 @@
   async function syncFromNeon(statusEl) {
     try {
       if (statusEl) {
-        statusEl.textContent = 'Pulling from Neon…';
+        statusEl.textContent = 'Refreshing…';
         statusEl.classList.remove('status-ok', 'status-warn');
       }
       const res = await fetch('/.netlify/functions/pull', { method: 'GET', headers: authHeaders(), cache: 'no-store' });
@@ -2260,19 +2198,19 @@
         if (issues.length) corrections.push({ team, issues });
       });
       if (statusEl) {
-        statusEl.textContent = 'Pulled latest stats from Neon.';
+        statusEl.textContent = 'Up to date.';
         statusEl.classList.add('status-ok');
       }
-      noteSync('Pull', `Pulled ${data.teams.length} team states${corrections.length ? `; ${corrections.length} cleaned` : ''}.`);
+      noteSync('Refresh', `Pulled ${data.teams.length} team states${corrections.length ? `; ${corrections.length} cleaned` : ''}.`);
       return { teams: data.teams, corrections };
     } catch (e) {
       if (statusEl) {
-        statusEl.textContent = `Pull failed: ${e.message}`;
+        statusEl.textContent = `Refresh failed: ${e.message}`;
         statusEl.classList.add('status-warn');
       }
       // An expired login is shown in the banner; don't fill the console every 25 seconds.
       if (!e?.loginExpired) console.error('Neon sync failed:', e);
-      noteSync('Pull', e.message, 'warn');
+      noteSync('Refresh', e.message, 'warn');
       throw e;
     }
   }
@@ -2318,7 +2256,7 @@
     const throttledRefresh = window.utils?.throttle ? window.utils.throttle(refreshAll, 300) : refreshAll;
     window.addEventListener('storage', throttledRefresh);
     setInterval(() => {
-      syncFromNeon().then(() => refreshAll()).catch((err) => noteSync('Auto pull', err.message, 'warn'));
+      syncFromNeon().then(() => refreshAll()).catch((err) => noteSync('Auto refresh', err.message, 'warn'));
     }, 25000);
   });
 

@@ -3688,8 +3688,7 @@ h1.glow { font-size: clamp(1.9rem, 4.5vw, 3.2rem); }
   gap: .5rem;
 }
 
-#confettiLayer,
-#spotlightLayer {
+#confettiLayer {
   position: fixed;
   inset: 0;
   pointer-events: none;
@@ -3717,16 +3716,6 @@ h1.glow { font-size: clamp(1.9rem, 4.5vw, 3.2rem); }
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
-}
-
-#spotlightLayer {
-  background: radial-gradient(circle at 50% 40%, transparent 0, transparent 28%, rgba(0,0,0,.72) 60%, rgba(0,0,0,.85) 100%);
-  backdrop-filter: blur(2px);
-}
-
-#spotlightLayer.is-active {
-  opacity: 1;
-  visibility: visible;
 }
 
 @keyframes confetti-fall {
