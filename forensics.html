@@ -34,7 +34,10 @@
        All classes are prefixed fx- to keep them clear of other rooms.
        ===================================================================== */
     .fx-page [hidden] { display: none !important; }
-    .fx-page .fx-anchor { scroll-margin-top: 96px; }
+    /* --fx-head = measured height of the sticky site header (set by forensics.js; the shared
+       --site-header-h estimate until then). */
+    .fx-page .fx-anchor { scroll-margin-top: calc(var(--fx-head, var(--site-header-h, 92px)) + .4rem); }
+    .fx-jump { margin: .9rem 0 0; }
 
     /* ---- Locked screen (vault not cracked yet) ---- */
     .fx-locked {
@@ -116,15 +119,18 @@
     }
     .fx-avatar--rosa { background: linear-gradient(135deg, #ffb36b, #ff7e9d); }
     .fx-avatar--glen { background: linear-gradient(135deg, #7fe0d0, #6b9bff); }
-    .fx-comms__feed { max-height: 210px; overflow-y: auto; padding: .7rem .9rem; display: grid; gap: .5rem; }
+    .fx-comms__feed { position: relative; max-height: 210px; overflow-y: auto; overscroll-behavior: contain; padding: .7rem .9rem; display: grid; align-content: start; gap: .5rem; }
     .fx-msg {
       background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px 12px 12px 12px;
       padding: .55rem .8rem; font-size: .93rem; line-height: 1.5; color: var(--ink);
     }
     .fx-msg strong { color: #fff; }
-    .fx-msg.is-new { border-color: rgba(255,166,87,.55); animation: fxIn .35s ease; }
-    .fx-msg.is-good { border-color: rgba(9,255,136,.4); }
-    .fx-msg.is-warn { border-color: rgba(255,85,85,.45); }
+    /* The newest message: slides in and glows briefly so it gets noticed (static outline only with reduced motion) */
+    .fx-msg { --fx-flash: rgba(255,166,87,.2); }
+    .fx-msg.is-new { border-color: rgba(255,166,87,.55); animation: fxIn .35s ease, fxFlash 2.6s ease-out; }
+    .fx-msg.is-good { border-color: rgba(9,255,136,.4); --fx-flash: rgba(9,255,136,.16); }
+    .fx-msg.is-warn { border-color: rgba(255,85,85,.45); --fx-flash: rgba(255,85,85,.22); }
+    @keyframes fxFlash { 0%, 30% { background-color: var(--fx-flash); } }
     .fx-who-name { display: block; font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; margin-bottom: .15rem; }
     .fx-who-name--rosa { color: #ffb38a; }
     .fx-who-name--glen { color: #8fe6d8; }
@@ -237,7 +243,7 @@
     /* Close-up panel */
     .fx-closeup {
       background: var(--panel-2); border: 1px solid var(--border); border-radius: 14px; padding: 1rem 1.1rem; min-height: 260px;
-      position: sticky; top: 96px; max-height: calc(100vh - 110px); overflow-y: auto;
+      position: sticky; top: calc(var(--site-header-h, 92px) + .4rem); max-height: calc(100vh - var(--site-header-h, 92px) - 1rem); overflow-y: auto;
     }
     .fx-closeup:focus { outline: none; }
     .fx-closeup:focus-visible { outline: 2px solid var(--brand); }
@@ -486,6 +492,205 @@
       .fx-log th, .fx-log td { padding: .25rem .2rem; }
       .fx-log th { font-size: .64rem; }
     }
+
+    /* ---- Dashboard (1260px and up) ----
+       The room card is sized to the window under the sticky site header, so the whole case is on
+       one screen:
+         top bar (stage | what to do now | hint) and hint text   |
+         evidence board | close-up                               | case chat
+         the stage's work area, full width (tray + timeline, suspects, or proofs)
+       forensics.js moves the board help into the top bar, gives every moment card the height of
+       the longest moment (so nothing jumps while cards move), and fits the board to its cell
+       (6 x 2 or 4 x 3, whichever gives bigger pictures) by setting the board column (--fx-board-w).
+       Long panels (close-up, chat, work area, hints) scroll inside themselves, never the page.
+       Keep the media query in step with DASH in js/forensics.js. */
+    @media (min-width: 1260px) {
+      main.container.fx-wide { max-width: 2600px; padding-inline: 0; }
+      .fx-wide .intro-banner > p, .fx-wide .intro-banner > ol { max-width: 75rem; }
+
+      .fx-room {
+        display: flex; flex-direction: column; padding: .6rem;
+        height: calc(100vh - var(--fx-head, var(--site-header-h, 90px)) - 1rem); min-height: 470px; max-height: 1400px;
+      }
+      .fx-dash {
+        --fx-gap: .6rem;
+        --fx-cu-min: clamp(340px, 26vw, 660px);
+        --fx-chat-w: clamp(250px, 18.5vw, 460px);
+        flex: 1 1 0; min-height: 0; display: grid; gap: var(--fx-gap);
+        grid-template-columns: var(--fx-board-w, minmax(0, 1.5fr)) minmax(var(--fx-cu-min), 1fr) var(--fx-chat-w);
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        grid-template-areas: "bar bar chat" "board close chat" "stage stage stage";
+      }
+      .fx-layout { display: contents; }
+
+      /* Top bar: stage pill | board help (moved here by forensics.js) | hint button; hints underneath */
+      .fx-bar { grid-area: bar; min-width: 0; display: flex; flex-direction: column; gap: .4rem; }
+      .fx-topbar { flex-wrap: nowrap; gap: .8rem; margin: 0; }
+      .fx-pill { white-space: nowrap; flex-shrink: 0; font-size: .74rem; letter-spacing: .05em; padding: .3rem .65rem; }
+      #fxHintBtn { flex-shrink: 0; white-space: nowrap; }
+      .fx-topbar .fx-help { flex: 1 1 auto; min-width: 0; margin: 0; font-size: .88rem; line-height: 1.35; }
+      .fx-hints {
+        margin: 0; display: flex; gap: .6rem; padding: .35rem .75rem; font-size: .9rem; line-height: 1.45;
+        max-height: calc(3 * 1.45em + .7rem); overflow-y: auto; overscroll-behavior: contain;
+      }
+      .fx-hints__title { flex: none; margin: .2rem 0 0; }
+      .fx-hints ol { flex: 1 1 auto; min-width: 0; gap: .15rem; }
+
+      /* Board: fitted to its cell by forensics.js */
+      .fx-boardcell { grid-area: board; min-width: 0; min-height: 0; }
+      .fx-board { gap: 12px 10px; padding: 16px 12px 12px; border-width: 8px; }
+      /* 6 x 2 (short windows). "wide": the name tags sit on the bottom of each picture, so the
+         board can shrink with the height of the window; "wide-roomy" (when there is height to
+         spare): the tags under the pictures as usual */
+      .fx-board:is([data-shape="wide"], [data-shape="wide-roomy"]) {
+        grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 9px 9px; padding: 13px 10px 9px; border-width: 6px;
+        grid-template-areas:
+          "cam1 cam2 cam3 who doorlog laptop"
+          "sticky receipt itnotice who notebook farewell";
+      }
+      .fx-board[data-shape="wide"] .fx-item { align-content: center; }
+      .fx-board[data-shape="wide"] .fx-item__label {
+        position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%); z-index: 1;
+        width: max-content; max-width: calc(100% + 8px); box-shadow: 0 1px 4px rgba(0,0,0,.4);
+      }
+      .fx-board:is([data-shape="wide"], [data-shape="wide-roomy"]) .fx-who { width: 100%; gap: 3px; }
+      .fx-board:is([data-shape="wide"], [data-shape="wide-roomy"]) .fx-who__caption { font-size: .88rem; padding-top: 2px; }
+      .fx-thumb--receipt { max-width: 72%; }
+      .fx-thumb--sticky { max-width: 82%; }
+      .fx-item__label { padding: 2px 7px; }
+
+      /* Close-up: scrolls inside; a camera picture is never taller than the panel */
+      .fx-closeup {
+        grid-area: close; container: fxcu / size; position: static; max-height: none; min-height: 0; min-width: var(--fx-cu-min);
+        overflow-y: auto; overscroll-behavior: contain; padding: .8rem .9rem;
+      }
+      .fx-closeup > .fx-eyebrow:first-child { margin: 0 0 .05rem; }
+      .fx-closeup > h3 { font-size: 1.02rem; margin-bottom: .45rem; }
+      /* Pictures are never taller than the panel (the leaving-drinks photo keeps room for its caption) */
+      .fx-closeup .fx-cctv-wrap { max-width: calc((100cqh - 3.4rem) * 1.6); margin-inline: auto; }
+      .fx-closeup .fx-photo { max-width: calc((100cqh - 7.6rem) * 1.41); margin-inline: auto; }
+
+      /* Case chat: the full height of the room beside the top bar and close-up; newest message kept in view by forensics.js */
+      .fx-comms { grid-area: chat; margin: 0; min-height: 0; display: flex; flex-direction: column; }
+      .fx-comms__head { flex-wrap: nowrap; gap: .45rem; padding: .4rem .7rem; }
+      .fx-comms__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .fx-avatar { width: 22px; height: 22px; font-size: .66rem; }
+      .fx-comms__feed { flex: 1 1 0; min-height: 0; max-height: none; padding: .5rem .6rem; gap: .45rem; }
+      .fx-msg { padding: .4rem .65rem; font-size: .9rem; line-height: 1.45; }
+      .fx-who-name { margin-bottom: 0; }
+
+      /* Work area */
+      .fx-stage { grid-area: stage; margin: 0; min-height: 0; gap: var(--fx-gap); overflow-y: auto; overscroll-behavior: contain; }
+      .fx-stage .fx-tl { padding: .45rem .65rem .55rem; gap: .5rem .9rem; align-items: center; }
+      .fx-stage h3 { font-size: 1rem; }
+      .fx-stage__intro { font-size: .86rem; line-height: 1.35; }
+      .fx-stage .fx-feedback { font-size: .88rem; line-height: 1.35; min-height: 0; }
+      .fx-stage .fx-row { flex-wrap: nowrap; }
+      .fx-stage .fx-row .btn { padding: .45rem .9rem; white-space: nowrap; }
+      .fx-tl__head { flex-wrap: nowrap; }
+      /* Stages 2 and 3: the work comes first; the rebuilt timeline underneath scrolls inside the area */
+      .fx-stage:is([data-view="suspects"], [data-view="unmasked"], [data-view="proofs"]) {
+        max-height: calc(2 * var(--fx-card-h, 4.6rem) + 6.4rem);
+      }
+
+      /* Moment cards fill their timeline position; forensics.js sets --fx-card-h to the height of the
+         longest moment at this width, so the tray and the timeline keep their height */
+      .fx-mcard { font-size: .8rem; line-height: 1.3; padding: .3rem .45rem; border-top-width: 4px; min-height: 0; }
+      .fx-mcard.is-pinned .fx-mcard__time { display: inline; margin: 0 .3rem 0 0; }
+      .fx-mcard__note { font-size: .8rem; line-height: 1.3; }
+      .fx-slots { gap: 12px 7px; }
+      .fx-slot { min-height: var(--fx-card-h, 4.6rem); padding: 0; border-width: 2px; }
+      .fx-slot.is-filled { border-color: transparent; background: none; }
+      .fx-slot__num { top: -9px; z-index: 2; }
+      .fx-slot__out { top: -14px; right: -9px; width: 23px; height: 23px; font-size: .85rem; }
+      @media (pointer: coarse) { .fx-slot__out { top: -17px; right: -10px; width: 34px; height: 34px; } }
+      .fx-slot__drop { font-size: .82rem; }
+
+      .fx-tray { position: relative; padding: 9px 6px 6px; margin-top: .25rem; }
+      .fx-tray h4 { position: absolute; top: 0; left: .7rem; transform: translateY(-50%); margin: 0; padding: 0 .45rem; background: #0c1219; line-height: 1.2; }
+      .fx-tray h4 small { font-size: .8rem; }
+      .fx-tray__cards { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 7px; }
+      .fx-tray__cards, .fx-tray__empty { min-height: var(--fx-card-h, 4.6rem); }
+      .fx-tray__empty { display: flex; align-items: center; }
+
+      /* Stage 1: instructions | Check, then the tray (its feedback on the tray's top edge, under
+         the Check button) and the timeline. The pill already names the stage and the positions say
+         earliest / latest, so the heading and the axis label are kept for screen readers only. */
+      .fx-stage[data-view="sort"] .fx-tl {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas: "intro check" "tray tray" "slots slots";
+      }
+      .fx-stage[data-view="sort"] .fx-tl__head { display: contents; }
+      .fx-stage[data-view="sort"] :is(.fx-tl__head h3, .fx-tl__axis) {
+        position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+      }
+      .fx-stage[data-view="sort"] .fx-stage__intro { grid-area: intro; font-size: .84rem; }
+      .fx-stage[data-view="sort"] .fx-tray { grid-area: tray; }
+      .fx-stage[data-view="sort"] .fx-slots { grid-area: slots; margin-top: 4px; }
+      .fx-stage[data-view="sort"] .fx-row { grid-area: check; }
+      .fx-stage[data-view="sort"] .fx-feedback {
+        grid-area: tray; align-self: start; justify-self: end; z-index: 1; margin: 0 .7rem 0 0; transform: translateY(-50%);
+        max-width: calc(100% - 17rem); padding: 0 .45rem; background: #0c1219; font-size: .84rem; line-height: 1.25; text-align: right;
+      }
+      .fx-stage[data-view="sort"] .fx-feedback:empty { display: none; }
+
+      /* Timeline rebuilt (and case closed): the timeline on the left, the floor-plan replay beside it */
+      .fx-stage:is([data-view="rebuilt"], [data-view="closed"]) {
+        align-content: start;
+        grid-template-columns: minmax(0, 1fr) clamp(300px, 28%, 760px);
+        grid-template-areas: "tl replay" "next replay" ". replay";
+        grid-template-rows: auto auto 1fr;
+      }
+      .fx-stage:is([data-view="rebuilt"], [data-view="closed"]) > .fx-tl { grid-area: tl; }
+      .fx-stage:is([data-view="rebuilt"], [data-view="closed"]) > .fx-replay { grid-area: replay; }
+      .fx-stage:is([data-view="rebuilt"], [data-view="closed"]) > .fx-row { grid-area: next; }
+      .fx-replay { padding: .45rem .65rem .5rem; gap: .35rem; }
+      .fx-replay svg { max-width: none; }
+      .fx-replay__caption { min-height: 2.9em; font-size: .88rem; line-height: 1.45; }
+
+      /* Stage 2: suspects in one row (photo beside the name), Accuse with its feedback beside it.
+         Stage 3: the three proofs in a row, feedback underneath. */
+      .fx-stage:is([data-view="suspects"], [data-view="proofs"]) > .fx-tl:first-child {
+        grid-template-columns: auto minmax(0, 1fr);
+        grid-template-areas: "title intro" "work work" "act fb";
+      }
+      .fx-stage[data-view="proofs"] > .fx-tl:first-child { grid-template-areas: "title intro" "work work" "fb fb"; }
+      .fx-stage:is([data-view="suspects"], [data-view="proofs"]) > .fx-tl:first-child > h3 { grid-area: title; }
+      .fx-stage:is([data-view="suspects"], [data-view="proofs"]) > .fx-tl:first-child > .fx-stage__intro { grid-area: intro; }
+      .fx-stage:is([data-view="suspects"], [data-view="proofs"]) :is(.fx-suspects, .fx-proofs) { grid-area: work; }
+      .fx-stage[data-view="suspects"] > .fx-tl:first-child > .fx-row { grid-area: act; }
+      .fx-stage:is([data-view="suspects"], [data-view="proofs"]) > .fx-tl:first-child > .fx-feedback { grid-area: fb; }
+      .fx-suspects { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+      .fx-suspect {
+        grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto 1fr; align-items: start;
+        column-gap: .5rem; row-gap: .1rem; padding: 5px 8px 5px 5px; text-align: left;
+      }
+      .fx-suspect svg { grid-row: 1 / 3; width: clamp(46px, 3.6vw, 84px); }
+      .fx-suspect__name { font-size: .88rem; line-height: 1.25; }
+      .fx-suspect__role { font-size: .8125rem; line-height: 1.3; }
+      .fx-suspect__out { left: 50%; top: 50%; }
+      .fx-proof { min-height: 0; padding: .5rem .8rem; gap: .2rem; }
+      .fx-proof__q { line-height: 1.35; }
+
+      /* Lena unmasked: the note and the Next button side by side */
+      .fx-stage[data-view="unmasked"] > .fx-tl:first-child {
+        grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title next" "intro next";
+      }
+      .fx-stage[data-view="unmasked"] > .fx-tl:first-child > h3 { grid-area: title; }
+      .fx-stage[data-view="unmasked"] > .fx-tl:first-child > .fx-stage__intro { grid-area: intro; }
+      .fx-stage[data-view="unmasked"] > .fx-tl:first-child > .fx-row { grid-area: next; }
+    }
+    /* Big monitors: slightly larger text on the board tags and in the work area */
+    @media (min-width: 1800px) and (min-height: 900px) {
+      .fx-item__label { font-size: .82rem; }
+      .fx-mcard, .fx-stage__intro, .fx-stage[data-view="sort"] .fx-stage__intro { font-size: .9rem; }
+      .fx-tray h4 { font-size: .86rem; }
+      .fx-suspect__role { font-size: .86rem; }
+    }
+    /* Short windows (laptops at 125-150% scaling): hint text shows two lines, then scrolls */
+    @media (min-width: 1260px) and (max-height: 700px) {
+      .fx-hints { max-height: calc(2 * 1.45em + .7rem); }
+    }
     @media (prefers-reduced-motion: reduce) {
       .fx-actor, .fx-item, .fx-mcard, .fx-suspect { transition: none; }
       .fx-string.is-drawing, .fx-string.is-snap, .fx-stamp.is-thump, .fx-mcard.is-bounced, .fx-cctv-wrap::after,
@@ -536,7 +741,7 @@
     </div>
   </header>
 
-  <main class="container fx-page" id="main" role="main" tabindex="-1">
+  <main class="container fx-page fx-wide" id="main" role="main" tabindex="-1">
     <header class="game-header">
       <h1 class="glow">Bonus room: Network Forensics</h1>
       <p class="mt-1" style="color:var(--muted)">
@@ -583,6 +788,7 @@
         <span class="tag">Just for fun</span>
         <p>There are no points to win or lose in this bonus room. Hints are free and wrong guesses cost nothing, so your team's score stays exactly as it is.</p>
       </div>
+      <p class="fx-jump"><button class="btn sm" type="button" id="fxJump">Go to the evidence board <span aria-hidden="true">&darr;</span></button></p>
     </section>
 
     <section class="status-hud" aria-label="Case status">
@@ -600,33 +806,39 @@
 
     <!-- ================= The room ================= -->
     <section class="card fx-room fx-anchor mt-2" id="fxRoom" aria-labelledby="fxStageTitle">
-      <div class="fx-topbar">
-        <span class="fx-pill" id="fxStagePill"><span class="dot" aria-hidden="true"></span><span id="fxStageTitle">Stage 1 of 3: Rebuild Friday night</span></span>
-        <button class="btn ghost sm" type="button" id="fxHintBtn">Hint 1 of 3 (free)</button>
-      </div>
-      <div class="fx-hints" id="fxHints" role="status" hidden></div>
-
-      <div class="fx-comms" aria-label="Case chat with Rosa Hollis and Glen Marsh">
-        <div class="fx-comms__head">
-          <span class="fx-avatar fx-avatar--rosa" aria-hidden="true">RH</span>
-          <span class="fx-avatar fx-avatar--glen" aria-hidden="true">GM</span>
-          <span>Case chat: Rosa (head of studio) &amp; Glen (night guard)</span>
-        </div>
-        <div class="fx-comms__feed" id="fxFeed" aria-live="polite"></div>
-      </div>
-
-      <div class="fx-layout">
-        <div>
-          <p class="fx-help" id="fxBoardHelp">Click anything on the evidence board to take a closer look.</p>
-          <div class="fx-board fx-anchor" id="fxBoard" role="group" aria-label="Evidence board. Each item is a button you can inspect.">
-            <svg class="fx-strings" id="fxStrings" aria-hidden="true"></svg>
-            <div class="fx-stamp" id="fxStamp" aria-hidden="true" hidden>Case closed</div>
+      <!-- Wide screens: one dashboard sized to the window (top bar over board | close-up, the case chat
+           beside them, and the stage's work area underneath). Narrower screens: the same blocks, stacked. -->
+      <div class="fx-dash" id="fxDash">
+        <div class="fx-bar">
+          <div class="fx-topbar">
+            <span class="fx-pill" id="fxStagePill"><span class="dot" aria-hidden="true"></span><span id="fxStageTitle">Stage 1 of 3: Rebuild Friday night</span></span>
+            <button class="btn ghost sm" type="button" id="fxHintBtn">Hint 1 of 3 (free)</button>
           </div>
+          <div class="fx-hints" id="fxHints" role="status" hidden></div>
         </div>
-        <aside class="fx-closeup fx-anchor" id="fxCloseup" tabindex="-1" aria-live="polite" aria-label="Close-up of the selected evidence"></aside>
-      </div>
 
-      <div class="fx-stage fx-anchor" id="fxStage"></div>
+        <div class="fx-comms" aria-label="Case chat with Rosa Hollis and Glen Marsh">
+          <div class="fx-comms__head">
+            <span class="fx-avatar fx-avatar--rosa" aria-hidden="true">RH</span>
+            <span class="fx-avatar fx-avatar--glen" aria-hidden="true">GM</span>
+            <span class="fx-comms__title">Case chat: Rosa (head of studio) &amp; Glen (night guard)</span>
+          </div>
+          <div class="fx-comms__feed" id="fxFeed" aria-live="polite"></div>
+        </div>
+
+        <div class="fx-layout">
+          <div class="fx-boardcell" id="fxBoardCell">
+            <p class="fx-help" id="fxBoardHelp">Click anything on the evidence board to take a closer look.</p>
+            <div class="fx-board fx-anchor" id="fxBoard" role="group" aria-label="Evidence board. Each item is a button you can inspect.">
+              <svg class="fx-strings" id="fxStrings" aria-hidden="true"></svg>
+              <div class="fx-stamp" id="fxStamp" aria-hidden="true" hidden>Case closed</div>
+            </div>
+          </div>
+          <aside class="fx-closeup fx-anchor" id="fxCloseup" tabindex="-1" aria-live="polite" aria-label="Close-up of the selected evidence"></aside>
+        </div>
+
+        <div class="fx-stage fx-anchor" id="fxStage"></div>
+      </div>
     </section>
 
     <nav class="challenge-nav mt-2" aria-label="Puzzle navigation">

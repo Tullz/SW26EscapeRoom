@@ -26,6 +26,21 @@
   <script src="js/session.js" defer></script>
   <script src="js/vault.js" defer></script>
   <script src="js/auth.js" defer></script>
+
+  <style>
+    /* Laptops and monitors: the briefing and the login form side by side, so the form is on
+       screen without scrolling. */
+    @media (min-width: 1100px) {
+      .login-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+        gap: 1.25rem;
+        align-items: start;
+        margin-top: 1rem;
+      }
+      .login-layout > .mt-2 { margin-top: 0; }
+    }
+  </style>
 </head>
 
 <body data-session="guest">
@@ -74,6 +89,7 @@
       <p class="mt-1" style="color:var(--muted)">Enter your team credentials to begin.</p>
     </header>
 
+    <div class="login-layout">
     <section class="intro-banner mt-2" aria-labelledby="loginBriefHeading">
       <h2 id="loginBriefHeading">How the game works</h2>
       <p>Your team works through five security escape rooms: Phishing, OSINT, Incident Management, MFA and Encryption. Every room you solve gives you a code word. Put all five words into the vault on the Mission Hub to crack it.</p>
@@ -111,6 +127,7 @@
         <p id="errorMsg" class="mt-2" aria-live="polite"></p>
       </form>
     </section>
+    </div>
 
     <footer class="mt-3"></footer>
   </main>

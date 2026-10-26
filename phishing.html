@@ -115,7 +115,7 @@
     .phx-mail__status {
       justify-self: start;
       margin-top: .2rem;
-      font-size: .68rem;
+      font-size: .74rem;
       letter-spacing: .06em;
       text-transform: uppercase;
       padding: .12rem .5rem;
@@ -379,6 +379,53 @@
     #phishingFeedback .phx-fb-line { display: block; }
     #phishingFeedback .phx-fb-line + .phx-fb-line { margin-top: .3rem; }
     #phishingFeedback .phx-fb-lead { display: inline; font-weight: 700; color: #fff; }
+
+    /* ---- One window: inbox, email, flags, verdict and Submit all in view (laptops + monitors) ----
+       The email scrolls inside its frame and the steps panel stays next to it, so nobody has to
+       scroll the page between clicking the email and pressing Submit (or reading the debrief). */
+    @media (min-width: 981px) {
+      #phishWorkspace { scroll-margin-top: calc(var(--site-header-h, 92px) + .5rem); }
+      .phx-viewport {
+        max-height: max(280px, calc(100vh - var(--site-header-h, 92px) - 16.5rem));
+      }
+      #phishWorkspace > .phish-sidebar {
+        position: sticky;
+        top: calc(var(--site-header-h, 92px) + .5rem);
+        max-height: calc(100vh - var(--site-header-h, 92px) - 1rem);
+        overflow-y: auto;
+        scrollbar-width: thin;
+      }
+      /* The debrief can be long: "Next email" stays pinned at the bottom of the panel */
+      #phishNextBtn {
+        position: sticky;
+        bottom: 0;
+        z-index: 1;
+        box-shadow: 0 -10px 16px rgba(9, 15, 25, .9);
+      }
+    }
+    /* Short windows (600-820px tall): tighter inbox tabs and steps so Submit stays on screen */
+    @media (min-width: 981px) and (max-height: 820px) {
+      .phx-inbox { margin-bottom: .6rem; }
+      /* Two rows instead of three: sender on top, then the status pill and the (shortened) subject */
+      .phx-mail {
+        grid-template-columns: auto minmax(0, 1fr);
+        column-gap: .45rem;
+        align-items: center;
+        padding: .45rem .65rem;
+      }
+      .phx-mail__from { grid-row: 1; grid-column: 1 / -1; }
+      .phx-mail__status { grid-row: 2; grid-column: 1; margin-top: 0; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: .7rem; letter-spacing: .03em; padding-inline: .4rem; }
+      .phx-mail__subject { grid-row: 2; grid-column: 2; }
+      .phx-toolbar { margin-bottom: .45rem; }
+      .phx-stage-help { margin-top: .45rem; font-size: .84rem; }
+      .phx-viewport { max-height: max(280px, calc(100vh - var(--site-header-h, 60px) - 13rem)); }
+      #phishWorkspace > .phish-sidebar { padding: .75rem; gap: .6rem; }
+      #phishWorkspace .phish-sidebar .phish-sidebar { gap: .6rem; }
+      #phishWorkspace .phish-step { padding: .6rem .8rem; gap: .45rem; }
+      #phishWorkspace .phish-step > p.muted { font-size: .9rem; line-height: 1.4; }
+      #phishWorkPanel .classification-buttons .btn { padding-block: .55rem; }
+      #phishWorkspace #submitButton { padding-block: .7rem; }
+    }
   </style>
 </head>
 

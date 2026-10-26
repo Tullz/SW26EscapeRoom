@@ -33,7 +33,9 @@
        All classes are prefixed ir- (page) / irx- (scene) / irc- (close-ups).
        ===================================================================== */
     #main [hidden] { display: none !important; }
-    #irComplete, #irRoom, #irCloseup, #irHandsTarget { scroll-margin-top: 110px; }
+    /* --ir-head = measured height of the sticky site header (set by incident.js; the shared
+       --site-header-h estimate until then). */
+    #irComplete, #irRoom, #irCloseup { scroll-margin-top: calc(var(--ir-head, var(--site-header-h, 90px)) + .5rem); }
 
     .ir-lock { color: var(--warn); font-weight: 700; }
 
@@ -42,7 +44,7 @@
       background: linear-gradient(145deg, rgba(9,255,136,.12), rgba(88,166,255,.08));
       border: 2px solid var(--accent); border-radius: 16px; padding: clamp(1rem, 3vw, 1.6rem); text-align: center;
     }
-    .ir-complete h2 { color: var(--accent); margin: 0 0 .4rem; }
+    .ir-complete h2 { color: var(--accent); margin: 0 0 .4rem; justify-content: center; } /* .card h2 is a flex row site-wide */
     .ir-complete__word {
       font-family: "JetBrains Mono", Consolas, monospace; font-size: clamp(2.2rem, 8vw, 3.2rem); font-weight: 900;
       letter-spacing: .14em; color: #fff; text-shadow: 0 0 14px var(--accent), 0 0 28px rgba(9,255,136,.6); margin: .3rem 0 .4rem;
@@ -56,9 +58,10 @@
 
     /* ---- Room shell ---- */
     .ir-room { padding: 1.1rem; }
-    .ir-topbar { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; margin-bottom: .8rem; }
+    .ir-topbar { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: .8rem; }
+    .ir-hint-btn { margin-left: auto; }
     .ir-pill {
-      display: inline-flex; align-items: center; gap: .5rem; font-size: .78rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+      white-space: nowrap; display: inline-flex; align-items: center; gap: .5rem; font-size: .78rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
       color: var(--danger); background: rgba(255,85,85,.1); border: 1px solid rgba(255,85,85,.4); padding: .35rem .75rem; border-radius: 999px;
     }
     .ir-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 8px var(--danger); animation: irSlowBlink 1.6s ease-in-out infinite; }
@@ -69,13 +72,14 @@
     @keyframes irSlowBlink { 50% { opacity: .25; } }
 
     .ir-hint-text {
-      margin: 0 0 .9rem; padding: .6rem .85rem; border-radius: 8px; font-size: .92rem; line-height: 1.45;
+      margin: 0 0 .9rem; padding: .6rem .85rem; border-radius: 8px; font-size: .92rem; line-height: 1.45; overscroll-behavior: contain;
       background: rgba(255,166,87,.08); border: 1px solid rgba(255,166,87,.3); color: #ffd9b3; display: grid; gap: .3rem;
     }
 
-    /* Leak counter */
+    /* Leak counter (sits in the top bar; below 1260px it drops onto its own full-width row) */
     .ir-leak {
-      display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; padding: .7rem 1rem; border-radius: 12px; margin-bottom: .8rem;
+      order: 3; flex: 1 1 100%;
+      display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; padding: .7rem 1rem; border-radius: 12px;
       border: 1px solid rgba(255,85,85,.5); background: rgba(255,85,85,.09); color: #ffd0d0; font-size: .95rem;
     }
     .ir-leak__light { width: 12px; height: 12px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 10px var(--danger); animation: irSlowBlink 1.6s ease-in-out infinite; flex-shrink: 0; }
@@ -84,7 +88,7 @@
     .ir-leak[data-state="stopped"] .ir-leak__light, .ir-leak[data-state="clear"] .ir-leak__light { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: none; }
 
     /* Ray's radio feed */
-    .ir-feed { background: #0c1219; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 1rem; overflow: hidden; }
+    .ir-feed { background: #0c1219; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
     .ir-feed__head {
       display: flex; align-items: center; gap: .6rem; padding: .5rem .9rem; border-bottom: 1px solid var(--border); background: rgba(255,166,87,.05);
       font-size: .78rem; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; font-weight: 700;
@@ -93,12 +97,20 @@
     .ir-ava--ray { background: linear-gradient(135deg, #ffa657, #ffd166); }
     .ir-feed__live { margin-left: auto; color: var(--accent); display: inline-flex; align-items: center; gap: .35rem; }
     .ir-feed__live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: irSlowBlink 1.6s infinite; }
-    .ir-feed__list { max-height: 200px; overflow-y: auto; padding: .7rem .9rem; display: grid; gap: .5rem; }
-    .ir-msg { background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px 12px 12px 12px; padding: .5rem .8rem; font-size: .93rem; line-height: 1.5; color: var(--ink); }
+    .ir-feed__list {
+      position: relative; max-height: 200px; overflow-y: auto; overscroll-behavior: contain; padding: .7rem .9rem;
+      display: grid; align-content: start; gap: .5rem;
+    }
+    .ir-msg {
+      --ir-flash: rgba(88,166,255,.26);
+      background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px 12px 12px 12px; padding: .5rem .8rem; font-size: .93rem; line-height: 1.5; color: var(--ink);
+    }
     .ir-msg strong { color: #fff; }
-    .ir-msg.is-new { border-color: rgba(88,166,255,.55); box-shadow: 0 0 0 3px rgba(88,166,255,.08); animation: irIn .35s ease; }
-    .ir-msg.is-warn { border-color: rgba(255,85,85,.5); }
-    .ir-msg.is-good { border-color: rgba(9,255,136,.45); }
+    /* The newest message: slides in and glows briefly so it gets noticed (static outline only with reduced motion) */
+    .ir-msg.is-new { border-color: rgba(88,166,255,.55); box-shadow: 0 0 0 3px rgba(88,166,255,.08); animation: irIn .35s ease, irFlash 2.6s ease-out; }
+    .ir-msg.is-warn { border-color: rgba(255,85,85,.5); --ir-flash: rgba(255,85,85,.24); }
+    .ir-msg.is-good { border-color: rgba(9,255,136,.45); --ir-flash: rgba(9,255,136,.16); }
+    @keyframes irFlash { 0%, 30% { background-color: var(--ir-flash); } }
     .ir-msg__who { display: block; font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; margin-bottom: .1rem; }
     .ir-msg__who--ray { color: #ffc27a; }
     .ir-msg__who--dana { color: #8cc8ff; }
@@ -107,11 +119,23 @@
     .ir-msg__who--chris { color: #c9b6ff; }
     @keyframes irIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
-    /* ---- Scene + close-up layout ---- */
-    .ir-layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+    /* ---- Room layout ----
+       Below 1260px: radio on top, scene | close-up, then Playbook | Evidence (the page scrolls).
+       1260px and up: see the dashboard block near the end of this style sheet. */
+    .ir-dash {
+      display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 1rem;
+      grid-template-areas: "feed feed" "scene close" "book evid";
+    }
+    .ir-feed { grid-area: feed; }
+    .ir-stage { grid-area: scene; min-width: 0; }
+    .ir-closeup { grid-area: close; align-self: start; }
+    .ir-book { grid-area: book; }
+    .ir-evid { grid-area: evid; }
     .ir-help { font-size: .88rem; color: var(--muted); margin: 0 0 .5rem; }
+    .ir-jump { margin: .9rem 0 0; }
 
     .irx-scene {
+      container: irscene / inline-size; /* hotspot labels scale with the picture */
       position: relative; width: 100%; aspect-ratio: 16 / 10.5; border-radius: 14px; overflow: hidden;
       border: 1px solid var(--border); background: #0f151e; user-select: none; -webkit-user-select: none;
     }
@@ -179,7 +203,7 @@
     .irx-hot.is-active { filter: drop-shadow(0 0 12px rgba(9,255,136,.75)); }
     .irx-hot__label {
       position: absolute; left: 50%; bottom: -4px; transform: translate(-50%, 100%); white-space: nowrap; line-height: 1.2;
-      font-size: clamp(8.5px, .9vw, 11.5px); font-weight: 700; color: #dfe7f0; background: rgba(8,12,18,.85);
+      font-size: clamp(11px, 1.75cqi, 15px); font-weight: 700; color: #dfe7f0; background: rgba(8,12,18,.85);
       border: 1px solid rgba(255,255,255,.14); padding: 2px 7px; border-radius: 999px; pointer-events: none; z-index: 6;
     }
     .irx-hot.is-seen .irx-hot__label { color: var(--accent); border-color: rgba(9,255,136,.35); }
@@ -202,7 +226,6 @@
     .irx-chair svg { width: 100%; height: 100%; display: block; }
 
     /* ---- Close-up panel ---- */
-    .ir-side { display: grid; gap: 1rem; }
     .ir-closeup { background: var(--panel-2); border: 1px solid var(--border); border-radius: 14px; padding: 1rem 1.05rem; min-height: 240px; }
     .ir-closeup:focus { outline: none; }
     .ir-closeup:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
@@ -430,7 +453,6 @@
     .irc-pizza svg { width: 100%; height: auto; display: block; }
 
     /* ---- Playbook + evidence ---- */
-    .ir-kit { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 1rem; margin-top: 1rem; }
     .ir-panel { background: var(--panel-2); border: 1px solid var(--border); border-radius: 14px; padding: 1rem; position: relative; overflow: hidden; }
     .ir-panel h3 { margin: 0 0 .6rem; font-size: 1rem; display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
     .ir-panel h3 small { color: var(--muted); font-weight: 600; font-size: .78rem; }
@@ -440,6 +462,7 @@
       display: flex; align-items: center; gap: .4rem; font: inherit; font-size: .82rem; font-weight: 700; cursor: pointer; text-align: left;
       padding: .45rem .5rem; border-radius: 8px; border: 1px solid var(--border); background: rgba(9,15,25,.5); color: var(--muted);
     }
+    .ir-tab__t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ir-tab__n { width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; flex-shrink: 0; background: rgba(139,148,158,.15); font-size: .75rem; }
     .ir-tab:hover, .ir-tab:focus-visible { border-color: rgba(88,166,255,.6); }
     .ir-tab:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
@@ -469,7 +492,7 @@
     .ir-evidence__empty { color: var(--muted); font-size: .86rem; background: none !important; border: 0 !important; padding: 0 !important; }
 
     @media (max-width: 960px) {
-      .ir-layout, .ir-kit { grid-template-columns: 1fr; }
+      .ir-dash { grid-template-columns: minmax(0, 1fr); grid-template-areas: "feed" "scene" "close" "book" "evid"; }
     }
     @media (max-width: 560px) {
       .ir-room { padding: .8rem; }
@@ -496,6 +519,116 @@
       .irc-phone, .irc-cab { grid-template-columns: 1fr; }
       .irc-key { height: 44px; }
     }
+    /* ---- Dashboard (1260px and up) ----
+       The room card is sized to the window under the sticky header, so everything is on one screen:
+         top bar (step | leak counter | hint), hint text (when shown, max 3 lines then scrolls)
+         columns: Playbook + Evidence | the scene (largest, fitted to the space) | radio + close-up
+       Long panels (close-up, Playbook page, Evidence, radio) scroll inside themselves, never the page. */
+    @media (min-width: 1260px) {
+      main.container.ir-wide { max-width: 2600px; padding-inline: 0; }
+      .ir-wide .intro-banner > p, .ir-wide .intro-banner > ol { max-width: 75rem; }
+
+      .ir-room {
+        display: flex; flex-direction: column; gap: .5rem; padding: .65rem;
+        height: calc(100vh - var(--ir-head, var(--site-header-h, 90px)) - 1rem); min-height: 470px; max-height: 1400px;
+      }
+      .ir-topbar { flex-wrap: nowrap; gap: .6rem; margin: 0; }
+      .ir-topbar .ir-leak { order: 0; flex: 1 1 auto; min-width: 0; flex-wrap: nowrap; padding: .4rem .85rem; }
+      .ir-leak__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .ir-leak__count { flex-shrink: 0; }
+      .ir-hint-btn { margin-left: 0; flex-shrink: 0; white-space: nowrap; }
+      .ir-hint-text { margin: 0; flex-shrink: 0; max-height: calc(3 * 1.45em + 1.2rem); overflow-y: auto; }
+
+      .ir-dash {
+        flex: 1 1 0; min-height: 0; gap: .65rem;
+        grid-template-columns: clamp(236px, 18%, 420px) minmax(0, 1fr) clamp(420px, 30%, 620px);
+        grid-template-rows: clamp(168px, 33%, 320px) minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-areas:
+          "book scene feed"
+          "book scene close"
+          "evid scene close";
+      }
+      .ir-feed, .ir-closeup, .ir-book, .ir-evid { min-height: 0; }
+
+      /* Radio: fixed share of the right column, newest message kept in view by incident.js */
+      .ir-feed { display: flex; flex-direction: column; }
+      .ir-feed__head { padding: .4rem .8rem; }
+      .ir-ava { width: 22px; height: 22px; font-size: .68rem; }
+      .ir-feed__list { flex: 1 1 0; min-height: 0; max-height: none; padding: .5rem .6rem; gap: .45rem; }
+      .ir-msg { padding: .4rem .65rem; font-size: .9rem; line-height: 1.45; }
+      .ir-msg__who { margin-bottom: 0; }
+
+      /* Scene: as big as the column allows while keeping its shape (container query units) */
+      .ir-stage { container-type: size; display: grid; place-items: center; min-height: 0; }
+      .ir-stage__inner { width: min(100cqw, (100cqh - 1.9rem) * 16 / 10.5, 1500px); }
+      .ir-help { margin: 0 0 .4rem; line-height: 1.5rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+      /* Close-up: fills the rest of the right column and scrolls inside */
+      .ir-closeup { align-self: stretch; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: .8rem .9rem; }
+      /* Eyebrow and title share one line to save height */
+      .ir-closeup > .irc-eyebrow { float: left; margin: .32rem .6rem 0 0; }
+      .ir-closeup > h3 { font-size: 1.02rem; margin-bottom: .5rem; }
+      .ir-closeup > h3 ~ * { clear: left; }
+      /* Whiteboard: the magnet dock stays in view at the bottom while the names scroll (above any feedback) */
+      .ir-closeup .irc-magdock {
+        position: sticky; bottom: calc(var(--ir-fb-h, 0px) - .8rem); z-index: 2;
+        margin: .45rem -.65rem -.55rem; padding: .4rem .65rem; background: #f7f8fa; border-radius: 0 0 4px 4px;
+      }
+      /* Feedback under a close-up stays pinned to the bottom of the panel while there is more to scroll */
+      .ir-closeup .irc-fb.is-good, .ir-closeup .irc-fb.is-bad, .ir-closeup .irc-fb.is-info {
+        position: sticky; bottom: -.8rem; z-index: 3; margin: .5rem -.9rem -.8rem !important; padding: .45rem .9rem .6rem;
+        font-size: .88rem; line-height: 1.4; background: var(--panel-2); border-top: 1px solid var(--border); box-shadow: 0 -8px 14px -8px rgba(0,0,0,.6);
+      }
+      /* A slightly tighter whiteboard so more names fit in the panel */
+      .ir-closeup .irc-board { border-width: 6px; padding: .55rem .65rem; }
+      .ir-closeup .irc-board__title { font-size: .95rem; margin-bottom: .3rem !important; }
+      .ir-closeup .irc-board__rows { gap: .25rem; }
+      .ir-closeup .irc-board__row { font-size: .88rem; line-height: 1.3; padding: .22rem .4rem; grid-template-columns: 1fr 42px; }
+      .ir-closeup .irc-board__slot { width: 42px; height: 42px; }
+      .ir-closeup .irc-mag { width: 42px; height: 42px; }
+
+      /* Playbook + Evidence: stacked on the left, each scrolls inside */
+      .ir-book, .ir-evid { display: flex; flex-direction: column; padding: .75rem .75rem; }
+      .ir-panel h3 { flex-wrap: wrap; margin-bottom: .5rem; }
+      .ir-book { container: irbook / inline-size; }
+      .ir-evid { container: irevid / inline-size; }
+      .ir-page { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; font-size: .92rem; }
+      .ir-evidence { flex: 1 1 0; min-height: 0; max-height: none; overscroll-behavior: contain; }
+      .ir-tabs { margin-bottom: .55rem; }
+
+      /* Soft glow at the top/bottom edge of a text panel while there is more to scroll (pure CSS) */
+      .ir-page, .ir-evidence, .ir-feed__list {
+        --ir-sbg: var(--panel-2);
+        background:
+          linear-gradient(var(--ir-sbg) 40%, transparent) center top / 100% 26px no-repeat local,
+          linear-gradient(transparent, var(--ir-sbg) 60%) center bottom / 100% 26px no-repeat local,
+          radial-gradient(farthest-side at 50% 0, rgba(140,190,255,.3), transparent) center top / 100% 12px no-repeat,
+          radial-gradient(farthest-side at 50% 100%, rgba(140,190,255,.3), transparent) center bottom / 100% 12px no-repeat;
+        background-color: var(--ir-sbg);
+      }
+      .ir-feed__list { --ir-sbg: #0c1219; }
+    }
+    /* Narrow Playbook column: the step tabs become a compact stepper (only the open step shows its name) */
+    @container irbook (max-width: 420px) {
+      .ir-book h3 small { display: none; } /* the top bar already shows "Step x of 4" */
+      .ir-page h4 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } /* the open tab names the step */
+      .ir-tabs { display: flex; gap: .3rem; }
+      .ir-tab { flex: 0 0 auto; gap: .3rem; padding: .3rem; }
+      .ir-tab__n { width: 20px; height: 20px; }
+      .ir-tab[aria-selected="true"] { flex: 1 1 auto; min-width: 0; padding-inline: .4rem; }
+      .ir-tab:not([aria-selected="true"]) .ir-tab__t { display: none; }
+    }
+
+    /* Small picture (short laptop screens): tighter labels so neighbours don't touch; "seen" stays green */
+    @container irscene (max-width: 620px) {
+      .irx-hot__label { padding: 2px 5px; }
+      .irx-hot.is-seen .irx-hot__label::before { content: none; }
+      .hs-cabinet .irx-hot__label { left: auto; right: 2px; transform: none; }
+    }
+    @container irevid (max-width: 300px) {
+      .ir-evid h3 small { display: none; }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       .irx-red { animation: none !important; opacity: .22; }
       .irx-scene[data-phase="calm"] .irx-red, .irx-scene[data-phase="clear"] .irx-red { opacity: 0; }
@@ -550,7 +683,7 @@
     </div>
   </header>
 
-  <main class="container" id="main" role="main" tabindex="-1">
+  <main class="container ir-wide" id="main" role="main" tabindex="-1">
     <header class="game-header">
       <h1 class="glow">The Midnight Alert</h1>
       <p class="mt-1" style="color:var(--muted)">
@@ -564,13 +697,14 @@
       <p>Ray, Larkspur's night security guard, has called your team in. An alarm says customer records are being copied out of the company, right now. Ray doesn't know computers, so it's over to you.</p>
       <ol>
         <li><strong>Search the room.</strong> Click anything that looks interesting. Useful finds go into your Evidence list.</li>
-        <li><strong>Follow the Incident Playbook</strong> (under the room). It has four steps: Spot it, Stop it, Tell, Fix it.</li>
+        <li><strong>Follow the Incident Playbook</strong> (its own panel in the room). It has four steps: Spot it, Stop it, Tell, Fix it.</li>
         <li><strong>Connect the clues.</strong> No technical knowledge needed. Everything you need is somewhere in the room.</li>
       </ol>
       <div class="vault-callout" role="status">
         <span class="tag">Code word</span>
         <p id="irVaultValue"><span class="ir-lock">Locked.</span> Handle the incident to reveal this room's code word.</p>
       </div>
+      <p class="ir-jump"><button class="btn sm" type="button" id="irJump">Go to the Ops Room <span aria-hidden="true">&darr;</span></button></p>
     </section>
 
     <!-- Status HUD -->
@@ -606,29 +740,30 @@
 
     <!-- ================= The room ================= -->
     <section class="card ir-room mt-2" id="irRoom" aria-labelledby="irStepTitle">
+      <!-- Wide screens: one dashboard sized to the window (top bar, then Playbook + Evidence | scene | radio + close-up). -->
       <div class="ir-topbar">
         <span class="ir-pill" id="irPill"><span class="dot" aria-hidden="true"></span><span id="irStepTitle">Step 1 of 4: Spot it</span></span>
-        <button class="btn ghost sm" type="button" id="irHintBtn">Hint (&minus;5 pts)</button>
+        <div class="ir-leak" id="irLeak" data-state="live" role="status">
+          <span class="ir-leak__light" aria-hidden="true"></span>
+          <span class="ir-leak__text" id="irLeakText">LIVE: customer records being copied out of Larkspur</span>
+          <span class="ir-leak__count" id="irLeakCount">612,408</span>
+        </div>
+        <button class="btn ghost sm ir-hint-btn" type="button" id="irHintBtn">Hint (&minus;5 pts)</button>
       </div>
       <div class="ir-hint-text" id="irHintText" role="status" hidden></div>
 
-      <div class="ir-leak" id="irLeak" data-state="live" role="status">
-        <span class="ir-leak__light" aria-hidden="true"></span>
-        <span id="irLeakText">LIVE: customer records being copied out of Larkspur</span>
-        <span class="ir-leak__count" id="irLeakCount">612,408</span>
-      </div>
-
-      <div class="ir-feed" aria-label="Radio with Ray, the night security guard">
-        <div class="ir-feed__head">
-          <span class="ir-ava ir-ava--ray" aria-hidden="true">R</span>
-          <span>Radio: Ray (night security)</span>
-          <span class="ir-feed__live">Live</span>
+      <div class="ir-dash">
+        <div class="ir-feed" aria-label="Radio with Ray, the night security guard">
+          <div class="ir-feed__head">
+            <span class="ir-ava ir-ava--ray" aria-hidden="true">R</span>
+            <span>Radio: Ray (night security)</span>
+            <span class="ir-feed__live">Live</span>
+          </div>
+          <div class="ir-feed__list" id="irFeed" aria-live="polite"></div>
         </div>
-        <div class="ir-feed__list" id="irFeed" aria-live="polite"></div>
-      </div>
 
-      <div class="ir-layout">
-        <div>
+        <div class="ir-stage">
+          <div class="ir-stage__inner">
           <p class="ir-help">Click anything in the Ops Room to take a closer look.</p>
           <div class="irx-scene" id="irScene" data-phase="alarm" role="group" aria-label="The Ops Room. Each object is a button you can inspect.">
             <div class="irx-wall" aria-hidden="true"></div>
@@ -852,23 +987,20 @@
             <div class="irx-red" aria-hidden="true"></div>
             <div class="irx-dim" aria-hidden="true"></div>
           </div>
-        </div>
-
-        <div class="ir-side">
-          <div class="ir-closeup" id="irCloseup" tabindex="-1">
-            <p class="irc-empty">Nothing picked up yet. Click something in the Ops Room to look at it up close.</p>
           </div>
         </div>
-      </div>
 
-      <!-- Playbook + evidence -->
-      <div class="ir-kit">
+        <div class="ir-closeup" id="irCloseup" tabindex="-1">
+          <p class="irc-empty">Nothing picked up yet. Click something in the Ops Room to look at it up close.</p>
+        </div>
+
+        <!-- Playbook + evidence -->
         <div class="ir-panel ir-book" id="irBook">
           <h3>Incident Playbook <small id="irBookCount">Step 1 of 4</small></h3>
           <div class="ir-tabs" id="irTabs" role="tablist" aria-label="Playbook steps"></div>
           <div class="ir-page" id="irPage" role="tabpanel" aria-live="polite"></div>
         </div>
-        <div class="ir-panel">
+        <div class="ir-panel ir-evid">
           <h3>Evidence <small>what you've found</small></h3>
           <ul class="ir-evidence" id="irEvidence"></ul>
         </div>

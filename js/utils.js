@@ -675,9 +675,33 @@
     return list;
   }
 
+  // ---------- Sticky header height -----------------------------------------
+  // Room pages pin their own panels just under the sticky site header with --site-header-h.
+  // The header's height changes (short windows, the game clock pill, wrapping at some widths),
+  // so keep the value equal to the real height; styles.css holds the estimate until then.
+  function syncSiteHeaderHeight() {
+    const bar = document.querySelector('.site-header--bar');
+    if (!bar) return;
+    let px = 0;
+    try {
+      if (getComputedStyle(bar).position === 'sticky') px = Math.ceil(bar.getBoundingClientRect().height);
+    } catch (_) {
+      return;
+    }
+    document.documentElement.style.setProperty('--site-header-h', `${px}px`);
+  }
+  function watchSiteHeader() {
+    const bar = document.querySelector('.site-header--bar');
+    if (!bar) return;
+    syncSiteHeaderHeight();
+    if (window.ResizeObserver) new ResizeObserver(syncSiteHeaderHeight).observe(bar);
+    window.addEventListener('resize', syncSiteHeaderHeight);
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     initBackLinks();
     hideAdminLinksForTeams();
+    watchSiteHeader();
   }, { once: true });
 
   // ---------- Public API ---------------------------------------------------

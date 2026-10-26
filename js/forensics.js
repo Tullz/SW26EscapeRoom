@@ -37,6 +37,10 @@
   const REDUCED = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const els = {
+    room: $('#fxRoom'),
+    dash: $('#fxDash'),
+    boardCell: $('#fxBoardCell'),
+    comms: $('.fx-comms'),
     board: $('#fxBoard'),
     strings: $('#fxStrings'),
     stamp: $('#fxStamp'),
@@ -676,7 +680,10 @@
         }
       }
       if (state.stage === 4) help = 'Case closed. You can still look through the evidence.';
-      els.help.textContent = help;
+      if (els.help.textContent !== help) {
+        els.help.textContent = help;
+        scheduleFit();
+      }
       els.help.classList.toggle('is-target', target);
     }
     if (els.stamp) els.stamp.hidden = !state.solved;
@@ -808,7 +815,10 @@
   // =====================================================================
   // Feed, hints, stage pill
   // =====================================================================
+  let feedShown = false;
   function renderFeed() {
+    const keep = els.feed.scrollTop; // rebuilding resets the scroll; restore it so the glide starts from where it was
+    const fresh = newMsgs.size > 0;
     els.feed.innerHTML = '';
     state.msgs.forEach((id) => {
       const m = MSGS[id];
@@ -817,8 +827,41 @@
       div.innerHTML = `<span class="fx-who-name fx-who-name--${m.who}">${m.who === 'rosa' ? 'Rosa' : 'Glen'}</span>${m.text}`;
       els.feed.appendChild(div);
     });
-    els.feed.scrollTop = els.feed.scrollHeight;
+    els.feed.scrollTop = keep;
+    if (fresh || !feedShown) showNewestMsg(fresh && feedShown);
+    feedShown = true;
     newMsgs = new Set();
+  }
+
+  // Keep the newest messages in view inside the chat: from the first new one if they all fit,
+  // otherwise ending with the newest (shown from its top if it is taller than the panel).
+  function showNewestMsg(smooth) {
+    const feed = els.feed;
+    const last = feed.lastElementChild;
+    if (!last) return;
+    const first = $('.fx-msg.is-new', feed) || last;
+    const cs = getComputedStyle(feed);
+    const padTop = parseFloat(cs.paddingTop) || 0;
+    const padBottom = parseFloat(cs.paddingBottom) || 0;
+    const lastTop = last.offsetTop - padTop;
+    let top = Math.max(first.offsetTop - padTop, last.offsetTop + last.offsetHeight + padBottom - feed.clientHeight);
+    top = Math.max(0, Math.min(top, lastTop, feed.scrollHeight - feed.clientHeight));
+    if (Math.abs(top - feed.scrollTop) < 1) return;
+    try { feed.scrollTo({ top, behavior: smooth && !REDUCED() ? 'smooth' : 'auto' }); } catch (_) { feed.scrollTop = top; }
+  }
+
+  // Scroll a panel (never the page) just enough to show el. A tall el is shown from its top.
+  function revealIn(panel, el, smooth) {
+    if (!panel || !el || panel.scrollHeight <= panel.clientHeight) return;
+    const p = panel.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const gap = 8;
+    let delta = 0;
+    if (r.top < p.top + gap) delta = r.top - p.top - gap;
+    else if (r.bottom > p.bottom - gap) delta = Math.min(r.bottom - p.bottom + gap, r.top - p.top - gap);
+    if (!delta) return;
+    const top = panel.scrollTop + delta;
+    try { panel.scrollTo({ top, behavior: smooth && !REDUCED() ? 'smooth' : 'auto' }); } catch (_) { panel.scrollTop = top; }
   }
 
   function hintStage() {
@@ -1029,8 +1072,17 @@
       </div>`;
   }
 
+  // Which work area is showing: the page CSS lays each one out differently on wide screens.
+  function stageView() {
+    if (state.stage === 1) return state.s1 ? 'rebuilt' : 'sort';
+    if (state.stage === 2) return state.s2 ? 'unmasked' : 'suspects';
+    if (state.stage === 3) return 'proofs';
+    return 'closed';
+  }
+
   function renderStage(focusSel) {
     stopReplay();
+    els.stage.dataset.view = stageView();
     let h = '';
     if (state.stage === 1) h = stage1HTML();
     else if (state.stage === 2) h = stage2HTML() + summaryHTML();
@@ -1164,7 +1216,8 @@
       setTimeout(() => {
         const r = $('#fxReplay', els.stage);
         if (r) {
-          r.scrollIntoView({ behavior: REDUCED() ? 'auto' : 'smooth', block: 'center' });
+          if (dashOn()) revealIn(els.stage, r, true);
+          else r.scrollIntoView({ behavior: REDUCED() ? 'auto' : 'smooth', block: 'center' });
           playReplay();
         }
       }, 600);
@@ -1536,6 +1589,158 @@
   if (window.ResizeObserver) new ResizeObserver(() => drawStrings()).observe(els.board);
 
   // =====================================================================
+  // Layout: the whole case on one screen (1260px and up)
+  // =====================================================================
+  // The page CSS sizes the room card to the window below the sticky site header and needs the
+  // header's height. The board help moves into the top bar, moment cards get one shared height,
+  // the board is fitted to the space that is left, and a click in the room lines the card up
+  // with the top of the window when part of it is cut off.
+  const header = $('.site-header');
+  const DASH = window.matchMedia ? window.matchMedia('(min-width: 1260px)') : null;
+  const BOARD_MIN = 280;
+  function dashOn() { return !!(DASH && DASH.matches && els.dash); }
+
+  function headHeight() {
+    if (!header || !/sticky|fixed/.test(getComputedStyle(header).position)) return 0;
+    return Math.round(header.getBoundingClientRect().height);
+  }
+  function syncHeadHeight() { document.documentElement.style.setProperty('--fx-head', headHeight() + 'px'); }
+
+  // Dashboard: the board help sits in the top bar (between the stage pill and the hint button).
+  // Otherwise it goes back above the board.
+  function placeHelp() {
+    const bar = $('.fx-topbar', els.room);
+    if (!els.help || !bar || !els.boardCell) return;
+    if (dashOn()) {
+      if (els.help.parentNode !== bar) bar.insertBefore(els.help, els.hintBtn);
+    } else if (els.help.parentNode !== els.boardCell) {
+      els.boardCell.insertBefore(els.help, els.board);
+    }
+  }
+
+  // Every moment card gets the height of the longest moment at the current card width (measured
+  // with a hidden copy), so the tray and the timeline keep their height while cards come and go.
+  function sizeCards() {
+    if (!dashOn()) { els.stage.style.removeProperty('--fx-card-h'); return; }
+    const slot = $('.fx-slot', els.stage);
+    if (!slot) return;
+    let w = slot.clientWidth;
+    const trayCards = $('.fx-tray__cards', els.stage);
+    if (trayCards) {
+      const gap = parseFloat(getComputedStyle(trayCards).columnGap) || 0;
+      w = Math.min(w, (trayCards.clientWidth - gap * (SLOTS - 1)) / SLOTS);
+    }
+    const probe = document.createElement('div');
+    probe.className = 'fx-mcard';
+    probe.setAttribute('aria-hidden', 'true');
+    probe.style.cssText = `position:absolute;left:0;top:0;visibility:hidden;width:${Math.floor(w)}px`;
+    els.stage.appendChild(probe);
+    let h = 0;
+    ANSWER.forEach((id) => { probe.textContent = MOMENTS[id].text; h = Math.max(h, probe.offsetHeight); });
+    probe.remove();
+    if (h) els.stage.style.setProperty('--fx-card-h', `${Math.ceil(h)}px`);
+  }
+
+  // Tries each board shape at the largest width whose height fits the cell and keeps the one
+  // with the bigger pictures. Sets the board column (--fx-board-w).
+  let fitKey = '';
+  function fitLayout(force) {
+    sizeCards();
+    fitBoard(force);
+  }
+  function fitBoard(force) {
+    const { dash, boardCell: cell, board } = els;
+    if (!dashOn() || !cell || els.caseWrap?.hidden) {
+      if (dash && dash.style.getPropertyValue('--fx-board-w')) {
+        dash.style.removeProperty('--fx-board-w');
+        delete board.dataset.shape;
+      }
+      fitKey = '';
+      return;
+    }
+    const gap = parseFloat(getComputedStyle(dash).columnGap) || 0;
+    const cuMin = parseFloat(getComputedStyle(els.closeup).minWidth) || 0;
+    const maxW = Math.max(BOARD_MIN, Math.floor(dash.clientWidth - els.comms.offsetWidth - cuMin - 2 * gap));
+    const key = `${maxW}x${cell.clientHeight}`;
+    if (!force && key === fitKey) return;
+    fitKey = key;
+    const setShape = (shape) => { if (shape) board.dataset.shape = shape; else delete board.dataset.shape; };
+    const widthFor = (shape) => {
+      setShape(shape);
+      let w = maxW;
+      // The labels don't shrink with the board, so this takes a few rounds.
+      for (let i = 0; i < 10; i++) {
+        dash.style.setProperty('--fx-board-w', `${w}px`);
+        const room = cell.getBoundingClientRect().bottom - board.getBoundingClientRect().top;
+        const h = board.offsetHeight;
+        if (h <= room + 0.5) return { w, fits: true };
+        if (w <= BOARD_MIN) break;
+        w = Math.max(BOARD_MIN, Math.floor(w * Math.min(0.98, room / h)));
+      }
+      return { w, fits: false };
+    };
+    // 6 x 2 with the tags on the pictures, 6 x 2 with the tags underneath, 4 x 3. A shape that
+    // fits beats one that doesn't; then the bigger pictures win (tags underneath on a tie).
+    const options = [['wide', 6, 0], ['wide-roomy', 6, 0.5], ['', 4, 0]].map(([shape, cols, bonus]) => {
+      const r = widthFor(shape);
+      return { shape, w: r.w, fits: r.fits, score: r.w / cols + bonus };
+    });
+    const pool = options.some((o) => o.fits) ? options.filter((o) => o.fits) : options.filter((o) => o.shape === 'wide');
+    const best = pool.reduce((a, b) => (b.score > a.score ? b : a));
+    setShape(best.shape);
+    dash.style.setProperty('--fx-board-w', `${best.w}px`);
+  }
+  let fitQueued = false;
+  function scheduleFit() {
+    if (fitQueued) return;
+    fitQueued = true;
+    requestAnimationFrame(() => { fitQueued = false; fitLayout(true); });
+  }
+
+  function scrollPageTo(top) {
+    try { window.scrollTo({ top, behavior: REDUCED() ? 'instant' : 'smooth' }); } catch (_) { window.scrollTo(0, top); }
+  }
+  function roomTarget() {
+    return Math.max(0, Math.round(window.scrollY + els.room.getBoundingClientRect().top - headHeight() - 8));
+  }
+  // Only when the dashboard layout is on, the card fits in the window and part of it is out of view.
+  function alignRoom() {
+    if (state.solved || !dashOn()) return;
+    const r = els.room.getBoundingClientRect();
+    const top = headHeight() + 8;
+    if (r.height > window.innerHeight - top + 2) return;
+    if (r.top >= top - 2 && r.bottom <= window.innerHeight + 2) return;
+    scrollPageTo(roomTarget());
+  }
+
+  let layoutReady = false;
+  function initLayout() {
+    if (layoutReady) return;
+    layoutReady = true;
+    syncHeadHeight();
+    placeHelp();
+    fitLayout(true);
+    if (window.ResizeObserver) {
+      try {
+        if (header) new ResizeObserver(syncHeadHeight).observe(header);
+        // The board cell changes size with the window and with the height of the work area.
+        const ro = new ResizeObserver(() => fitLayout(false));
+        if (els.dash) ro.observe(els.dash);
+        ro.observe(els.stage);
+        // The chat gets shorter or longer with the work area: keep the newest message in view.
+        new ResizeObserver(() => showNewestMsg(false)).observe(els.feed);
+      } catch (_) { /* ignore */ }
+    }
+    const onDash = () => { placeHelp(); fitLayout(true); };
+    try { DASH?.addEventListener('change', onDash); } catch (_) { DASH?.addListener?.(onDash); }
+    window.addEventListener('resize', () => { syncHeadHeight(); fitLayout(false); });
+    // Runs after the clicked control has done its job (bubbling), so it never steals the click.
+    els.room.addEventListener('click', alignRoom);
+    const jump = $('#fxJump');
+    if (jump) jump.addEventListener('click', () => scrollPageTo(roomTarget()));
+  }
+
+  // =====================================================================
   // Boot: locked screen until the vault is open, then the case
   // =====================================================================
   let started = false;
@@ -1569,6 +1774,7 @@
     }
     buildBoard();
     renderAll();
+    initLayout();
     if (state.solved && !registered) {
       // Solved here but the shared progress doesn't know yet (e.g. a sync was lost).
       finishRoom(false);

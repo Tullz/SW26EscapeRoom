@@ -195,9 +195,9 @@
           text: '“Employee Bonuses” is chosen to make you curious enough to click. Attackers love money, HR and payroll topics.'
         },
         {
-          title: 'Nobody says who shared it',
+          title: 'A share John wasn’t expecting',
           rects: [[20, 190, 315, 220], [380, 432, 740, 468]],
-          text: 'A real share notification tells you which colleague shared the file. “A file has been shared with you” from no one is a generic lure.'
+          text: 'Real SharePoint emails don’t always name the person who shared a file, so on its own this proves nothing. But John wasn’t expecting a file, the message gives no reason for it, and everything else here is suspicious. If a share surprises you, ask the colleague or open SharePoint yourself instead of clicking.'
         },
         {
           title: 'The “Open” button',
@@ -207,7 +207,7 @@
       ],
       hints: [
         'Scammers imitate the tools you use at work every day. Check the small print as carefully as the big print.',
-        'Check the spelling of the sender domain and the company logo at the bottom. Then ask: who actually shared this file, and why is its name so tempting?'
+        'Check the spelling of the sender domain and the company logo at the bottom. Then ask: was John expecting this file, and why is its name so tempting?'
       ]
     }
   ];

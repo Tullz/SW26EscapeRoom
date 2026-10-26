@@ -126,7 +126,7 @@
   };
   const MSGS = {
     intro1: { who: 'ray', text: 'Thanks for coming in so fast. That alarm has been going since 11:47 and the number on the screen just keeps going up. I don\'t know computers, so it\'s all yours.' },
-    intro2: { who: 'ray', text: 'The IT team left an <strong>Incident Playbook</strong> for nights like this (it\'s just under the room). Step 1 says find out who\'s behind it. Have a look around, click anything!' },
+    intro2: { who: 'ray', text: 'The IT team left an <strong>Incident Playbook</strong> for nights like this: look for the Playbook panel. Step 1 says find out who\'s behind it. Have a look around, click anything!' },
     vm: { who: 'ray', text: 'Tasmania? No signal for a week? Lucky Alex.' },
     pizza: { who: 'ray', text: 'Oi, hands off, that\'s my dinner.' },
     card: { who: 'ray', text: 'That reporter came sniffing around last week asking questions. He left his card on the desk.' },
@@ -321,6 +321,22 @@
   function reduceMotion() { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
   function fmt(n) { return Number(n).toLocaleString('en-AU'); }
 
+  // Scroll a panel (never the page) just enough to show el. A tall el is shown from its top.
+  // In the close-up, the feedback line pinned to the bottom of the panel is allowed for.
+  function revealIn(panel, el, smooth) {
+    if (!panel || !el || panel.scrollHeight <= panel.clientHeight) return;
+    const p = panel.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const gap = 8;
+    const bottom = p.bottom - (parseFloat(panel.style.getPropertyValue('--ir-fb-h')) || 0);
+    let delta = 0;
+    if (r.top < p.top + gap) delta = r.top - p.top - gap;
+    else if (r.bottom > bottom - gap) delta = Math.min(r.bottom - bottom + gap, r.top - p.top - gap);
+    if (!delta) return;
+    const top = panel.scrollTop + delta;
+    try { panel.scrollTo({ top, behavior: smooth && !reduceMotion() ? 'smooth' : 'auto' }); } catch (_) { panel.scrollTop = top; }
+  }
+
   function setPct(n) {
     if (state.complete) return;
     try {
@@ -330,6 +346,7 @@
   }
 
   const els = {
+    room: $('#irRoom'),
     scene: $('#irScene'),
     closeup: $('#irCloseup'),
     feed: $('#irFeed'),
@@ -375,6 +392,7 @@
 
   // ---------- Feed (Ray's radio) ----------
   function renderFeed(newId) {
+    const keep = els.feed.scrollTop; // rebuilding resets the scroll; restore it so the glide starts from where it was
     els.feed.innerHTML = '';
     state.msgs.forEach((id, i) => {
       const m = MSGS[id];
@@ -385,7 +403,16 @@
       el.appendChild(h('span', null, m.text));
       els.feed.appendChild(el);
     });
-    els.feed.scrollTop = els.feed.scrollHeight;
+    els.feed.scrollTop = keep;
+    showNewestMsg(!!newId);
+  }
+  // Keep the newest radio message in view inside the feed (from its top, if it is taller than the panel).
+  function showNewestMsg(smooth) {
+    const last = els.feed.lastElementChild;
+    if (!last) return;
+    const pad = parseFloat(getComputedStyle(els.feed).paddingTop) || 0;
+    const top = Math.min(last.offsetTop - pad, els.feed.scrollHeight - els.feed.clientHeight);
+    try { els.feed.scrollTo({ top, behavior: smooth && !reduceMotion() ? 'smooth' : 'auto' }); } catch (_) { els.feed.scrollTop = top; }
   }
   function say(id, noFollow) {
     const m = MSGS[id];
@@ -430,6 +457,7 @@
     state.clues.forEach((id) => {
       els.evidence.appendChild(h('li', { class: id === newId ? 'is-new' : '' }, CLUES[id]));
     });
+    if (newId) revealIn(els.evidence, $('.is-new', els.evidence), true);
   }
 
   // ---------- Playbook ----------
@@ -448,7 +476,7 @@
       const current = !state.complete && i === state.step;
       const locked = !state.complete && i > state.step;
       const tab = button('ir-tab' + (done ? ' is-done' : '') + (current ? ' is-current' : ''),
-        '<span class="ir-tab__n" aria-hidden="true">' + (done ? '&#10003;' : i) + '</span>' + STEP_TITLES[i - 1],
+        '<span class="ir-tab__n" aria-hidden="true">' + (done ? '&#10003;' : i) + '</span><span class="ir-tab__t">' + STEP_TITLES[i - 1] + '</span>',
         () => { state.page = i; save(); renderBook(); const t = $$('.ir-tab', els.tabs)[i - 1]; if (t) t.focus({ preventScroll: true }); },
         { role: 'tab', 'aria-selected': String(view === i), 'aria-label': `Step ${i}: ${STEP_TITLES[i - 1]}${done ? ' (done)' : current ? ' (now)' : locked ? ' (locked)' : ''}` });
       if (locked) tab.disabled = true;
@@ -479,6 +507,7 @@
       els.hintText.innerHTML = '';
       list.slice(0, shown).forEach((t, i) => els.hintText.appendChild(h('div', { text: `Hint ${i + 1}: ${t}` })));
       els.hintText.hidden = false;
+      els.hintText.scrollTop = els.hintText.scrollHeight; // the box is capped on wide screens: show the newest hint
     } else {
       els.hintText.hidden = true;
     }
@@ -565,7 +594,18 @@
       el.className = 'irc-fb' + (text ? ' is-' + (tone || 'info') : '');
       el.textContent = text || '';
     }
+    syncFbSpace();
+    // Don't let the (pinned) feedback cover the control the player is using.
+    const active = document.activeElement;
+    if (text && active && active !== els.closeup && els.closeup.contains(active)) revealIn(els.closeup, active);
     if (text) announce(text);
+  }
+  // On wide screens the feedback line is pinned to the bottom of the close-up panel: tell the CSS how
+  // tall it is, so the whiteboard's magnet dock (also pinned) sits just above it.
+  function syncFbSpace() {
+    const el = $('#ircFb', els.closeup);
+    const pinned = el && el.textContent && getComputedStyle(el).position === 'sticky';
+    els.closeup.style.setProperty('--ir-fb-h', (pinned ? el.offsetHeight : 0) + 'px');
   }
   function fbEl() {
     const el = h('p', { class: 'irc-fb', id: 'ircFb', role: 'status' });
@@ -581,7 +621,7 @@
     renderCloseup();
     if (focusSel) {
       const el = $(focusSel, els.closeup);
-      if (el) { try { el.focus({ preventScroll: true }); } catch (_) {} }
+      if (el) { try { el.focus({ preventScroll: true }); } catch (_) {} revealIn(els.closeup, el); }
     }
   }
 
@@ -607,12 +647,17 @@
 
   function renderCloseup() {
     const item = state.focus;
+    // The close-up scrolls inside its panel on wide screens: keep the place when the same thing re-draws.
+    const keep = els.closeup.dataset.item === String(item) ? els.closeup.scrollTop : 0;
+    els.closeup.dataset.item = String(item);
     if (!item || !RENDERERS[item]) {
       els.closeup.innerHTML = '<p class="irc-empty">Nothing picked up yet. Click something in the Ops Room to look at it up close.</p>';
       return;
     }
     RENDERERS[item]();
     els.closeup.appendChild(fbEl());
+    syncFbSpace();
+    els.closeup.scrollTop = keep;
   }
 
   // --- Alarm screen ---
@@ -978,6 +1023,8 @@
     renderScene();
     rerender();
     try { els.closeup.focus({ preventScroll: true }); } catch (_) {}
+    // Bring the Emergency Card into view once the glass has cracked (it can sit below the fold of the panel).
+    later(() => { if (state.focus === 'glass') revealIn(els.closeup, $('.irc-paper--card', els.closeup), true); }, reduceMotion() ? 0 : 650);
   }
 
   // --- Server cabinet ---
@@ -1318,6 +1365,50 @@
     }, 500);
   }
 
+  // ---------- Layout: the whole room on one screen ----------
+  // From 1260px wide the room card is sized to the window below the sticky site header (see the
+  // page CSS). The CSS needs the header's height, and a click in the room lines the card up with
+  // the top of the window when part of it is cut off.
+  const header = $('.site-header');
+  const dashQuery = window.matchMedia ? window.matchMedia('(min-width: 1260px)') : null;
+  function headHeight() {
+    if (!header || !/sticky|fixed/.test(getComputedStyle(header).position)) return 0;
+    return Math.round(header.getBoundingClientRect().height);
+  }
+  function syncHeadHeight() { document.documentElement.style.setProperty('--ir-head', headHeight() + 'px'); }
+
+  function scrollPageTo(top) {
+    try { window.scrollTo({ top, behavior: reduceMotion() ? 'instant' : 'smooth' }); } catch (_) { window.scrollTo(0, top); }
+  }
+  function roomTarget() {
+    return Math.max(0, Math.round(window.scrollY + els.room.getBoundingClientRect().top - headHeight() - 8));
+  }
+  // Only when the dashboard layout is on, the card fits in the window and part of it is out of view.
+  function alignRoom() {
+    if (state.complete || !dashQuery || !dashQuery.matches) return;
+    const r = els.room.getBoundingClientRect();
+    const top = headHeight() + 8;
+    if (r.height > window.innerHeight - top + 2) return;
+    if (r.top >= top - 2 && r.bottom <= window.innerHeight + 2) return;
+    scrollPageTo(roomTarget());
+  }
+
+  function initLayout() {
+    syncHeadHeight();
+    if (window.ResizeObserver) {
+      try {
+        if (header) new ResizeObserver(syncHeadHeight).observe(header);
+        // The radio panel gets shorter when hint text appears: keep the newest message in view.
+        new ResizeObserver(() => showNewestMsg(false)).observe(els.feed);
+      } catch (_) {}
+    }
+    window.addEventListener('resize', syncHeadHeight);
+    // Runs after the clicked control has done its job (bubbling), so it never steals the click.
+    els.room.addEventListener('click', alignRoom);
+    const jump = $('#irJump');
+    if (jump) jump.addEventListener('click', () => scrollPageTo(roomTarget()));
+  }
+
   // ---------- Boot ----------
   function renderAll() {
     renderChrome();
@@ -1340,6 +1431,7 @@
       });
     } catch (_) {}
 
+    initLayout();
     flushFollowUps();
     const fresh = !state.msgs.length && !state.complete;
     if (fresh) {

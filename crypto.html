@@ -431,6 +431,28 @@
     .cc-debrief__card ul { margin: 0; padding-left: 1.1rem; font-size: .88rem; line-height: 1.5; color: var(--ink); }
     .cc-lockword { display: inline-flex; align-items: center; gap: .4rem; font-weight: 700; color: #fff; }
 
+    /* ---- The radio stays in view (laptops and monitors) ----
+       Kemi's (and the courier's) replies arrive in the radio while the team is busy with the
+       briefcase or the workbench further down the page. Pinned under the site header, the
+       newest message is always on screen, so nobody has to scroll back up to read it. */
+    #cryptoComplete { scroll-margin-top: calc(var(--site-header-h, 92px) + .75rem); }
+    @media (min-width: 961px) {
+      .cc-room { --cc-feed-h: min(200px, max(5rem, calc(26vh - 4rem))); }
+      .cc-radio {
+        position: sticky;
+        top: var(--site-header-h, 92px);
+        z-index: 6;
+        box-shadow: 0 10px 24px rgba(0, 0, 0, .5);
+      }
+      .cc-feed { max-height: var(--cc-feed-h); }
+      .cc-bench, .cc-closeup, #ccHands { scroll-margin-top: calc(var(--site-header-h, 92px) + var(--cc-feed-h) + 4.5rem); }
+    }
+    @media (min-width: 961px) and (max-height: 820px) {
+      .cc-radio { margin-bottom: .75rem; }
+      .cc-radio__head { padding-block: .35rem; }
+      .cc-feed { padding-block: .5rem; }
+    }
+
     @media (max-width: 960px) {
       .cc-layout, .cc-kit, .cc-decode { grid-template-columns: 1fr; }
       .cc-bookwrap, .cc-stencil { grid-template-columns: 1fr; }

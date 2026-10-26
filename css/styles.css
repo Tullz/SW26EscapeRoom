@@ -4406,3 +4406,49 @@ h1.glow { font-size: clamp(1.9rem, 4.5vw, 3.2rem); }
   .site-header .header-actions .nav-btn.alert { flex: 0 1 auto; }
   .site-header .header-actions .vault-status { order: 3; }
 }
+
+/* ===== Header on laptops and monitors ===================================== */
+/* --site-header-h: roughly how much of the window the sticky header covers once the page is
+   scrolled. Room pages use it to place their own sticky panels just below the header. */
+:root { --site-header-h: 92px; }
+
+/* At 1280-1500px wide the room header (back, brand, hub link, vault, clock, next, logout)
+   had only ~10px to spare, so a slightly wider button (Encryption's "Vault") or clock text
+   pushed Logout onto a second row and the pinned header grew to ~127px. */
+@media (min-width: 721px) and (max-width: 1500px) {
+  .site-header__inner { padding-inline: .75rem; }
+}
+
+/* Short laptop windows (1366x768, 1440x900, or 1920x1080 at 125-150% scaling leave only
+   600-780px for the page): a slimmer header leaves more of the window for the puzzles. */
+@media (min-width: 721px) and (max-height: 820px) {
+  :root { --site-header-h: 60px; }
+  .site-header { padding-block: .3rem; }
+  .site-header__inner { padding-block: .3rem; }
+  .site-header .logo { width: 36px; height: 36px; }
+  .site-header .nav-link { padding-block: .3rem; }
+  .site-header .nav-btn { padding-block: .3rem; }
+  .vault-status { padding-block: .25rem; }
+  .vault-status__digits li { width: 1.55rem; height: 1.55rem; }
+}
+
+@media (max-width: 720px) {
+  :root { --site-header-h: 0px; }
+}
+
+/* Footer links had no colour of their own, so they showed as the browser's default dark blue
+   (hard to read on the dark footer). */
+.site-footer a { color: var(--brand); }
+.site-footer a:hover, .site-footer a:focus-visible { color: #9ccbff; }
+
+/* Header buttons and the vault tracker set their own display, which beat the hidden attribute:
+   logged-out visitors saw Back, the vault tracker and Logout on the login page. */
+.site-header [hidden] { display: none !important; }
+
+/* Admin: longer team names (PURPLEPARROTS, RAJASINGHANP) ran into the next column of the
+   activity and session lists. Wider name column; very long names wrap instead of overlapping. */
+@media (min-width: 601px) {
+  .activity-list__item { grid-template-columns: 110px minmax(90px, 10.5rem) minmax(0, 1fr); }
+  .session-list__item { grid-template-columns: minmax(80px, 10.5rem) 80px 90px minmax(0, 1fr); }
+}
+.activity-list__team, .session-list__item > :first-child { overflow-wrap: anywhere; min-width: 0; }

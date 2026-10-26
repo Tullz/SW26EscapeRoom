@@ -53,7 +53,7 @@
 
     .mfa-hint-wrap { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
     .mfa-hint-text {
-      margin: 0 0 .9rem; padding: .6rem .85rem; border-radius: 8px; font-size: .9rem; line-height: 1.45;
+      flex: 1 1 100%; order: 3; margin: 0; padding: .6rem .85rem; border-radius: 8px; font-size: .9rem; line-height: 1.45;
       background: rgba(255,166,87,.08); border: 1px solid rgba(255,166,87,.3); color: var(--warn);
     }
 
@@ -74,13 +74,14 @@
     }
     .comms__live { margin-left: auto; color: var(--accent); display: inline-flex; align-items: center; gap: .35rem; }
     .comms__live::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: mfaBlink 1.6s infinite; }
-    .comms__feed { max-height: 190px; overflow-y: auto; padding: .7rem .9rem; display: grid; gap: .5rem; }
+    .comms__feed { position: relative; max-height: 190px; overflow-y: auto; overscroll-behavior: contain; padding: .7rem .9rem; display: grid; align-content: start; gap: .5rem; }
     .comms__msg {
       background: var(--panel-2); border: 1px solid var(--border); border-radius: 4px 12px 12px 12px;
       padding: .55rem .8rem; font-size: .92rem; line-height: 1.5; color: var(--ink); max-width: 62rem;
     }
     .comms__msg strong { color: #fff; }
-    .comms__msg.is-new { border-color: rgba(88,166,255,.55); box-shadow: 0 0 0 3px rgba(88,166,255,.08); animation: mfaMsgIn .35s ease; }
+    .comms__msg.is-new { border-color: rgba(88,166,255,.55); box-shadow: 0 0 0 3px rgba(88,166,255,.08); animation: mfaMsgIn .35s ease, mfaMsgFlash 2.4s ease; }
+    @keyframes mfaMsgFlash { 0%, 25% { background-color: rgba(88,166,255,.2); } 100% { background-color: var(--panel-2); } }
     .comms__msg.is-warn { border-color: rgba(255,85,85,.45); }
     .comms__msg.is-good { border-color: rgba(9,255,136,.4); }
     .comms__who { display: block; font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; margin-bottom: .15rem; }
@@ -106,6 +107,7 @@
     .desk-scene {
       position: relative; width: 100%; aspect-ratio: 16 / 10.5; border-radius: 14px; overflow: hidden;
       border: 1px solid var(--border); background: #121a25; user-select: none;
+      container-type: inline-size; /* poster text and labels scale with the scene (cqw) */
     }
     .scene-wall {
       position: absolute; inset: 0 0 34% 0;
@@ -124,7 +126,7 @@
     .scene-poster {
       position: absolute; left: 79%; top: 6%; width: 15%; height: 30%; border-radius: 4px; padding: 3% 1.2%;
       background: linear-gradient(160deg, #0f3b2e, #0b241d); border: 2px solid #1e5a47;
-      color: #7af0bf; font-weight: 800; font-size: clamp(6px, 1.05vw, 12px); line-height: 1.15; text-align: center;
+      color: #7af0bf; font-weight: 800; font-size: clamp(6px, 1.05vw, 12px); font-size: clamp(5px, 1.7cqw, 13px); line-height: 1.15; text-align: center;
       display: flex; flex-direction: column; justify-content: center; gap: 6%; letter-spacing: .04em;
     }
     .scene-poster small { font-weight: 600; color: #b9f5dc; font-size: .8em; letter-spacing: 0; }
@@ -151,17 +153,20 @@
     .hotspot.is-active { filter: drop-shadow(0 0 12px rgba(9,255,136,.7)); }
     .hotspot__label {
       position: absolute; left: 50%; bottom: -4px; transform: translate(-50%, 100%);
-      white-space: nowrap; line-height: 1.2; font-size: clamp(9px, .9vw, 11.5px); font-weight: 700;
+      white-space: nowrap; line-height: 1.2; font-size: clamp(9px, .9vw, 11.5px); font-size: clamp(8.5px, 1.75cqw, 12px); font-weight: 700;
       color: #dfe7f0; background: rgba(8,12,18,.82); border: 1px solid rgba(255,255,255,.12);
       padding: 2px 7px; border-radius: 999px; pointer-events: none;
     }
     .hotspot.is-seen .hotspot__label { color: var(--accent); border-color: rgba(9,255,136,.35); }
     .hotspot.is-seen .hotspot__label::before { content: '\2713\00a0'; }
     .hotspot--top .hotspot__label { bottom: auto; top: -4px; transform: translate(-50%, -100%); }
+    /* labels that would hang off the scene's top/bottom edge when the scene is small */
+    .hs-badge .hotspot__label { top: auto; bottom: -4px; left: 0; transform: translateY(100%); }
+    .hs-bin .hotspot__label { bottom: auto; top: -4px; transform: translate(-50%, -100%); }
 
     .hs-badge    { left: 3.5%; top: 6%;  width: 8%;  height: 36%; }
     .hs-photo    { left: 15.5%; top: 45%; width: 9%; height: 20%; }
-    .hs-card     { left: 26%; top: 51%; width: 8.5%; height: 14%; }
+    .hs-email    { left: 25.5%; top: 45%; width: 9.5%; height: 20%; }
     .hs-computer { left: 37%; top: 16%; width: 27%; height: 45%; }
     .hs-keyboard { left: 38.5%; top: 63.5%; width: 24%; height: 7%; }
     .hs-plant    { left: 66.5%; top: 29%; width: 10%; height: 37%; }
@@ -207,11 +212,29 @@
     .prop-badge__name { font-weight: 800; font-size: 1.05rem; color: #0f1720; }
     .prop-badge__row { font-size: .85rem; color: #394455; }
     .prop-badge__desk { display: inline-block; margin-top: .3rem; font-weight: 800; background: #1b2230; color: #fff; padding: .15rem .5rem; border-radius: 4px; font-size: .9rem; }
-    .prop-card {
-      background: linear-gradient(135deg, #fff3f8, #fbe8ff); color: #3b1f3f; border-radius: 6px; padding: .9rem 1rem; margin: .4rem 0 .9rem;
-      font-family: 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive; line-height: 1.5; box-shadow: 0 6px 14px rgba(0,0,0,.35);
+    /* Printed induction email (an A4 printout on the desk) */
+    .prop-email {
+      background: #fdfdfb linear-gradient(180deg, rgba(0,0,0,.03), transparent 35%); color: #1d232c;
+      border-radius: 2px; margin: .3rem .15rem .8rem; padding: .85rem 1rem .55rem; transform: rotate(-.4deg);
+      font-family: Calibri, Carlito, 'Segoe UI', Arial, sans-serif; font-size: .82rem; line-height: 1.45;
+      box-shadow: 0 8px 18px rgba(0,0,0,.4);
     }
-    .prop-card__title { font-family: Georgia, serif; font-weight: 700; font-size: 1.1rem; color: #b0306a; margin-bottom: .3rem; }
+    .prop-email__top { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; border-bottom: 2px solid #1d232c; padding-bottom: .2rem; margin-bottom: .45rem; }
+    .prop-email__top b { font-size: 1.02rem; }
+    .prop-email__top span { font-size: .68rem; color: #5b6573; }
+    .prop-email__head { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .05rem .5rem; margin: 0 0 .55rem; padding-bottom: .5rem; border-bottom: 1px solid #c9ced6; }
+    .prop-email__head dt { font-weight: 700; }
+    .prop-email__head dd { margin: 0; overflow-wrap: anywhere; }
+    .prop-email__body p { margin: 0 0 .45rem; font-size: inherit; line-height: inherit; }
+    .prop-email__body ul { margin: 0 0 .5rem; padding-left: 1.1rem; }
+    .prop-email__start { border: 2px solid #1f4f8f; border-radius: 6px; background: #eef4fb; padding: .4rem .6rem .45rem; margin: .15rem 0 .6rem; }
+    .prop-email__start span { display: block; font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #1f4f8f; }
+    .prop-email__start strong { display: block; font-size: 1.15rem; color: #0f1720; margin: .05rem 0 .1rem; }
+    .prop-email__start mark {
+      color: inherit; padding: 0 .2em; border-radius: .25em;
+      background: linear-gradient(100deg, rgba(255,226,64,.2) 0, rgba(255,226,64,.9) 5%, rgba(255,226,64,.8) 95%, rgba(255,226,64,.15) 100%);
+    }
+    .prop-email__foot { border-top: 1px dashed #c9ced6; margin-top: .2rem; padding-top: .25rem; text-align: center; font-size: .66rem; color: #6b7480; }
     .prop-label {
       display: inline-block; background: #c9a36b; color: #2a1c0a; padding: .5rem .8rem; border-radius: 4px; margin: .4rem 0 .9rem;
       font-family: 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive; box-shadow: 0 4px 10px rgba(0,0,0,.35);
@@ -261,85 +284,118 @@
     .login__ok strong { color: var(--accent); font-size: 1.1rem; display: block; margin-bottom: .3rem; }
 
     /* ---- The phone ---- */
+    /* Sizes inside the phone are in em and the screen's font size follows the phone's width
+       (container units), so a smaller phone on a smaller screen keeps the same layout. */
     .phone {
       width: 100%; max-width: 300px; margin: 0 auto; aspect-ratio: 9 / 18.5; border-radius: 34px; padding: 10px;
       background: linear-gradient(160deg, #2b3340, #0d1117); box-shadow: 0 18px 40px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.08);
-      position: relative;
+      position: relative; container-type: inline-size;
     }
-    .phone--small { max-width: 230px; }
+    .phone:focus { outline: none; }
+    .phone--small { max-width: 250px; }
     .phone__screen {
       position: relative; height: 100%; border-radius: 26px; overflow: hidden; display: flex; flex-direction: column;
       background: radial-gradient(circle at 30% 0%, #37508a 0%, #1a2440 45%, #0b0f1c 100%); color: #fff;
+      font-size: 14px; font-size: clamp(11px, 5.8cqw, 16px);
     }
-    .phone__notch { position: absolute; top: 7px; left: 50%; transform: translateX(-50%); width: 34%; height: 18px; background: #05070a; border-radius: 0 0 12px 12px; z-index: 3; }
-    .phone__status { display: flex; justify-content: space-between; padding: 8px 18px 0; font-size: .7rem; font-weight: 700; opacity: .9; }
-    .phone__body { flex: 1; display: flex; flex-direction: column; padding: 10px 12px 14px; gap: .6rem; overflow-y: auto; }
-    .phone__clock { text-align: center; font-size: 2.6rem; font-weight: 300; margin-top: .6rem; line-height: 1; }
-    .phone__date { text-align: center; font-size: .78rem; opacity: .8; margin-bottom: .4rem; }
-    .phone__center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .8rem; text-align: center; }
-    .phone__muted { font-size: .78rem; opacity: .75; line-height: 1.4; }
+    .phone__notch { position: absolute; top: 7px; left: 50%; transform: translateX(-50%); width: 34%; height: 1.15em; background: #05070a; border-radius: 0 0 .75em .75em; z-index: 3; }
+    .phone__status { display: flex; justify-content: space-between; padding: .7em 1.6em 0; font-size: .7em; font-weight: 700; opacity: .9; }
+    .phone__body { flex: 1; display: flex; flex-direction: column; padding: .62em .75em .9em; gap: .6em; overflow-y: auto; }
+    .phone__clock { text-align: center; font-size: 2.6em; font-weight: 300; margin-top: .23em; line-height: 1; }
+    .phone__date { text-align: center; font-size: .78em; opacity: .8; margin-bottom: .5em; }
+    .phone__center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .8em; text-align: center; }
+    .phone__muted { font-size: .78em; opacity: .75; line-height: 1.4; }
+    .phone__msg { font-size: .82em; line-height: 1.4; }
+    .phone__msg strong { display: block; font-size: 1.12em; margin-bottom: .15em; }
+    .phone__msg--bad strong { color: #ffb4b4; }
     .fp-btn {
-      width: 74px; height: 74px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); background: rgba(255,255,255,.06);
-      display: grid; place-items: center; cursor: pointer; color: #fff; transition: all .2s;
+      width: 4.6em; height: 4.6em; flex: none; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); background: rgba(255,255,255,.06);
+      display: grid; place-items: center; cursor: pointer; color: #fff; transition: all .2s; font-size: inherit;
     }
     .fp-btn:hover, .fp-btn:focus-visible { border-color: var(--brand); background: rgba(88,166,255,.15); }
-    .fp-btn.is-fail { border-color: var(--danger); background: rgba(255,85,85,.18); animation: mfaShake .4s; }
-    .fp-btn svg { width: 40px; height: 40px; }
+    .fp-btn.is-fail { border-color: var(--danger); background: rgba(255,85,85,.18); animation: mfaShake .4s; cursor: default; }
+    .fp-btn svg { width: 2.5em; height: 2.5em; }
 
-    .auth-app { background: #0e1726; border-radius: 16px; padding: .8rem; text-align: left; border: 1px solid rgba(255,255,255,.08); }
-    .auth-app__title { font-size: .72rem; opacity: .7; letter-spacing: .08em; text-transform: uppercase; margin-bottom: .45rem; }
-    .auth-app__acct { font-size: .8rem; opacity: .85; }
-    .auth-app__code { font-family: 'Courier New', monospace; font-size: 1.9rem; font-weight: 800; letter-spacing: .12em; color: #7cc4ff; margin: .2rem 0 .35rem; }
-    .auth-app__bar { height: 5px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
+    /* Remote unlock by IT (the approved way in when the fingerprint doesn't match) */
+    .remote-box { width: 100%; background: rgba(255,255,255,.08); border: 1px solid rgba(124,196,255,.4); border-radius: .85em; padding: .6em .65em .65em; text-align: left; }
+    .remote-box__title { font-size: .72em; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #9fd1ff; margin-bottom: .25em; }
+    .remote-box__text { font-size: .8em; line-height: 1.4; margin-bottom: .55em; }
+    .pbtn.pbtn--it { width: 100%; background: #1f6feb; color: #fff; }
+    .phone__badge { width: 3.4em; height: 3.4em; flex: none; border-radius: 50%; display: grid; place-items: center; font-weight: 900; }
+    .phone__badge--ok { background: rgba(9,255,136,.18); border: 2px solid rgba(9,255,136,.7); color: #b7ffd9; font-size: 1.4em; width: 2.45em; height: 2.45em; animation: mfaMsgIn .35s ease; }
+    .phone__badge--wait { border: 2px solid rgba(124,196,255,.3); }
+    .remote-spin { width: 1.7em; height: 1.7em; border-radius: 50%; border: .22em solid rgba(124,196,255,.25); border-top-color: #7cc4ff; animation: mfaSpin 1s linear infinite; }
+    @keyframes mfaSpin { to { transform: rotate(360deg); } }
+    .remote-steps { list-style: none; margin: 0; padding: 0; width: 100%; display: grid; gap: .35em; font-size: .8em; text-align: left; }
+    .remote-steps li { display: flex; gap: .45em; align-items: baseline; padding: .4em .55em; border-radius: .6em; background: rgba(255,255,255,.07); line-height: 1.35; }
+    .remote-steps li::before { content: '\2713'; font-weight: 900; color: var(--accent); }
+    .remote-steps li.is-wait { color: #cfe0f5; }
+    .remote-steps li.is-wait::before { content: '\2026'; color: #7cc4ff; }
+    .phone-banner {
+      margin-top: .5em; font-size: .74em; line-height: 1.35; font-weight: 700; padding: .5em .6em; border-radius: .7em;
+      background: rgba(9,255,136,.12); border: 1px solid rgba(9,255,136,.45); color: #b7ffd9;
+    }
+
+    .auth-app { background: #0e1726; border-radius: 1em; padding: .8em; text-align: left; border: 1px solid rgba(255,255,255,.08); }
+    .auth-app__title { font-size: .72em; opacity: .7; letter-spacing: .08em; text-transform: uppercase; margin-bottom: .6em; }
+    .auth-app__acct { font-size: .8em; opacity: .85; overflow-wrap: anywhere; }
+    .auth-app__code { font-family: 'Courier New', monospace; font-size: 1.9em; font-weight: 800; letter-spacing: .12em; color: #7cc4ff; margin: .1em 0 .18em; white-space: nowrap; }
+    .auth-app__bar { height: .32em; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
     .auth-app__bar span { display: block; height: 100%; background: #7cc4ff; transition: width 1s linear; }
     .auth-app__bar.is-low span { background: var(--warn); }
-    .auth-app__secs { font-size: .72rem; opacity: .7; margin-top: .3rem; }
+    .auth-app__secs { font-size: .72em; opacity: .7; margin-top: .4em; }
 
-    .notif { background: rgba(245,248,252,.96); color: #111827; border-radius: 16px; padding: .75rem .8rem; box-shadow: 0 6px 18px rgba(0,0,0,.35); animation: mfaMsgIn .3s ease; }
-    .notif__app { display: flex; align-items: center; gap: .4rem; font-size: .7rem; color: #4b5563; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: .3rem; }
-    .notif__icon { width: 18px; height: 18px; border-radius: 5px; background: #1f6feb; display: grid; place-items: center; color: #fff; font-size: .62rem; font-weight: 800; }
+    .notif { background: rgba(245,248,252,.96); color: #111827; border-radius: 1em; padding: .75em .8em; box-shadow: 0 6px 18px rgba(0,0,0,.35); animation: mfaMsgIn .3s ease; }
+    .notif__app { display: flex; align-items: center; gap: .55em; font-size: .7em; color: #4b5563; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: .43em; }
+    .notif__icon { width: 1.6em; height: 1.6em; border-radius: .45em; background: #1f6feb; display: grid; place-items: center; color: #fff; font-size: .885em; font-weight: 800; }
     .notif__icon--sms { background: #22a355; }
-    .notif__title { font-weight: 800; font-size: .95rem; margin-bottom: .25rem; }
-    .notif__text { font-size: .83rem; line-height: 1.4; color: #1f2937; }
-    .notif__rows { margin: .45rem 0 .2rem; display: grid; gap: .15rem; font-size: .78rem; color: #374151; }
+    .notif__title { font-weight: 800; font-size: .95em; margin-bottom: .26em; }
+    .notif__text { font-size: .83em; line-height: 1.4; color: #1f2937; }
+    .notif__rows { margin: .58em 0 .26em; display: grid; gap: .2em; font-size: .78em; color: #374151; }
     .notif__rows b { color: #111827; }
-    .notif__count { display: inline-block; background: var(--danger); color: #fff; border-radius: 999px; font-size: .7rem; padding: 0 .45rem; margin-left: .3rem; }
-    .phone-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .45rem; margin-top: .6rem; }
+    .notif__count { display: inline-block; background: var(--danger); color: #fff; border-radius: 999px; font-size: .74em; padding: 0 .64em; margin-left: .43em; }
+    .phone-actions { display: grid; grid-template-columns: 1fr 1fr; gap: .45em; margin-top: .6em; }
     .phone-actions--stack { grid-template-columns: 1fr; }
     .pbtn {
-      border: 0; border-radius: 10px; padding: .6rem .5rem; font-weight: 800; font-size: .88rem; cursor: pointer;
+      border: 0; border-radius: .71em; padding: .68em .57em; font-weight: 800; font-size: .88em; cursor: pointer; line-height: 1.25;
       background: #e5e7eb; color: #111827; transition: filter .15s, transform .15s;
     }
     .pbtn:hover, .pbtn:focus-visible { filter: brightness(1.08); transform: translateY(-1px); outline: 2px solid #58a6ff; outline-offset: 1px; }
     .pbtn--approve { background: #16a34a; color: #fff; }
     .pbtn--deny { background: #dc2626; color: #fff; }
-    .pbtn--ghost { background: transparent; color: #1f6feb; text-decoration: underline; font-weight: 700; padding: .35rem; }
+    .pbtn--ghost { background: transparent; color: #1f6feb; text-decoration: underline; font-weight: 700; padding: .4em; }
     .pbtn--dark { background: rgba(255,255,255,.12); color: #fff; }
-    .pbtn--num { background: #1f2937; color: #fff; font-size: 1.15rem; font-family: 'Courier New', monospace; }
-    .num-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: .45rem; margin-top: .45rem; }
+    .pbtn--num { background: #1f2937; color: #fff; font-size: 1.15em; font-family: 'Courier New', monospace; }
+    .num-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: .45em; margin-top: .45em; }
 
-    .sms-thread { display: grid; gap: .5rem; }
-    .sms-from { text-align: center; font-size: .8rem; opacity: .85; padding-bottom: .4rem; border-bottom: 1px solid rgba(255,255,255,.1); }
-    .sms-from b { display: block; font-size: .95rem; opacity: 1; }
-    .sms-bubble { background: #2b3445; border-radius: 14px 14px 14px 4px; padding: .6rem .75rem; font-size: .84rem; line-height: 1.45; max-width: 92%; animation: mfaMsgIn .3s ease; }
-    .sms-bubble--me { background: #1f6feb; border-radius: 14px 14px 4px 14px; justify-self: end; }
+    .sms-thread { display: grid; gap: .5em; }
+    .sms-from { text-align: center; font-size: .8em; opacity: .85; padding-bottom: .5em; border-bottom: 1px solid rgba(255,255,255,.1); }
+    .sms-from b { display: block; font-size: 1.19em; opacity: 1; }
+    .sms-bubble { background: #2b3445; border-radius: 1.04em 1.04em 1.04em .3em; padding: .71em .89em; font-size: .84em; line-height: 1.45; max-width: 92%; animation: mfaMsgIn .3s ease; }
+    .sms-bubble--me { background: #1f6feb; border-radius: 1.04em 1.04em .3em 1.04em; justify-self: end; }
     .breach {
-      background: rgba(127,17,17,.95); border: 2px solid #ff6b6b; border-radius: 14px; padding: .8rem; text-align: left; animation: mfaShake .45s;
+      background: rgba(127,17,17,.95); border: 2px solid #ff6b6b; border-radius: .875em; padding: .8em; text-align: left; animation: mfaShake .45s;
     }
-    .breach__title { font-weight: 900; letter-spacing: .06em; color: #fff; margin-bottom: .3rem; }
-    .breach p { font-size: .82rem; line-height: 1.45; margin: 0 0 .5rem; }
-    .phone-toast { background: rgba(9,255,136,.15); border: 1px solid rgba(9,255,136,.5); color: #b7ffd9; border-radius: 12px; padding: .6rem .7rem; font-size: .82rem; line-height: 1.4; }
+    .breach__title { font-weight: 900; letter-spacing: .06em; color: #fff; margin-bottom: .3em; }
+    .breach p { font-size: .82em; line-height: 1.45; margin: 0 0 .6em; }
+    .phone-toast { background: rgba(9,255,136,.15); border: 1px solid rgba(9,255,136,.5); color: #b7ffd9; border-radius: .9em; padding: .73em .85em; font-size: .82em; line-height: 1.4; }
 
     /* ---- Stage 2 layout ---- */
-    .attack-layout { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); gap: 1.25rem; align-items: start; }
-    .attack-side { display: grid; gap: 1rem; }
+    .attack-layout {
+      display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr); grid-template-rows: auto 1fr;
+      grid-template-areas: "aphone side" "aphone log"; gap: 1rem 1.25rem; align-items: start;
+    }
+    .attack-phone-cell { grid-area: aphone; }
+    .attack-side { grid-area: side; display: grid; gap: 1rem; }
+    .attack-side > #mfaLesson:empty { display: none; }
+    .attack-side .lesson { margin-top: 0; }
     .monitor {
       background: #0a0f16; border: 8px solid #222a35; border-bottom-width: 14px; border-radius: 12px; padding: .9rem; min-height: 150px;
     }
     .monitor__bar { display: flex; align-items: center; gap: .45rem; font-size: .75rem; color: var(--muted); margin-bottom: .6rem; }
     .monitor__bar i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; background: #3a4452; }
     .monitor__big { font-size: 2.6rem; font-weight: 800; color: #fff; font-family: 'Courier New', monospace; letter-spacing: .1em; text-align: center; margin: .3rem 0; }
-    .attack-log { background: var(--panel-2); border: 1px solid var(--border); border-radius: 14px; padding: 1rem; }
+    .attack-log { grid-area: log; background: var(--panel-2); border: 1px solid var(--border); border-radius: 14px; padding: 1rem; }
     .attack-log h3 { margin: 0 0 .6rem; font-size: 1rem; }
     .attack-log ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
     .attack-log li {
@@ -372,6 +428,8 @@
     .clues { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
     .clues li { font-size: .86rem; line-height: 1.4; padding: .45rem .6rem; border-radius: 8px; background: rgba(255,227,110,.06); border-left: 3px solid #ffe36e; }
     .clues li b { color: #ffe9a0; }
+    .clues li.is-new { animation: mfaClueFlash 2.4s ease; }
+    @keyframes mfaClueFlash { 0%, 25% { background-color: rgba(255,227,110,.24); } 100% { background-color: rgba(255,227,110,.06); } }
     .clues__empty { color: var(--muted); font-size: .86rem; }
 
     /* ---- Completion ---- */
@@ -394,6 +452,7 @@
 
     @media (max-width: 960px) {
       .desk-layout, .attack-layout, .kit { grid-template-columns: 1fr; }
+      .attack-layout { grid-template-rows: none; grid-template-areas: "aphone" "side" "log"; }
       .phone { max-width: 290px; }
     }
     @media (max-width: 720px) {
@@ -413,8 +472,114 @@
       .phone { aspect-ratio: auto; min-height: 400px; }
       #handPhone { min-height: 340px; }
     }
+    /* =====================================================================
+       Dashboard layout (laptops and monitors): when the room card is scrolled into
+       view, the whole room fits under the sticky site header with no page scrolling.
+       Panels that can grow (call, close-up, notebook, Stage 2 side panel) scroll
+       inside themselves. Keep the media query in step with dashboardLayout() in js/mfa.js.
+         Stage 1:  notebook+keys | desk scene / call below | close-up | phone (once picked up)
+         Stage 2:  notebook+keys | phone | lesson + laptop | call / alert log below
+       ===================================================================== */
+    @media (min-width: 1180px) and (min-height: 520px) {
+      .mfa-room:not([data-stage="done"]) {
+        --gap: .7rem;
+        --room-w: min(calc(100vw - 3rem), 2300px);
+        --kit-w: clamp(210px, 16.5vw, 340px);
+        --side-w: clamp(270px, 22vw, 480px);  /* close-up (Stage 1 minimum) and call column (Stage 2) */
+        --side-min: clamp(270px, 18vw, 420px);
+        --phone-max: clamp(300px, 15vw, 400px);
+        width: var(--room-w);
+        margin-left: calc((100% - var(--room-w)) / 2);
+        height: clamp(470px, calc(100vh - var(--mfa-head, 92px) - 1rem), 1500px);
+        display: flex; flex-direction: column;
+        padding: .7rem .8rem .8rem;
+        scroll-margin-top: calc(var(--mfa-head, 92px) + .5rem);
+      }
+      .mfa-room:not([data-stage="done"]) .mfa-topbar { flex-wrap: nowrap; align-items: flex-start; margin-bottom: var(--gap); }
+      .mfa-room:not([data-stage="done"]) .mfa-topbar__stage { order: 1; flex: none; padding-top: .2rem; }
+      .mfa-room:not([data-stage="done"]) .mfa-hint-text {
+        order: 2; flex: 1 1 auto; min-width: 0; max-height: 4.7em; overflow-y: auto; padding: .35rem .7rem; font-size: .85rem; line-height: 1.4;
+      }
+      .mfa-room:not([data-stage="done"]) .mfa-hint-wrap { order: 3; flex: none; margin-left: auto; }
+
+      /* The wrapper is a size container, so the board (and the scene and phones in it) can
+         size themselves to the height that is left under the top bar (cqh units). */
+      .mfa-room:not([data-stage="done"]) .mfa-board-wrap { flex: 1 1 auto; min-height: 0; container-type: size; }
+      .mfa-room:not([data-stage="done"]) .mfa-board { height: 100%; display: grid; gap: var(--gap); }
+      .mfa-room:not([data-stage="done"]) :is(#stageDesk, .desk-layout, .side-col, #stageAttack, .attack-layout) { display: contents; }
+
+      /* Shared panels */
+      .mfa-room:not([data-stage="done"]) .comms { grid-area: feed; margin: 0; min-height: 0; display: flex; flex-direction: column; }
+      .mfa-room:not([data-stage="done"]) .comms__head { padding: .3rem .7rem; font-size: .74rem; gap: .45rem; }
+      .mfa-room:not([data-stage="done"]) .comms__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .mfa-room:not([data-stage="done"]) .comms__live { flex: none; }
+      .mfa-room:not([data-stage="done"]) .comms__avatar { width: 22px; height: 22px; font-size: .64rem; flex: none; }
+      .mfa-room:not([data-stage="done"]) .comms__feed { flex: 1 1 auto; min-height: 0; max-height: none; padding: .55rem .7rem; }
+      .mfa-room:not([data-stage="done"]) .comms__msg { font-size: .88rem; line-height: 1.45; padding: .45rem .7rem; }
+      .mfa-room:not([data-stage="done"]) #mfaKit { grid-area: kit; margin: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--gap); }
+      .mfa-room:not([data-stage="done"]) .kit__panel { padding: .6rem .7rem; }
+      .mfa-room:not([data-stage="done"]) .kit__panel:last-child { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+      .mfa-room:not([data-stage="done"]) .kit__panel h3 { font-size: .92rem; margin-bottom: .45rem; flex-wrap: wrap; }
+      .mfa-room:not([data-stage="done"]) .factors { grid-template-columns: 1fr; gap: .4rem; }
+      /* compact key cards: small icon + name on one line, the explanation underneath */
+      .mfa-room:not([data-stage="done"]) .factor {
+        min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;
+        column-gap: .45rem; row-gap: .15rem; text-align: left; padding: .35rem .5rem;
+      }
+      .mfa-room:not([data-stage="done"]) .factor > div:not([class]) { display: contents; }
+      .mfa-room:not([data-stage="done"]) .factor__icon { width: 24px; height: 24px; font-size: .85rem; }
+      .mfa-room:not([data-stage="done"]) .factor__icon svg { width: 15px; height: 15px; }
+      .mfa-room:not([data-stage="done"]) .factor__text { grid-column: 1 / -1; }
+      .mfa-room:not([data-stage="done"]) .factor__name { font-size: .8rem; }
+      .mfa-room:not([data-stage="done"]) .factor__text { font-size: .74rem; line-height: 1.35; }
+      .mfa-room:not([data-stage="done"]) .clues li { font-size: .82rem; padding: .4rem .55rem; }
+
+      /* Stage 1: the desk */
+      .mfa-room[data-stage="desk"] .mfa-board {
+        /* the call gets at least --feed-min under the scene; the scene column is never wider than
+           the scene can be at that height, so spare width goes to the close-up instead */
+        --feed-min: clamp(150px, 28cqh, 320px);
+        --scene-w: calc((100cqh - var(--feed-min) - var(--gap)) * 1.5238);
+        grid-template-columns: var(--kit-w) minmax(0, var(--scene-w)) minmax(var(--side-min), 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+        grid-template-areas: "kit scene closeup" "kit feed closeup";
+      }
+      .mfa-room[data-stage="desk"].is-holding .mfa-board {
+        grid-template-columns: var(--kit-w) minmax(0, var(--scene-w)) minmax(var(--side-min), 1fr) auto;
+        grid-template-areas: "kit scene closeup hands" "kit feed closeup hands";
+      }
+      .mfa-room[data-stage="desk"] .scene-cell { grid-area: scene; min-width: 0; }
+      .mfa-room[data-stage="desk"] .desk-help { display: none; } /* the empty close-up says the same */
+      .mfa-room[data-stage="desk"] .desk-scene { width: 100%; }
+      .mfa-room[data-stage="desk"] .closeup { grid-area: closeup; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: .85rem .95rem; }
+      .mfa-room[data-stage="desk"] #handsWrap { grid-area: hands; min-height: 0; display: flex; flex-direction: column; align-items: center; }
+      .mfa-room[data-stage="desk"] #handsWrap .closeup__eyebrow { align-self: stretch; text-align: center; margin: 0 0 .45rem !important; line-height: 1.3; }
+      .mfa-room[data-stage="desk"] #handPhone {
+        width: min(var(--phone-max), calc((100cqh - 2.6rem) * .5625)); max-width: none; aspect-ratio: 9 / 16; margin: 0; flex: none;
+      }
+
+      /* Stage 2: guard the phone */
+      .mfa-room[data-stage="attack"] .mfa-board {
+        grid-template-columns: var(--kit-w) auto minmax(0, 1fr) var(--side-w);
+        grid-template-rows: minmax(0, 1fr) auto;
+        grid-template-areas: "kit aphone side feed" "kit aphone side log";
+      }
+      .mfa-room[data-stage="attack"] .attack-phone-cell { grid-area: aphone; min-height: 0; }
+      .mfa-room[data-stage="attack"] #attackPhone {
+        width: min(var(--phone-max), calc(100cqh * .5625)); max-width: none; aspect-ratio: 9 / 16; margin: 0;
+      }
+      .mfa-room[data-stage="attack"] .attack-side { grid-area: side; min-height: 0; overflow-y: auto; overscroll-behavior: contain; align-content: start; gap: var(--gap); }
+      .mfa-room[data-stage="attack"] .attack-log { grid-area: log; padding: .5rem .65rem; }
+      .mfa-room[data-stage="attack"] .attack-log h3 { font-size: .88rem; margin-bottom: .35rem; }
+      .mfa-room[data-stage="attack"] .attack-log ol { gap: .3rem; }
+      .mfa-room[data-stage="attack"] .attack-log li { font-size: .78rem; line-height: 1.3; padding: .28rem .5rem; gap: .45rem; }
+      .mfa-room[data-stage="attack"] .attack-log li .n { min-width: .9rem; }
+      .mfa-room[data-stage="attack"] .monitor { min-height: 0; }
+    }
+
     @media (prefers-reduced-motion: reduce) {
-      .hotspot, .comms__msg, .notif, .breach, .factor { animation: none !important; transition: none !important; }
+      .hotspot, .comms__msg, .notif, .breach, .factor, .clues li, .lesson, .fp-btn, .phone__badge, .sms-bubble { animation: none !important; transition: none !important; }
+      .remote-spin { animation: none; border-style: dotted; }
     }
   </style>
 </head>
@@ -517,23 +682,26 @@
     </section>
 
     <!-- ================= The room ================= -->
-    <section class="card mfa-room mt-2" id="mfaRoom" aria-labelledby="mfaStageTitle">
+    <section class="card mfa-room mt-2" id="mfaRoom" data-stage="desk" aria-labelledby="mfaStageTitle">
       <div class="mfa-topbar">
-        <div>
+        <div class="mfa-topbar__stage">
           <span class="mfa-stage-pill" id="mfaStagePill"><span class="dot" aria-hidden="true"></span><span id="mfaStageTitle">Stage 1 of 2: Priya's desk</span></span>
         </div>
         <div class="mfa-hint-wrap">
           <button class="btn ghost sm" type="button" id="mfaHintBtn">Hint (-5 pts)</button>
         </div>
+        <p class="mfa-hint-text" id="mfaHintText" role="status" hidden></p>
       </div>
-      <p class="mfa-hint-text" id="mfaHintText" role="status" hidden></p>
 
+      <!-- Everything the team plays with. On wide screens this is one dashboard grid
+           (see "Dashboard layout" in the styles); on narrow screens it stacks. -->
+      <div class="mfa-board-wrap"><div class="mfa-board" id="mfaBoard">
       <!-- Live call with Priya and Sam -->
       <div class="comms" aria-label="Call with Priya Shah and Sam from IT Security">
         <div class="comms__head">
           <span class="comms__avatar comms__avatar--priya" aria-hidden="true">PS</span>
           <span class="comms__avatar" aria-hidden="true">SO</span>
-          <span>Call: Priya Shah &amp; Sam Okafor (IT)</span>
+          <span class="comms__title">Call: Priya Shah &amp; Sam Okafor (IT)</span>
           <span class="comms__live">Live</span>
         </div>
         <div class="comms__feed" id="mfaFeed" aria-live="polite"></div>
@@ -542,7 +710,7 @@
       <!-- ---------- Stage 1: the desk ---------- -->
       <div id="stageDesk">
         <div class="desk-layout">
-          <div>
+          <div class="scene-cell">
             <p class="desk-help">Click on anything on Priya's desk to take a closer look.</p>
             <div class="desk-scene" id="deskScene" role="group" aria-label="Priya's desk. Each item is a button you can inspect.">
               <div class="scene-wall" aria-hidden="true"></div>
@@ -581,14 +749,28 @@
                 <span class="hotspot__label">Photo</span>
               </button>
 
-              <button class="hotspot hs-card" type="button" data-item="card" aria-label="Greeting card">
-                <svg viewBox="0 0 60 50" aria-hidden="true" preserveAspectRatio="xMidYMax meet">
-                  <path d="M4 48 L16 4 L56 4 L44 48 Z" fill="#f7c6dc"/>
-                  <path d="M4 48 L16 4 L20 4 L8 48 Z" fill="#d98bb0"/>
-                  <text x="33" y="33" font-size="22" font-weight="900" fill="#b0306a" text-anchor="middle" font-family="Georgia, serif">5</text>
-                  <circle cx="22" cy="14" r="2" fill="#58a6ff"/><circle cx="46" cy="12" r="2" fill="#09c26a"/><circle cx="40" cy="40" r="2" fill="#ffa657"/>
+              <button class="hotspot hotspot--top hs-email" type="button" data-item="email" aria-label="A printed email on the desk">
+                <svg viewBox="0 0 60 80" aria-hidden="true" preserveAspectRatio="xMidYMax meet">
+                  <g transform="rotate(-5 31 42)">
+                    <rect x="9" y="5" width="44" height="72" rx="1.5" fill="#f3f4f6" stroke="#c3c9d2" stroke-width="1"/>
+                    <rect x="13" y="10" width="16" height="3" rx=".5" fill="#1d232c"/>
+                    <rect x="13" y="15" width="36" height="1" fill="#1d232c"/>
+                    <rect x="13" y="18.5" width="30" height="1.6" fill="#9aa4b2"/>
+                    <rect x="13" y="22" width="26" height="1.6" fill="#9aa4b2"/>
+                    <rect x="13" y="25.5" width="32" height="1.6" fill="#9aa4b2"/>
+                    <rect x="13" y="29" width="22" height="1.6" fill="#2f6fd6"/>
+                    <rect x="13" y="35" width="34" height="1.4" fill="#b8bec7"/>
+                    <rect x="13" y="38" width="30" height="1.4" fill="#b8bec7"/>
+                    <rect x="12" y="42.5" width="38" height="10" rx="1.5" fill="#eaf1fa" stroke="#1f4f8f" stroke-width="1"/>
+                    <rect x="14.5" y="46" width="29" height="3.6" rx="1" fill="#ffe24a"/>
+                    <rect x="15.5" y="47" width="25" height="1.6" fill="#1d232c"/>
+                    <rect x="13" y="56" width="32" height="1.4" fill="#b8bec7"/>
+                    <rect x="13" y="59" width="28" height="1.4" fill="#b8bec7"/>
+                    <rect x="13" y="62" width="30" height="1.4" fill="#b8bec7"/>
+                    <rect x="13" y="65" width="20" height="1.4" fill="#b8bec7"/>
+                  </g>
                 </svg>
-                <span class="hotspot__label">Card</span>
+                <span class="hotspot__label">Email</span>
               </button>
 
               <button class="hotspot hotspot--top hs-computer" type="button" data-item="computer" aria-label="Priya's computer, showing a sign-in screen">
@@ -683,7 +865,7 @@
             </div>
             <div id="handsWrap" hidden>
               <p class="closeup__eyebrow" style="margin-bottom:.5rem">In your hands: Priya's work phone</p>
-              <div class="phone phone--small" id="handPhone"></div>
+              <div class="phone phone--small" id="handPhone" tabindex="-1" role="group" aria-label="Priya's work phone"></div>
             </div>
           </div>
         </div>
@@ -692,15 +874,15 @@
       <!-- ---------- Stage 2: under attack ---------- -->
       <div id="stageAttack" hidden>
         <div class="attack-layout">
-          <div>
+          <div class="attack-phone-cell">
             <div class="phone" id="attackPhone" aria-live="polite"></div>
           </div>
           <div class="attack-side">
             <div class="monitor" id="attackMonitor" aria-live="polite"></div>
-            <div class="attack-log">
-              <h3>What's hitting Priya's phone</h3>
-              <ol id="attackLog"></ol>
-            </div>
+          </div>
+          <div class="attack-log">
+            <h3>What's hitting Priya's phone</h3>
+            <ol id="attackLog"></ol>
           </div>
         </div>
       </div>
@@ -732,6 +914,7 @@
           <ul class="clues" id="clueList"></ul>
         </div>
       </div>
+      </div></div><!-- /.mfa-board -->
     </section>
 
     <nav class="challenge-nav mt-2" aria-label="Puzzle navigation">

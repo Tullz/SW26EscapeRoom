@@ -646,6 +646,31 @@
       color: var(--accent);
     }
 
+    /* ---- Profile beside the questions (laptops and monitors) ----
+       The security questions, the password and the phishing pick all depend on details in
+       Jordan's profile, so the profile stays on screen (scrolling on its own) while the team
+       answers, instead of sitting 2,500px further up the page. */
+    #osintPartA, .osint-section, #osintComplete { scroll-margin-top: calc(var(--site-header-h, 92px) + .75rem); }
+    @media (min-width: 1100px) {
+      .osint-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+        column-gap: 1.25rem;
+        align-items: start;
+      }
+      #osintPartA {
+        position: sticky;
+        top: calc(var(--site-header-h, 92px) + .5rem);
+        max-height: calc(100vh - var(--site-header-h, 92px) - 1rem);
+        overflow-y: auto;
+        scrollbar-width: thin;
+      }
+      .osint-work > .osint-section:first-child { margin-top: 1rem; }
+      /* Room under the last step, so the pinned profile isn't pushed off the top of the window
+         when the page scrolls to "Craft the attack" */
+      .osint-work::after { content: ''; display: block; height: max(0px, calc(100vh - var(--site-header-h, 92px) - 26rem)); }
+    }
+
     @media (max-width: 600px) {
       .sm-header {
         flex-direction: column;
@@ -772,6 +797,8 @@
     <!-- Completion banner (filled by JS when the mission is passed) -->
     <section class="card osint-complete mt-2" id="osintComplete" hidden aria-live="polite"></section>
 
+    <!-- Profile on the left, recovery steps on the right (one column on narrow screens) -->
+    <div class="osint-layout">
     <!-- ==================== Profile Investigation ==================== -->
     <section class="card mt-2" id="osintPartA" aria-labelledby="partAHeading">
       <span class="narrative-label" id="partALabel">Recon phase</span>
@@ -1244,6 +1271,7 @@
       </div><!-- end .sm-profile -->
     </section>
 
+    <div class="osint-work">
     <!-- ==================== Security Question Challenge ==================== -->
     <section class="card mt-2 osint-section is-locked" id="osintPartB" aria-labelledby="partBHeading">
       <span class="narrative-label" id="partBLabel">Security verification</span>
@@ -1327,6 +1355,8 @@
       <p class="muted">Review Jordan's profile more carefully and try again.</p>
       <button class="btn primary mt-1" id="osintRetryBtn" type="button">Retry Mission</button>
     </div>
+    </div><!-- end .osint-work -->
+    </div><!-- end .osint-layout -->
 
     <!-- Resources -->
     <section class="card resources-card mt-2" aria-labelledby="osintResourcesHeading">

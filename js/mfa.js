@@ -8,8 +8,9 @@
 
    Stage 1 — Priya's desk (find + combine clues)
      - password = favourite flower (plant label) + desk number (ID badge)  -> Something you KNOW
-     - drawer   = day + month she started (anniversary card), 4-dial lock
+     - drawer   = day + month she started (printed induction email), 4-dial lock
      - phone    = fingerprint does not recognise the team                 -> Something you ARE
+                  the team asks IT for a remote unlock, Priya approves it, IT unlocks the phone
      - sign-in  = live 6-digit Authenticator code from the phone          -> Something you HAVE
    Stage 2 — Guard the phone (3 events, recognise and refuse)
      1. flood of sign-in requests nobody started (MFA fatigue) -> deny + report
@@ -31,12 +32,13 @@
 
   // ---------- Constants ----------
   const STATE_KEY = 'mfa_puzzle_state';
-  const STATE_VERSION = 4;
+  const STATE_VERSION = 5;
   const ROOM = 'mfa';
   // Kept out of plain sight in the page; only ever shown after completion.
   const CODE_WORD = (function () { try { return atob('S0VZU1RPTkU='); } catch (_) { return ''; } })();
   const COST = { wrong: 2, breach: 3, hint: 5 };
   const DRAWER_CODE = '0311';
+  const EMAIL_SENT_CODE = '2010'; // the induction email's "Sent" date, a tempting wrong answer
   const VALID_PASSWORDS = ['sunflower27', 'sunflowers27'];
 
   const points = window.utils?.points;
@@ -54,7 +56,9 @@
       dial: [0, 0, 0, 0],
       drawerOpen: false,
       phoneTaken: false,
-      fingerTried: false,
+      fingerTried: false,    // touched the sensor: fingerprint not recognised
+      remoteAsked: false,    // asked IT for a remote unlock
+      priyaApproved: false,  // Priya confirmed the remote unlock on the call
       phoneUnlocked: false,
       loggedIn: false,
       factors: { know: false, have: false, are: false },
@@ -120,9 +124,10 @@
     pwOk: { who: 'sam', text: 'Password accepted&hellip; and now it wants a <strong>6-digit code from her Authenticator app</strong>. That\'s multi-factor authentication (MFA): a second key on top of the password. It\'s exactly why the attacker is stuck: they have her password, but not her phone.' },
     pwOk2: { who: 'priya', text: 'My work phone is locked in my desk drawer. I can never remember the drawer code, so I made it a date I\'ll never forget.' },
     drawerOpen: { who: 'priya', text: 'That\'s my work phone in there. Go ahead and pick it up.' },
-    finger: { who: 'sam', text: 'Ha, of course it won\'t take <em>your</em> fingerprint: you\'re not Priya! A fingerprint or face scan is something you <strong>ARE</strong>. It can\'t be written on a sticky note or lent to someone else.' },
-    finger2: { who: 'priya', text: 'Sam, you have my OK to unlock it remotely.' },
-    unlocked: { who: 'sam', text: 'Done, the phone is unlocked. Her Authenticator app is showing a 6-digit code. Type it into her computer before it changes: a new code appears every 30 seconds.' },
+    finger: { who: 'sam', text: 'Of course it won\'t take <em>your</em> fingerprint: you\'re not Priya! A fingerprint or face scan is something you <strong>ARE</strong>. It can\'t be written on a sticky note or lent to someone else. Don\'t try to get round it: press <strong>"Ask IT to unlock it remotely"</strong> on the phone.' },
+    remote: { who: 'sam', text: 'Got your request. It\'s a managed Northwind work phone, so IT can unlock it remotely, but <strong>only once the owner confirms</strong>. Priya, are you happy for me to unlock it?' },
+    remote2: { who: 'priya', text: 'Yes, I confirm. Please unlock it for the team, Sam. Thanks for checking with me first!' },
+    unlocked: { who: 'sam', text: 'Done: I\'ve unlocked it remotely with Priya\'s OK, and it\'s logged on our side. Her Authenticator app is showing a 6-digit code. Type it into her computer before it changes: a new code appears every 30 seconds.' },
     loggedIn: { who: 'sam', tone: 'good', text: 'We\'re in! Look at what it took: her password (something she <strong>knows</strong>) <em>and</em> her phone (something she <strong>has</strong>). The attacker only has one of the two, so they\'re stuck outside. I\'m resetting her password now, which takes a few minutes.' },
     attack: { who: 'sam', tone: 'warn', text: 'Heads up, Priya\'s phone is buzzing! The attacker can\'t get past MFA, so now they\'ll try to <strong>trick whoever is holding her phone</strong>. Keep hold of it and deal with each alert carefully.' },
     flood_done: { who: 'sam', tone: 'good', text: 'Reported. I\'ve blocked those sign-in attempts.' },
@@ -137,7 +142,7 @@
     sticky: '<b>Sticky note (under keyboard):</b> "NEW PASSWORD &mdash; my favourite flower + my desk number. No spaces!"',
     flower: '<b>Label on the plant pot:</b> "My favourite flower! &mdash; P." (it\'s a sunflower)',
     desk: '<b>ID badge:</b> Priya Shah, Finance Manager, Level 3, <b>Desk 27</b>',
-    card: '<b>Anniversary card:</b> "5 years at Northwind! Your first day was <b>3 November 2021</b>."',
+    email: '<b>Printed welcome email:</b> "Welcome to Northwind: your induction". Start date: <b>Monday 3 November 2025</b>.',
     drawer: '<b>Note on the drawer:</b> "Work phone in here. Code = the day and month I started at Northwind (DD MM)."',
     bin: '<b>Scrap in the bin:</b> "old password: <s>daisy12</s> &mdash; had to change it!!"'
   };
@@ -186,17 +191,21 @@
     ],
     pwCombine: [
       'The sticky note says: favourite flower + desk number. Both answers are somewhere on her desk.',
-      'Read the label on the potted flower, and look at the ID badge hanging on the wall for her desk number.',
+      'Read the label on the potted flower, and look at the ID badge hanging on the hook by her desk for her desk number.',
       'Her favourite flower is a sunflower and she sits at desk 27. Type sunflower27 into the computer.'
     ],
     drawer: [
-      'The note on the drawer says the code is the day and month Priya started at Northwind. Something on the desk is celebrating her time at the company.',
-      'The greeting card on the desk says her first day was 3 November 2021. Write it as day then month, two digits each.',
+      'The note on the drawer says the code is the day and month Priya started at Northwind. Is there anything on her desk about her first day?',
+      'The printed welcome email on the desk gives her start date: 3 November 2025. Write it as day then month, two digits each.',
       'Set the drawer dials to 0 3 1 1, then press "Try to open".'
     ],
     phone: [
       'Priya\'s work phone is in the open drawer. Pick it up and try to unlock it.',
       'Click the Drawer, press "Take the phone", then touch the fingerprint sensor on the phone.'
+    ],
+    remote: [
+      'Only Priya\'s fingerprint can unlock her phone, so yours won\'t work. Don\'t try to get round it: read the phone screen for the approved way in.',
+      'Press "Ask IT to unlock it remotely" on the phone. Sam from IT unlocks it once Priya confirms it\'s OK.'
     ],
     code: [
       'The computer wants a code from the Authenticator app. The app is on Priya\'s phone, which is now in your hands.',
@@ -296,30 +305,54 @@
     const d = new Date();
     return d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
   }
+  function reducedMotion() {
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (_) { return false; }
+  }
+  // Wide screens show the whole room as one dashboard (keep in step with the CSS in mfa.html).
+  function dashboardLayout() {
+    try { return window.matchMedia('(min-width: 1180px) and (min-height: 520px)').matches; } catch (_) { return false; }
+  }
 
   // ---------- The live call feed ----------
   const WHO = { priya: 'Priya', sam: 'Sam (IT)' };
-  function renderFeed(newId) {
+  function feedMsg(id, isNew) {
+    const m = MSGS[id];
+    const el = h('div', { class: 'comms__msg' + (m.tone ? ' is-' + m.tone : '') + (isNew ? ' is-new' : '') });
+    el.appendChild(h('span', { class: 'comms__who comms__who--' + m.who, text: WHO[m.who] }));
+    el.appendChild(h('span', null, m.text));
+    return el;
+  }
+  // Scroll the feed (never the page) so the newest message shows from its first line.
+  function newestTop() {
+    const f = els.feed;
+    const last = f.lastElementChild;
+    return last ? Math.max(0, Math.min(f.scrollHeight - f.clientHeight, last.offsetTop - 8)) : 0;
+  }
+  function showNewest(smooth) {
+    const f = els.feed;
+    if (!smooth || reducedMotion()) { f.scrollTop = newestTop(); return; }
+    try { f.scrollTo({ top: newestTop(), behavior: 'smooth' }); } catch (_) { f.scrollTop = newestTop(); }
+    // A page scroll running at the same time can cancel a smooth scroll: make sure it lands.
+    setTimeout(function () { if (Math.abs(f.scrollTop - newestTop()) > 2) f.scrollTop = newestTop(); }, 800);
+  }
+  function renderFeed() {
     els.feed.innerHTML = '';
-    state.msgs.forEach(function (id, i) {
-      const m = MSGS[id];
-      if (!m) return;
-      const tone = m.tone ? ' is-' + m.tone : '';
-      const isNew = id === newId && i === state.msgs.length - 1;
-      const el = h('div', { class: 'comms__msg' + tone + (isNew ? ' is-new' : '') });
-      el.appendChild(h('span', { class: 'comms__who comms__who--' + m.who, text: WHO[m.who] }));
-      el.appendChild(h('span', null, m.text));
-      els.feed.appendChild(el);
-    });
-    els.feed.scrollTop = els.feed.scrollHeight;
+    state.msgs.forEach(function (id) { if (MSGS[id]) els.feed.appendChild(feedMsg(id, false)); });
+    showNewest(false);
   }
   function say(id) {
     if (!MSGS[id]) return;
     if (!REPEATABLE[id] && state.msgs.includes(id)) return;
     state.msgs.push(id);
-    if (state.msgs.length > 40) state.msgs = state.msgs.slice(-40);
+    const trimmed = state.msgs.length > 40;
+    if (trimmed) state.msgs = state.msgs.slice(-40);
     save();
-    renderFeed(id);
+    if (trimmed) renderFeed();
+    else {
+      $$('.comms__msg.is-new', els.feed).forEach(function (el) { el.classList.remove('is-new'); });
+      els.feed.appendChild(feedMsg(id, true));
+      showNewest(true);
+    }
     announce(WHO[MSGS[id].who] + ' says: ' + h('div', null, MSGS[id].text).textContent);
   }
 
@@ -328,15 +361,22 @@
     if (state.clues.includes(id)) return;
     state.clues.push(id);
     save();
-    renderClues();
+    renderClues(id);
   }
-  function renderClues() {
+  function renderClues(newId) {
     els.clueList.innerHTML = '';
     if (!state.clues.length) {
       els.clueList.appendChild(h('li', { class: 'clues__empty', style: 'background:none;border:0;padding:0' }, 'Nothing yet. Inspect things on the desk: anything useful gets written down here.'));
       return;
     }
-    state.clues.forEach(function (id) { els.clueList.appendChild(h('li', null, CLUES[id])); });
+    state.clues.forEach(function (id) {
+      if (CLUES[id]) els.clueList.appendChild(h('li', id === newId ? { class: 'is-new' } : null, CLUES[id]));
+    });
+    // On the dashboard the notebook scrolls inside its own panel: keep the newest clue in view.
+    const panel = els.clueList.closest('.kit__panel');
+    if (newId && panel && panel.scrollHeight > panel.clientHeight) {
+      try { panel.scrollTo({ top: panel.scrollHeight, behavior: reducedMotion() ? 'auto' : 'smooth' }); } catch (_) { panel.scrollTop = panel.scrollHeight; }
+    }
   }
   function findFactor(key) {
     if (state.factors[key]) return;
@@ -368,8 +408,9 @@
     if (state.stage === 'desk') {
       if (!state.pwOk) return state.clues.includes('sticky') ? 'pwCombine' : 'pwFind';
       if (!state.drawerOpen) return 'drawer';
-      if (!state.phoneUnlocked) return 'phone';
-      if (!state.loggedIn) return 'code';
+      if (!state.fingerTried) return 'phone';
+      if (!state.remoteAsked) return 'remote';
+      if (!state.loggedIn) return 'code'; // IT is unlocking the phone, then the code goes in
       return null;
     }
     if (state.stage === 'attack' && !state.resolved && !state.breach) return EVENTS[state.event]?.id || null;
@@ -391,6 +432,7 @@
         els.hintText.appendChild(h('div', { text: 'Hint ' + (i + 1) + ': ' + t }));
       });
       els.hintText.hidden = false;
+      els.hintText.scrollTop = els.hintText.scrollHeight; // newest hint in view when the box scrolls
     } else {
       els.hintText.hidden = true;
     }
@@ -425,6 +467,7 @@
       els.pill.classList.add('is-done');
       els.pillTitle.textContent = 'Account secured';
     }
+    els.room.dataset.stage = state.stage; // picks the dashboard layout for this stage
     els.stageDesk.hidden = state.stage !== 'desk';
     els.stageAttack.hidden = state.stage !== 'attack';
     renderHint();
@@ -466,6 +509,7 @@
 
   function closeupShell(eyebrow, title) {
     els.closeup.innerHTML = '';
+    els.closeup.scrollTop = 0; // a long close-up scrolls inside its panel: start each one at the top
     els.closeup.appendChild(h('p', { class: 'closeup__eyebrow' }, eyebrow));
     els.closeup.appendChild(h('h3', null, title));
     return els.closeup;
@@ -487,11 +531,28 @@
         const c = closeupShell('On the desk', 'A framed photo');
         c.appendChild(h('p', null, 'Priya and a friend on a beach holiday, squinting into the sun. Lovely, but there\'s nothing written on it, front or back.'));
       },
-      card: function () {
-        const c = closeupShell('On the desk', 'A greeting card');
-        c.appendChild(h('div', { class: 'prop-card' },
-          '<div class="prop-card__title">Happy Work Anniversary!</div>Priya, 5 years at Northwind! Can\'t believe your first day was <strong>3 November 2021</strong>. Here\'s to 5 more!<br>&mdash; The Finance Team'));
-        addClue('card');
+      email: function () {
+        const c = closeupShell('On the desk', 'A printed email');
+        c.appendChild(h('p', null, 'An email Priya printed out before her first day. She has highlighted one line.'));
+        c.appendChild(h('div', { class: 'prop-email' },
+          '<div class="prop-email__top"><b>Priya Shah</b><span>Northwind Mail</span></div>' +
+          '<dl class="prop-email__head">' +
+            '<dt>From:</dt><dd>Northwind People &amp; Culture &lt;onboarding@northwind.com&gt;</dd>' +
+            '<dt>Sent:</dt><dd>Monday 20 October 2025, 9:12 am</dd>' +
+            '<dt>To:</dt><dd>Priya Shah &lt;priya.shah@northwind.com&gt;</dd>' +
+            '<dt>Subject:</dt><dd>Welcome to Northwind: your induction</dd>' +
+          '</dl>' +
+          '<div class="prop-email__body">' +
+            '<p>Hi Priya,</p>' +
+            '<p>Welcome to Northwind! We\'re delighted you\'re joining the Finance team. Here\'s everything you need for your first day.</p>' +
+            '<div class="prop-email__start"><span>Your start date</span><strong><mark>Monday 3 November 2025</mark></strong>Please arrive at Level 1 reception at 8:45 am.</div>' +
+            '<p><b>Your induction day</b></p>' +
+            '<ul><li>9:00 am: welcome and building tour</li><li>10:30 am: collect your laptop, work phone and ID badge</li>' +
+            '<li>11:30 am: set up your password and Authenticator app with IT</li><li>12:30 pm: lunch with the Finance team</li></ul>' +
+            '<p>See you soon!<br>The People &amp; Culture team</p>' +
+          '</div>' +
+          '<div class="prop-email__foot">Page 1 of 1</div>'));
+        addClue('email');
       },
       mug: function () {
         const c = closeupShell('On the desk', 'A coffee mug');
@@ -555,7 +616,7 @@
           renderHands();
           renderDrawer();
           renderHint();
-          announce('You picked up Priya\'s work phone. It is shown next to the desk.');
+          announce('You picked up Priya\'s work phone. It is shown in your hands, next to the close-up.');
           if (window.matchMedia && window.matchMedia('(max-width: 960px)').matches) {
             els.handsWrap.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
@@ -603,9 +664,9 @@
       void combo.offsetWidth;
       combo.classList.add('combo--shake');
       fb.className = 'mfa-feedback is-bad';
-      fb.textContent = code === '1103'
-        ? 'Click. Still locked (-2 pts). The note says DD MM: the day comes first, then the month.'
-        : 'Click. Still locked (-2 pts). Check the note on the drawer again.';
+      if (code === '1103') fb.textContent = 'Click. Still locked (-2 pts). The note says DD MM: the day comes first, then the month.';
+      else if (code === EMAIL_SENT_CODE) fb.textContent = 'Click. Still locked (-2 pts). 20 October is when the email was sent. The note wants the day she started.';
+      else fb.textContent = 'Click. Still locked (-2 pts). Check the note on the drawer again.';
     }));
     c.appendChild(fb);
   }
@@ -625,31 +686,53 @@
     return body;
   }
 
-  function renderHands() {
+  const UNLOCKED_TEXT = 'Unlocked remotely by Northwind IT (approved by Priya)';
+
+  // The phone's lock screen walks through: touch the sensor -> not recognised (only Priya's
+  // fingerprint works) -> ask IT -> remote unlock in progress -> unlocked -> Authenticator.
+  function renderHands(justUnlocked) {
     stopHandTick();
     const show = state.stage === 'desk' && state.phoneTaken;
     els.handsWrap.hidden = !show;
+    els.room.classList.toggle('is-holding', show);
     if (!show) return;
     const body = phoneShell(els.handPhone);
-    if (!state.phoneUnlocked) {
+    if (!state.phoneUnlocked || justUnlocked) {
       body.appendChild(h('div', { class: 'phone__clock', text: clockText() }));
       body.appendChild(h('div', { class: 'phone__date', text: 'Northwind work phone' }));
       const center = h('div', { class: 'phone__center' });
-      if (!state.fingerTried) {
+      if (state.phoneUnlocked) {
+        center.appendChild(h('div', { class: 'phone__badge phone__badge--ok', 'aria-hidden': 'true' }, '&#10003;'));
+        center.appendChild(h('div', { class: 'phone__msg' }, '<strong>Unlocked remotely by Northwind IT</strong>(approved by Priya)'));
+        center.appendChild(h('div', { class: 'phone__muted' }, 'Opening Authenticator&hellip;'));
+      } else if (!state.fingerTried) {
         center.appendChild(h('div', { class: 'phone__muted' }, 'Touch the sensor to unlock'));
         const fp = button('fp-btn', FACTORS.are.icon, tryFinger);
         fp.setAttribute('aria-label', 'Fingerprint sensor: touch to unlock');
         center.appendChild(fp);
+      } else if (!state.remoteAsked) {
+        center.appendChild(h('div', { class: 'fp-btn is-fail', 'aria-hidden': 'true' }, FACTORS.are.icon));
+        center.appendChild(h('div', { class: 'phone__msg phone__msg--bad' }, '<strong>Fingerprint not recognised</strong>Only Priya\'s fingerprint can unlock this phone.'));
+        const box = h('div', { class: 'remote-box' });
+        box.appendChild(h('div', { class: 'remote-box__title', text: 'Managed by Northwind IT' }));
+        box.appendChild(h('div', { class: 'remote-box__text', text: 'IT can unlock this work phone remotely, once Priya says it\'s OK.' }));
+        box.appendChild(button('pbtn pbtn--it', 'Ask IT to unlock it remotely', askRemoteUnlock));
+        center.appendChild(box);
       } else {
-        const fp = h('div', { class: 'fp-btn is-fail', 'aria-hidden': 'true' }, FACTORS.are.icon);
-        center.appendChild(fp);
-        center.appendChild(h('div', { class: 'phone__muted' }, '<strong>Fingerprint not recognised.</strong><br>Waiting for IT to unlock&hellip;'));
+        center.appendChild(h('div', { class: 'phone__badge phone__badge--wait', 'aria-hidden': 'true' }, '<span class="remote-spin"></span>'));
+        center.appendChild(h('div', { class: 'phone__msg' }, '<strong>Remote unlock by Northwind IT&hellip;</strong>'));
+        const steps = h('ul', { class: 'remote-steps' });
+        steps.appendChild(h('li', { class: 'is-ok' }, 'Request sent to Northwind IT'));
+        steps.appendChild(h('li', { class: state.priyaApproved ? 'is-ok' : 'is-wait' }, state.priyaApproved ? 'Approved by Priya' : 'Waiting for Priya to approve&hellip;'));
+        if (state.priyaApproved) steps.appendChild(h('li', { class: 'is-wait' }, 'Unlocking&hellip;'));
+        center.appendChild(steps);
       }
       body.appendChild(center);
       return;
     }
     // Unlocked: Authenticator app with a live code.
-    body.appendChild(h('div', { class: 'phone__date', style: 'margin-top:.6rem', text: 'Authenticator' }));
+    body.appendChild(h('div', { class: 'phone-banner' }, '<span aria-hidden="true">&#10003;</span> ' + UNLOCKED_TEXT));
+    body.appendChild(h('div', { class: 'phone__date', text: 'Authenticator' }));
     const app = h('div', { class: 'auth-app' });
     app.appendChild(h('div', { class: 'auth-app__title', text: 'Northwind' }));
     app.appendChild(h('div', { class: 'auth-app__acct', text: 'priya.shah@northwind.com' }));
@@ -674,6 +757,11 @@
     handTick = setInterval(tick, 1000);
   }
 
+  function focusPhone(sel) {
+    const el = sel ? $(sel, els.handPhone) : els.handPhone;
+    try { el?.focus({ preventScroll: true }); } catch (_) {}
+  }
+
   function tryFinger() {
     if (state.fingerTried) return;
     state.fingerTried = true;
@@ -681,18 +769,49 @@
     renderHands();
     findFactor('are');
     say('finger');
-    later(function () { say('finger2'); }, 1200);
-    later(unlockPhone, 2600);
+    renderHint();
+    focusPhone('.pbtn--it');
+    announce('Fingerprint not recognised. Only Priya\'s fingerprint can unlock this phone. The phone offers a button: Ask IT to unlock it remotely.');
+  }
+  // The approved route in: IT unlocks the managed phone remotely once Priya confirms.
+  function askRemoteUnlock() {
+    if (!state.fingerTried || state.remoteAsked || state.phoneUnlocked) return;
+    state.remoteAsked = true;
+    save();
+    renderHands();
+    focusPhone();
+    say('remote');
+    renderHint();
+    later(approveRemote, 1800);
+  }
+  function approveRemote() {
+    if (state.stage !== 'desk' || !state.remoteAsked || state.priyaApproved) return;
+    state.priyaApproved = true;
+    save();
+    say('remote2');
+    renderHands();
+    later(unlockPhone, 1600);
   }
   function unlockPhone() {
-    if (state.phoneUnlocked) return;
+    if (state.stage !== 'desk' || state.phoneUnlocked) return;
     state.phoneUnlocked = true;
     save();
     setProgress();
-    renderHands();
+    renderHands(true);
     say('unlocked');
     renderHint();
     if (state.focus === 'computer') renderCloseup();
+    announce(UNLOCKED_TEXT + '. The Authenticator app is opening.');
+    // Show "unlocked" for a moment, then open the Authenticator app.
+    later(function () { if (state.stage === 'desk' && state.phoneUnlocked) renderHands(); }, 2000);
+  }
+  // A step that was mid-way when the page was left (reload, back/forward): carry on from it.
+  function resumePending() {
+    if (state.stage !== 'desk') return;
+    if (state.msgs.includes('intro_sam') && !state.msgs.includes('intro_priya')) later(function () { say('intro_priya'); }, 900);
+    if (state.pwOk && !state.msgs.includes('pwOk2')) later(function () { say('pwOk2'); }, 900);
+    if (state.remoteAsked && !state.priyaApproved) later(approveRemote, 1200);
+    else if (state.priyaApproved && !state.phoneUnlocked) later(unlockPhone, 1200);
   }
 
   // ---------- Priya's computer (sign-in screen) ----------
@@ -883,7 +1002,7 @@
   function renderAttackPhone() {
     const ev = EVENTS[state.event];
     const body = phoneShell(els.attackPhone);
-    body.appendChild(h('div', { class: 'phone__clock', style: 'font-size:2rem', text: clockText() }));
+    body.appendChild(h('div', { class: 'phone__clock', style: 'font-size:2em', text: clockText() }));
 
     if (state.breach) {
       const b = h('div', { class: 'breach', role: 'alert' });
@@ -974,7 +1093,7 @@
     n.appendChild(notifHead('app', 'Northwind Sign-in'));
     n.appendChild(h('div', { class: 'notif__title', text: 'Are you trying to sign in?' }));
     n.appendChild(signinRows('Near the Northwind office', 'Priya\'s work laptop'));
-    n.appendChild(h('div', { class: 'notif__text', style: 'margin-top:.4rem' }, 'Tap the number shown on your screen:'));
+    n.appendChild(h('div', { class: 'notif__text', style: 'margin-top:.4em' }, 'Tap the number shown on your screen:'));
     const nums = h('div', { class: 'num-row' });
     matchOptions().forEach(function (num) {
       const b = button('pbtn pbtn--num', String(num), function () {
@@ -1062,7 +1181,9 @@
     save();
     if (EVENTS[state.event].id === 'genuine') say('genuine');
     renderAttack();
-    try { els.attackPhone.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (_) {}
+    // The dashboard already shows the phone, the laptop and the call together: just line the room up.
+    const target = dashboardLayout() ? els.room : els.attackPhone;
+    try { target.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: dashboardLayout() ? 'start' : 'center' }); } catch (_) {}
   }
 
   // =====================================================================
@@ -1135,13 +1256,8 @@
     renderFactors();
     renderHotspots();
     renderStageChrome();
-    if (state.stage === 'desk') {
-      renderCloseup();
-      renderHands();
-    } else {
-      stopHandTick();
-      els.handsWrap.hidden = true;
-    }
+    if (state.stage === 'desk') renderCloseup();
+    renderHands(); // hides the phone outside Stage 1
     if (state.stage === 'attack') renderAttack();
     if (state.stage === 'done') {
       stopAttackTick();
@@ -1202,21 +1318,35 @@
       });
     } catch (_) {}
 
+    syncHeaderSpace();
+    window.addEventListener('resize', syncHeaderSpace);
+    // The game clock pill can make the header wrap after boot, without a window resize.
+    try { const bar = $('.site-header--bar'); if (bar && window.ResizeObserver) new ResizeObserver(syncHeaderSpace).observe(bar); } catch (_) {}
+    // Timed messages or a remote unlock that were pending when the page was left.
+    resumePending();
     startIntro();
-    // A timed message that was pending when the page was left.
-    if (state.pwOk && !state.msgs.includes('pwOk2')) state.msgs.push('pwOk2');
-    if (state.fingerTried && !state.msgs.includes('finger2')) state.msgs.push('finger2');
 
     renderAll();
     if (state.stage === 'desk') setProgress();
     // Already solved (here or elsewhere): make sure the word is stored and the header ticked.
     if (state.completed && !window.vault?.isRoomComplete?.(ROOM)) secureCodeWord();
+  }
 
-    // Phone was mid-unlock when the page was left: finish the unlock.
-    if (state.fingerTried && !state.phoneUnlocked) later(unlockPhone, 800);
+  // The dashboard layout sizes the room to the space under the sticky site header.
+  function syncHeaderSpace() {
+    const bar = $('.site-header--bar');
+    let px = 0;
+    try { if (bar && getComputedStyle(bar).position === 'sticky') px = Math.round(bar.getBoundingClientRect().height); } catch (_) {}
+    els.room.style.setProperty('--mfa-head', px + 'px');
   }
 
   window.addEventListener('pagehide', function () { clearTimers(); stopHandTick(); stopAttackTick(); });
+  // Back/forward cache: pagehide stopped every timer and clock, so redraw and carry on.
+  window.addEventListener('pageshow', function (ev) {
+    if (!ev.persisted) return;
+    renderAll();
+    resumePending();
+  });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
