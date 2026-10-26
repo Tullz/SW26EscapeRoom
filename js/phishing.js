@@ -15,9 +15,10 @@
    ---------------------------------------------------------------------------
    HOW TO SWAP IN NEW EMAIL EXAMPLES (no other code needs to change)
    ---------------------------------------------------------------------------
-   1. Images: put each email screenshot (PNG/JPG) in assets/. Reusing the names
-      Picture1.png ... Picture4.png is simplest. If you use new names, also
-      update the starting <img id="phishingImage" src="..."> in phishing.html.
+   1. Images: put each email screenshot (PNG/JPG/WebP) in assets/. Use NEW file
+      names (e.g. phish-2027-1.webp): saved progress is keyed by file name, so
+      new names mean nobody keeps flags from the old emails. Also update the
+      starting <img id="phishingImage" src="..."> in phishing.html.
    2. Data: edit the EMAILS array below, one object per email, in inbox order:
         img       file name in assets/
         w, h      the image's real size in pixels (Windows: right-click the
@@ -74,75 +75,90 @@
 
   const EMAILS = [
     {
-      img: 'Picture1.png', w: 1146, h: 974,
-      from: 'FindMy',
-      subject: 'A sound was played on John’s iPhone',
-      phishing: true,
-      required: 2,
-      flags: [
-        {
-          key: true,
-          title: 'Fake sender address',
-          rects: [[88, 244, 300, 272]],
-          text: 'The email comes from findmy@appl3.co: a number 3 instead of the letter e, and .co instead of .com. Apple only sends from apple.com addresses. Always read the sender address character by character.'
-        },
-        {
-          title: 'An alarming alert you didn’t trigger',
-          rects: [[370, 462, 810, 522]],
-          text: 'A sound played on your phone at 4:12 AM? Unexpected security alerts are designed to make you worry and act fast without thinking. If you didn’t do it, check in the app itself, not via the email.'
-        },
-        {
-          title: 'Links that invite you to “take action”',
-          rects: [[335, 530, 810, 567]],
-          text: 'Link text can say icloud.com while pointing anywhere. Attackers use familiar-looking links to reach a fake login page. Hover (or long-press) to preview a link, or open the app/website yourself.'
-        }
-      ],
-      hints: [
-        'Before trusting any alert, check exactly <strong>who</strong> sent it. Read slowly, character by character.',
-        'Look closely at the address next to “FindMy”. Is that really Apple’s domain? Then ask yourself: did John expect this alert, and where do the blue links want to take him?'
-      ]
-    },
-    {
-      img: 'Picture2.png', w: 1150, h: 990,
-      from: 'iCloud',
-      subject: 'iCloud full!',
+      img: 'phish-2026-1.webp', w: 1356, h: 1159,
+      from: 'Find My',
+      subject: 'New sign-in to Find My',
       phishing: true,
       required: 3,
       flags: [
         {
           key: true,
-          title: 'Lookalike sender domain',
-          rects: [[80, 240, 380, 270]],
-          text: 'apple-noreply@icloudsecure.co is not an Apple address. Adding words like “secure” to a brand name is a classic trick to look trustworthy.'
+          title: 'Fake sender address',
+          rects: [[126, 331, 578, 357]],
+          text: 'The email comes from findmy@apple.com-alerts.info. It starts with “apple.com”, but a domain is decided by its very end: this one is com-alerts.info, which has nothing to do with Apple. Read a sender address from the @ all the way to the end.'
         },
         {
-          title: 'Sloppy grammar',
-          rects: [[200, 400, 940, 500]],
-          text: '“you storage plan”, “you documents”, “apps are not update across you devices”. Big companies proofread their emails; repeated mistakes are a strong phishing sign.'
+          title: 'A sign-in alert John didn’t trigger',
+          rects: [[212, 616, 1144, 654], [395, 677, 961, 861]],
+          text: 'A sign-in at 3:47 AM, from a Windows PC in a location it “doesn’t recognise”, is built to make John panic. If an alert surprises you, check it in the Find My app or in your iPhone’s Settings yourself, not via the email.'
         },
         {
-          title: 'Pressure to pay through a link',
-          rects: [[205, 512, 790, 595]],
-          text: 'The email pushes you to “upgrade” and pay via a link. Payment links in unexpected emails often lead to card-stealing pages. Manage subscriptions in your device settings instead.'
+          title: 'A threat with a deadline',
+          rects: [[213, 884, 1144, 937]],
+          text: '“Devices that are not secured within 24 hours will be erased.” Apple will never threaten to wipe your devices by email. Deadlines and threats are there to rush you past thinking.'
         },
         {
-          title: 'Urgent, shouty subject',
-          rects: [[15, 197, 130, 230]],
-          text: '“iCloud full!” uses alarm and an exclamation mark to rush you. Urgency is the number one tool of phishers.'
-        },
-        {
-          title: 'Brand name written wrongly',
-          rects: [[205, 606, 340, 630]],
-          text: '“The icloud team”: Apple always writes its own brand as iCloud. Small branding mistakes give fakes away.'
+          title: 'The “Lock My Account” button',
+          rects: [[515, 960, 842, 1022]],
+          text: 'The button promises safety, but it would take John to a fake Apple sign-in page that steals his password: the very thing the email pretends to protect. To secure an account, open the app or type the website address yourself.'
         }
       ],
       hints: [
-        'Real companies proofread their emails. Scammers often don’t, and they love urgency and payments.',
-        'Check the sender domain, read the main paragraph word by word (“you” or “your”?), and look at what the blue links want you to do.'
+        'A scary alert is the perfect disguise. Before you react, check exactly <strong>who</strong> sent it, all the way to the end of the address.',
+        'Where does the sender’s domain really end: at apple.com, or somewhere after it? Then ask: did John do this, and what does the email want him to do, and how fast?'
       ]
     },
     {
-      img: 'Picture3.png', w: 1176, h: 992,
+      img: 'phish-2026-2.webp', w: 1445, h: 1088,
+      from: 'iCloud',
+      subject: 'iCloud payment failed!!',
+      phishing: true,
+      required: 4,
+      flags: [
+        {
+          key: true,
+          title: 'Lookalike sender domain',
+          rects: [[148, 405, 606, 433]],
+          text: 'billing@icloud-payments.co is not an Apple address. Gluing an extra word like “payments” onto a brand name, and ending in .co instead of .com, are classic tricks to look official.'
+        },
+        {
+          title: 'Urgent, shouty subject',
+          rects: [[42, 321, 477, 365]],
+          text: '“iCloud payment failed!!” Two exclamation marks are there to alarm you. Urgency is the number one tool of phishers.'
+        },
+        {
+          title: 'No name, just “Dear Customer”',
+          rects: [[42, 560, 217, 582]],
+          text: 'Apple knows John’s name: it’s on his account. A generic greeting usually means the same email went out to thousands of people.'
+        },
+        {
+          title: 'Sloppy grammar',
+          rects: [[41, 618, 1403, 679]],
+          text: '“We was unable”, “you’re account”, “has not been renew”. Big companies proofread their emails; repeated mistakes are a strong phishing sign.'
+        },
+        {
+          title: 'A threat with a deadline',
+          rects: [[41, 707, 895, 733]],
+          text: '“Permanently deleted in 48 hours” is designed to panic John into acting before he thinks. Real services warn you well ahead of time, and you can check your plan in Settings without clicking anything.'
+        },
+        {
+          title: 'Pressure to pay through a link',
+          rects: [[41, 763, 632, 788], [40, 820, 517, 855]],
+          text: 'The email pushes John to “update payment details” through a link. Payment links in unexpected emails lead to card-stealing pages. Manage subscriptions in your device settings instead.'
+        },
+        {
+          title: 'Sloppy sign-off',
+          rects: [[40, 887, 223, 940]],
+          text: '“Thanks you” and “The Icloud Team”: Apple always writes its own brand as iCloud. Small mistakes in names give fakes away.'
+        }
+      ],
+      hints: [
+        'Real companies proofread their emails and know your name. Scammers often don’t, and they love urgency and payments.',
+        'Check the sender domain and how John is greeted. Then read the main paragraph word by word, and look at what the red line and the blue link want him to do.'
+      ]
+    },
+    {
+      img: 'phish-2026-3.webp', w: 1359, h: 1158,
       from: 'Amazon.com',
       subject: 'Your Amazon.com order #114-8512462-3346182',
       phishing: false,
@@ -151,17 +167,17 @@
       trust: [
         {
           title: 'Genuine sender domain',
-          rects: [[100, 243, 390, 265]],
+          rects: [[131, 342, 579, 368]],
           text: 'no-reply@amazon.com is Amazon’s real domain: no extra words, numbers or odd endings.'
         },
         {
           title: 'Details that match',
-          rects: [[25, 195, 495, 225], [405, 455, 550, 470]],
+          rects: [[29, 279, 783, 308], [255, 730, 545, 749]],
           text: 'The order number in the subject matches the one in the body, and the email is addressed to John by name.'
         },
         {
           title: 'No pressure, no password request',
-          rects: [[405, 818, 765, 842]],
+          rects: [[254, 1114, 1103, 1130]],
           text: 'It doesn’t rush you, threaten you or ask you to log in or pay. It even says the address can’t receive replies. Still, if in doubt, open the Amazon app yourself rather than clicking.'
         }
       ],
@@ -172,42 +188,47 @@
       finalHint: 'Analyst note: the sender is the genuine amazon.com domain, the details are consistent and there is no pressure or request for credentials. Our analysts would treat this one as legitimate.'
     },
     {
-      img: 'Picture4.png', w: 1130, h: 958,
+      img: 'phish-2026-4.webp', w: 1330, h: 1183,
       from: 'SharePoint',
-      subject: 'A file has been shared with you',
+      subject: 'HR Department shared “Staff Pay Rises 2027” with you',
       phishing: true,
-      required: 3,
+      required: 4,
       flags: [
         {
           key: true,
-          title: 'Typo-squatted sender',
-          rects: [[85, 232, 390, 262]],
-          text: 'sharepoint@sharep0int.com uses a zero instead of the letter o. Real SharePoint notifications come from Microsoft’s own domains.'
+          title: 'Lookalike sender: “rn” posing as “m”',
+          rects: [[121, 331, 557, 357]],
+          text: 'sharepoint@rnicrosoft.com: an r and an n squeezed together look like an m at a glance. Real SharePoint notifications come from Microsoft’s own domains. Zoom in on any address that looks almost right.'
         },
         {
-          title: 'Fake brand logo',
-          rects: [[240, 850, 340, 885]],
-          text: '“Minisoft” is not Microsoft. Copycat logos are built to pass a quick glance.'
+          title: 'HR sharing from a Gmail address',
+          rects: [[477, 742, 881, 822], [268, 644, 1062, 691]],
+          text: 'The share claims to come from the HR Department, but the sharer is hr.payroll.department@gmail.com. A real HR team shares company files from a company account, never a free personal email address.'
         },
         {
           title: 'Tempting file name',
-          rects: [[410, 585, 712, 658]],
-          text: '“Employee Bonuses” is chosen to make you curious enough to click. Attackers love money, HR and payroll topics.'
+          rects: [[439, 843, 890, 937], [24, 267, 854, 302]],
+          text: '“Staff Pay Rises 2027” is chosen to make John too curious to stop and think. Attackers love money, HR and payroll topics.'
         },
         {
-          title: 'A share John wasn’t expecting',
-          rects: [[20, 190, 315, 220], [380, 432, 740, 468]],
-          text: 'Real SharePoint emails don’t always name the person who shared a file, so on its own this proves nothing. But John wasn’t expecting a file, the message gives no reason for it, and everything else here is suspicious. If a share surprises you, ask the colleague or open SharePoint yourself instead of clicking.'
+          title: 'A deadline on the link',
+          rects: [[526, 960, 803, 993]],
+          text: '“This link expires in 24 hours” adds pressure to click right now. A file a real colleague shares will still be there after you check with them.'
         },
         {
-          title: 'The “Open” button',
-          rects: [[470, 758, 652, 808]],
-          text: 'This button would take John to a fake Microsoft login page to harvest his password. Open shared files from SharePoint or Teams directly instead.'
+          title: 'The “Sign in to view” button',
+          rects: [[549, 1016, 782, 1070]],
+          text: 'This button would take John to a fake Microsoft sign-in page to harvest his password. Open shared files from SharePoint or Teams directly instead.'
+        },
+        {
+          title: 'Fake brand name',
+          rects: [[210, 1121, 356, 1155]],
+          text: '“Mircosoft” is not Microsoft: two letters are swapped. Copycat logos are built to pass a quick glance.'
         }
       ],
       hints: [
-        'Scammers imitate the tools you use at work every day. Check the small print as carefully as the big print.',
-        'Check the spelling of the sender domain and the company logo at the bottom. Then ask: was John expecting this file, and why is its name so tempting?'
+        'Scammers imitate the tools you use at work every day. Check the small print as carefully as the big print, and zoom in if you need to.',
+        'Zoom in on the sender domain and the company name at the bottom: is every letter right? Then check who really shared the file, and what the email wants John to do, and how fast.'
       ]
     }
   ];
@@ -1080,7 +1101,7 @@
   function boot() {
     cleanupLegacyKeys();
     state = loadState();
-    // Deep link support (?img=Picture3.png)
+    // Deep link support (?img=phish-2026-3.webp)
     try {
       const q = new URLSearchParams(location.search).get('img');
       const idx = EMAILS.findIndex((e) => e.img === q);
