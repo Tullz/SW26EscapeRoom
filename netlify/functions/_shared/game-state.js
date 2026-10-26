@@ -6,6 +6,10 @@
 
 const MINUTE = 60000;
 
+// Length of a competition game. db.js writes it into the game_state row, so changing it
+// here (and redeploying) changes the clock everywhere.
+export const GAME_DURATION_MIN = 45;
+
 const toMs = (v) => {
   if (v == null) return null;
   const n = new Date(v).getTime();
@@ -15,7 +19,7 @@ const toMs = (v) => {
 export function gameFromRow(row, serverNow) {
   const r = row && typeof row === 'object' ? row : {};
   const mode = r.mode === 'competition' ? 'competition' : 'free';
-  const durationMin = Number(r.duration_min) > 0 ? Number(r.duration_min) : 60;
+  const durationMin = Number(r.duration_min) > 0 ? Number(r.duration_min) : GAME_DURATION_MIN;
   const startedAt = toMs(r.started_at);
   const endedAt = toMs(r.ended_at);
   const endsAt = startedAt == null ? null : (endedAt ?? startedAt + durationMin * MINUTE);

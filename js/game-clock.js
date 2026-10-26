@@ -49,7 +49,7 @@
   function normalize(raw) {
     const g = raw && typeof raw === 'object' ? raw : {};
     const mode = g.mode === 'competition' ? 'competition' : 'free';
-    const durationMin = Number(g.durationMin) > 0 ? Number(g.durationMin) : 60;
+    const durationMin = Number(g.durationMin) > 0 ? Number(g.durationMin) : 45;
     const startedAt = mode === 'competition' ? ms(g.startedAt) : null;
     const endedAt = startedAt ? ms(g.endedAt) : null;
     const endsAt = startedAt ? (ms(g.endsAt) || endedAt || startedAt + durationMin * MINUTE) : null;

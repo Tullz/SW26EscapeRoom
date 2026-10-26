@@ -1,4 +1,5 @@
 import { Client } from 'pg';
+import { GAME_DURATION_MIN } from './game-state.js';
 
 export const DEFAULT_PROGRESS = {
   phishing: false,
@@ -100,10 +101,12 @@ export async function ensureGameStateTable(client) {
       mode text not null default 'free' check (mode in ('free', 'competition')),
       started_at timestamptz null,
       ended_at timestamptz null,
-      duration_min integer not null default 60,
+      duration_min integer not null default ${GAME_DURATION_MIN},
       updated_at timestamptz not null default now()
     )
   `);
   await client.query(`insert into game_state (id) values (1) on conflict (id) do nothing`);
+  // Keep an older row in step with GAME_DURATION_MIN.
+  await client.query(`update game_state set duration_min = $1 where id = 1 and duration_min <> $1`, [GAME_DURATION_MIN]);
   gameStateTableReady = true;
 }

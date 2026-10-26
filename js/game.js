@@ -178,7 +178,7 @@
 
   function cfg(){
     return window.scoring?.CONFIG || {
-      roomPoints: 20, vaultPoints: 50, timeBonusPerMinute: 2, durationMin: 60,
+      roomPoints: 20, vaultPoints: 50, timeBonusPerMinute: 2, durationMin: 45,
       coreRooms: PUZZLES, bonusRoom: BONUS_ROOM.key
     };
   }

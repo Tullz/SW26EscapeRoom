@@ -1,6 +1,6 @@
 /* admin.js — Cyber Escape Rooms (Admin Dashboard)
    - Admin-only auth guard
-   - Game control: free roam (testing) or competition, and the shared 60-minute clock
+   - Game control: free roam (testing) or competition, and the shared 45-minute clock
      (POST /.netlify/functions/game with the admin token; js/game-clock.js keeps it current)
    - Leaderboard by the one scoring formula (js/scoring.js)
    - Team cards: 5 core rooms + the Forensics bonus room (not scored); mark complete / reopen
@@ -33,7 +33,7 @@
   const BONUS_LABEL = 'Bonus: Forensics';
 
   // Same numbers as scoring.CONFIG; only used to explain the formula if js/scoring.js is missing.
-  const SCORE_RULES = window.scoring?.CONFIG || { roomPoints: 20, vaultPoints: 50, timeBonusPerMinute: 2, durationMin: 60 };
+  const SCORE_RULES = window.scoring?.CONFIG || { roomPoints: 20, vaultPoints: 50, timeBonusPerMinute: 2, durationMin: 45 };
 
   const GAME_ENDPOINT = '/.netlify/functions/game';
   const LOGIN_EXPIRED_MSG = 'Your admin login has expired. Log out and log in again.';

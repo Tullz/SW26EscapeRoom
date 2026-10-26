@@ -21,7 +21,7 @@
     roomPoints: 20,
     vaultPoints: 50,
     timeBonusPerMinute: 2,
-    durationMin: 60,
+    durationMin: 45,
     coreRooms: Object.freeze(['phishing', 'osint', 'incident', 'mfa', 'crypto']),
     bonusRoom: 'forensics'
   });
