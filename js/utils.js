@@ -72,6 +72,26 @@
   function saveUser(user) {
     setJSON('user', user);
   }
+
+  // Login username -> the team's real name, shown in the game header and on the admin
+  // dashboard (upper-case). A username not listed here (testteam, a new account) shows as itself.
+  const TEAM_NAMES = {
+    phishandchips: 'Phish & Chips',
+    blackbeard: 'Sir Stuart Kevin (call me Bob) Blackbeard',
+    missionimpuzzible: 'Mission Impuzzible',
+    learningtoescape: 'Still Learning to Escape',
+    hobarthackers: 'Hobart Hackers',
+    gameofthreats: 'Game of Threats',
+    wearpink: 'On Wednesdays, we wear pink',
+    easdev: 'EAS Dev',
+    escctrlaltwin: 'Esc Ctrl Alt Win',
+    netdefenders: '.NetDefenders',
+    escapekey: 'Escape Key'
+  };
+  function teamLabel(team) {
+    const key = String(team || '').toLowerCase();
+    return (TEAM_NAMES[key] || key).toUpperCase();
+  }
   function progressKey(u = getUser()) {
     return `${u?.username || 'team'}_progress`;
   }
@@ -708,7 +728,7 @@
   window.utils = {
     $, $$, on, createEl, addClass, removeClass, toggleClass,
     getJSON, setJSON, removeJSON,
-    getUser, saveUser, progressKey, progressMetaKey, timesKey, readProgress, setProgressFlag,
+    getUser, saveUser, teamLabel, progressKey, progressMetaKey, timesKey, readProgress, setProgressFlag,
     readProgressMeta, setProgressPercent, getProgressPercent, pushTime,
     fmtSecs, debounce, throttle, fetchJSON, sha256Hex, getQueryParam, announce, safeFocus, sanitizeText,
     getPlayerAlias,

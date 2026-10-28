@@ -15,7 +15,8 @@
   // ---------- Helpers ------------------------------------------------------
 
   // Seed list (usernames are lower-case); any team found in the database is added on each Neon pull.
-  const TEAMS = ['testteam', 'rajasinghanp', 'morganl', 'claxtonj', 'bakert', 'diazj'];
+  const TEAMS = ['testteam', 'phishandchips', 'blackbeard', 'missionimpuzzible', 'learningtoescape', 'hobarthackers',
+    'gameofthreats', 'wearpink', 'easdev', 'escctrlaltwin', 'netdefenders', 'escapekey'];
 
   // The 5 core rooms are in the vault and earn room points. Forensics is a bonus room: it opens
   // after the vault, never changes the score, but its completion is still recorded (and shown).
@@ -109,6 +110,9 @@
     syncDiagnosticsEl.textContent = `[${timestamp}] ${type}: ${message}`;
     syncDiagnosticsEl.dataset.tone = tone;
   }
+
+  // The team's real name, upper-case (map in js/utils.js); the username if utils.js is missing.
+  const teamLabel = (team) => (window.utils?.teamLabel ? window.utils.teamLabel(team) : String(team || '').toUpperCase());
 
   // Team names and log reasons come from other devices: never trust them as HTML.
   function esc(value) {
@@ -459,7 +463,7 @@
       detail: value ? 'Marked complete via admin' : 'Reopened via admin'
     });
     queueTeamPush(team, 'progress');
-    announce(`${team.toUpperCase()} ${value ? 'completed' : 'reopened'} ${roomLabel(puzzle)}.`);
+    announce(`${teamLabel(team)} ${value ? 'completed' : 'reopened'} ${roomLabel(puzzle)}.`);
     refreshAll();
   }
 
@@ -627,7 +631,7 @@
     btn.dataset.flagKey = key;
     btn.setAttribute('aria-expanded', open ? 'true' : 'false');
     btn.setAttribute('aria-controls', targetId);
-    btn.setAttribute('aria-label', `${row.team.toUpperCase()}: ${flagSummary(flags.length)}`);
+    btn.setAttribute('aria-label', `${teamLabel(row.team)}: ${flagSummary(flags.length)}`);
     btn.title = [`${flagSummary(flags.length)}:`]
       .concat(flags.slice(0, FLAGS_SHOWN).map(f => `${fmtClockTime(f.at)}  ${flagDetail(f)}`))
       .concat(flags.length > FLAGS_SHOWN ? [`…and ${flags.length - FLAGS_SHOWN} earlier`] : [])
@@ -659,7 +663,7 @@
     panel.className = 'admin-flags';
     const title = document.createElement('p');
     title.className = 'admin-flags__title';
-    title.textContent = `${row.team.toUpperCase()}: ${flagSummary(flags.length)}`;
+    title.textContent = `${teamLabel(row.team)}: ${flagSummary(flags.length)}`;
     const list = document.createElement('ul');
     list.className = 'admin-flags__list';
     flags.slice(0, FLAGS_SHOWN).forEach(entry => {
@@ -741,7 +745,7 @@
       titleWrap.className = 'team-card__title';
 
       const h3 = document.createElement('h3');
-      h3.textContent = team.toUpperCase();
+      h3.textContent = teamLabel(team);
 
       const subtitle = document.createElement('small');
       const bits = [`${completed}/${roomCount} rooms`];
@@ -783,7 +787,7 @@
       viewBtn.type = 'button';
       viewBtn.dataset.team = team;
       viewBtn.textContent = 'Points kept';
-      viewBtn.setAttribute('aria-label', `View or adjust ${team.toUpperCase()} points kept`);
+      viewBtn.setAttribute('aria-label', `View or adjust ${teamLabel(team)} points kept`);
       viewBtn.addEventListener('click', () => openPointsModal(team));
 
       actionWrap.append(totalWrap, viewBtn);
@@ -928,7 +932,7 @@
       if (flag) li.classList.add('activity-list__item--security');
       li.innerHTML = `
         <span class="activity-list__time">${esc(timeAgo(event.at))}</span>
-        <span class="activity-list__team">${esc(event.team.toUpperCase())}</span>
+        <span class="activity-list__team">${esc(teamLabel(event.team))}</span>
         <span class="activity-list__summary">${flag}${esc(summary)}</span>
       `;
       list.appendChild(li);
@@ -938,7 +942,7 @@
   }
 
   function fillActivityTeamOptions(teamSelect) {
-    teamSelect.innerHTML = '<option value="all">All teams</option>' + TEAMS.map(t => `<option value="${esc(t)}">${esc(t.toUpperCase())}</option>`).join('');
+    teamSelect.innerHTML = '<option value="all">All teams</option>' + TEAMS.map(t => `<option value="${esc(t)}">${esc(teamLabel(t))}</option>`).join('');
     teamSelect.value = TEAMS.includes(activityFilter.team) ? activityFilter.team : 'all';
     activityFilter.team = teamSelect.value;
     activityTeamCount = TEAMS.length;
@@ -993,7 +997,7 @@
       const li = document.createElement('li');
       li.className = `session-list__item ${row.session?.active ? 'is-online' : 'is-offline'}`;
       const name = document.createElement('strong');
-      name.textContent = row.team.toUpperCase();
+      name.textContent = teamLabel(row.team);
 
       const status = document.createElement('span');
       status.className = 'session-list__status';
@@ -1118,7 +1122,7 @@
       teamCell.scope = 'row';
       teamCell.className = 'admin-lb__team';
       const name = document.createElement('span');
-      name.textContent = entry.team.toUpperCase();
+      name.textContent = teamLabel(entry.team);
       const flagged = entry.row?.flags?.length ? entry.row : null;
       const flagsId = `lbFlags-${idSlug(entry.team)}`;
       if (flagged) name.append(' ', makeFlagButton(flagged, `lb:${entry.team}`, flagsId));
@@ -1221,7 +1225,7 @@
 
       const teamEl = document.createElement('strong');
       teamEl.className = 'admin-podium__team';
-      teamEl.textContent = entry.team.toUpperCase();
+      teamEl.textContent = teamLabel(entry.team);
 
       const scoreEl = document.createElement('span');
       scoreEl.className = 'admin-podium__score';
@@ -1497,7 +1501,7 @@
     let question = `Start the ${minutes}-minute game now?\n\n`
       + 'The clock starts for every team at the same moment and the core rooms unlock.';
     if (busyTeams.length) {
-      const shown = busyTeams.slice(0, 6).map(t => t.toUpperCase()).join(', ');
+      const shown = busyTeams.slice(0, 6).map(teamLabel).join(', ');
       const more = busyTeams.length > 6 ? ` and ${busyTeams.length - 6} more` : '';
       question += `\n\nHeads up: ${busyTeams.length} team${busyTeams.length === 1 ? ' already has' : 's already have'} practice progress `
         + `(${shown}${more}): solved rooms, changed points or an open vault. It will count towards their score.`
@@ -1682,7 +1686,7 @@
     });
     table.appendChild(tbody);
     container.appendChild(table);
-    container.setAttribute('aria-label', `${team} points kept log`);
+    container.setAttribute('aria-label', `${teamLabel(team)} points kept log`);
   }
 
   function renderPointsChart(canvas, log) {
@@ -1731,7 +1735,7 @@
     const { wrapper, title, subtitle, chart, log, amount, totalInput, reason, feedback } = modalRefs;
     if (!wrapper || !row) return;
     const { team, score, scoreLog } = row;
-    const friendlyTeam = team.toUpperCase();
+    const friendlyTeam = teamLabel(team);
     const entries = sanitizeScoreLog(team, scoreLog);
 
     if (title) title.textContent = `${friendlyTeam} — Points Kept`;
@@ -1800,7 +1804,7 @@
       if (modalRefs.feedback) {
         modalRefs.feedback.textContent = `Saved. Points kept: ${readScore(team)}.`;
       }
-      announce(`Updated ${team} points kept.`);
+      announce(`Updated ${teamLabel(team)} points kept.`);
     } catch (err) {
       if (modalRefs.feedback) modalRefs.feedback.textContent = `Adjustment failed: ${err.message}`;
     }
@@ -1808,7 +1812,7 @@
 
   function onPointsResetClick() {
     if (!activePointsTeam) return;
-    const confirmed = window.confirm(`Clear ${activePointsTeam.toUpperCase()}'s points log and set points kept back to ${SCORE_BASE}? Their rooms and vault are not changed.`);
+    const confirmed = window.confirm(`Clear ${teamLabel(activePointsTeam)}'s points log and set points kept back to ${SCORE_BASE}? Their rooms and vault are not changed.`);
     if (!confirmed) return;
     resetTeamScore(activePointsTeam, 'Log reset by admin');
     announce(`Reset ${activePointsTeam} points kept.`);
@@ -1865,7 +1869,7 @@
 
   function drawCharts(rows, ranked) {
     if (typeof window.Chart !== 'function') return;
-    const labels = rows.map(r => r.team.toUpperCase());
+    const labels = rows.map(r => teamLabel(r.team));
     const completedData = rows.map(r => r.completed);
     const challengeData = PUZZLES.map(puzzle => rows.reduce((acc, row) => acc + (row.progress?.[puzzle] ? 1 : 0), 0));
     const animate = forceChartAnimation || !chartsAnimated;
@@ -1916,7 +1920,7 @@
       scoreChart = new Chart(scoreCtx, {
         type: 'bar',
         data: {
-          labels: ranked.map(e => e.team.toUpperCase()),
+          labels: ranked.map(e => teamLabel(e.team)),
           datasets: parts.map(part => ({
             label: part.label,
             data: ranked.map(e => Number(e.result?.[part.key]) || 0),

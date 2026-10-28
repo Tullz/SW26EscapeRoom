@@ -56,7 +56,8 @@
   function renderTeamName(){
     const el = $('#teamName');
     if (!el) return;
-    el.textContent = String(readUser()?.username || 'TEAM').toUpperCase();
+    const username = readUser()?.username || 'team';
+    el.textContent = window.utils?.teamLabel ? window.utils.teamLabel(username) : username.toUpperCase();
   }
 
   // -------------------- Rooms (single source of truth) --------------------
