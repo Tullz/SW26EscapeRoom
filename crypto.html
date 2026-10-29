@@ -448,6 +448,9 @@
       .cc-bench, .cc-closeup, #ccHands { scroll-margin-top: calc(var(--site-header-h, 92px) + var(--cc-feed-h) + 4.5rem); }
     }
     @media (min-width: 961px) and (max-height: 820px) {
+      /* Short laptop windows: shrink the briefcase so all of it fits under the pinned radio
+         (at 1280x600 its bottom row of items sat below the window). */
+      .cc-scene { max-width: max(420px, calc((100vh - var(--site-header-h, 60px) - var(--cc-feed-h) - 6rem) * 16 / 10.5)); margin-inline: auto; }
       .cc-radio { margin-bottom: .75rem; }
       .cc-radio__head { padding-block: .35rem; }
       .cc-feed { padding-block: .5rem; }
