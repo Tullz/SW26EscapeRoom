@@ -195,7 +195,6 @@
       required: 4,
       flags: [
         {
-          key: true,
           title: 'Lookalike sender: “rn” posing as “m”',
           rects: [[121, 331, 557, 357]],
           text: 'sharepoint@rnicrosoft.com: an r and an n squeezed together look like an m at a glance. Real SharePoint notifications come from Microsoft’s own domains. Zoom in on any address that looks almost right.'
